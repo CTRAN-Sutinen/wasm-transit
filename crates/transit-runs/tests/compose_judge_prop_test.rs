@@ -21,7 +21,14 @@ use transit_runs::*;
 const DATE: &str = "2026-10-23";
 
 fn trips() -> impl Strategy<Value = Vec<(&'static str, bool, u32)>> {
-    proptest::collection::vec((prop_oneof![Just("5"), Just("6")], any::<bool>(), (5 * 60u32..22 * 60).prop_map(|m| m * 60)), 0..30)
+    proptest::collection::vec(
+        (
+            prop_oneof![Just("5"), Just("6")],
+            any::<bool>(),
+            (5 * 60u32..22 * 60).prop_map(|m| m * 60),
+        ),
+        0..30,
+    )
 }
 
 fn day() -> impl Strategy<Value = (Network, Vec<MaterializedTrip>)> {
@@ -40,7 +47,13 @@ fn rules() -> impl Strategy<Value = WorkRules> {
 
 /// No relief points, or C alone: a relief only after a trip into C.
 fn constraints() -> impl Strategy<Value = Option<SchedulingConstraints>> {
-    prop_oneof![Just(None), Just(Some(SchedulingConstraints { relief_points: vec!["C".into()], ..Default::default() }))]
+    prop_oneof![
+        Just(None),
+        Just(Some(SchedulingConstraints {
+            relief_points: vec!["C".into()],
+            ..Default::default()
+        }))
+    ]
 }
 
 fn refs(runs: &[CutRun], with_class: bool) -> Vec<RunRef> {
@@ -54,10 +67,32 @@ fn refs(runs: &[CutRun], with_class: bool) -> Vec<RunRef> {
 }
 
 /// The least-pay composition (the same rules with no mix), and the cut.
-fn least_and_cut(net: &Network, day: &[MaterializedTrip], w: &WorkRules, places: &NetworkPlaces) -> (Cut, Cut) {
+fn least_and_cut(
+    net: &Network,
+    day: &[MaterializedTrip],
+    w: &WorkRules,
+    places: &NetworkPlaces,
+) -> (Cut, Cut) {
     let mut free = w.clone();
     free.mix.clear();
-    (cut_runs(&DayBlocks::new(net, day, None, None), &free, None, DATE, Day::Fri, places), cut_runs(&DayBlocks::new(net, day, None, None), w, None, DATE, Day::Fri, places))
+    (
+        cut_runs(
+            &DayBlocks::new(net, day, None, None),
+            &free,
+            None,
+            DATE,
+            Day::Fri,
+            places,
+        ),
+        cut_runs(
+            &DayBlocks::new(net, day, None, None),
+            w,
+            None,
+            DATE,
+            Day::Fri,
+            places,
+        ),
+    )
 }
 
 /// Each mix rule's distance below its minimum or above its maximum, in
@@ -70,12 +105,20 @@ fn off(w: &WorkRules, runs: &[CutRun]) -> f64 {
             let (part, whole) = match m.of {
                 ShareOf::Runs => (runs.iter().filter(inside).count() as f64, runs.len() as f64),
                 ShareOf::PaidTime => (
-                    runs.iter().filter(inside).map(|r| r.judged.pay_secs as f64).sum(),
+                    runs.iter()
+                        .filter(inside)
+                        .map(|r| r.judged.pay_secs as f64)
+                        .sum(),
                     runs.iter().map(|r| r.judged.pay_secs as f64).sum(),
                 ),
             };
-            let share = if whole == 0.0 { 0.0 } else { part * 100.0 / whole };
-            m.min_pct.map_or(0.0, |min| (min as f64 - share).max(0.0)) + m.max_pct.map_or(0.0, |max| (share - max as f64).max(0.0))
+            let share = if whole == 0.0 {
+                0.0
+            } else {
+                part * 100.0 / whole
+            };
+            m.min_pct.map_or(0.0, |min| (min as f64 - share).max(0.0))
+                + m.max_pct.map_or(0.0, |max| (share - max as f64).max(0.0))
         })
         .sum()
 }
@@ -276,7 +319,13 @@ impl Roads for Bent {
 
 fn with_garage(kph: Option<u32>) -> SchedulingConstraints {
     SchedulingConstraints {
-        garages: vec![Garage { id: "G".into(), name: String::new(), lat: 45.01, lon: -122.69, extra: Default::default() }],
+        garages: vec![Garage {
+            id: "G".into(),
+            name: String::new(),
+            lat: 45.01,
+            lon: -122.69,
+            extra: Default::default(),
+        }],
         deadhead_kph: kph,
         ..Default::default()
     }
@@ -284,15 +333,30 @@ fn with_garage(kph: Option<u32>) -> SchedulingConstraints {
 
 /// Each stop where two blocks or more lay over: a trip ends there, and the
 /// block's next trip starts at the same stop or its station.
-fn layovers(net: &Network, day: &[MaterializedTrip]) -> BTreeMap<String, std::collections::BTreeSet<String>> {
-    let station = |s: &str| net.stops.get(s).and_then(|x| x.parent.clone()).unwrap_or_else(|| s.to_string());
+fn layovers(
+    net: &Network,
+    day: &[MaterializedTrip],
+) -> BTreeMap<String, std::collections::BTreeSet<String>> {
+    let station = |s: &str| {
+        net.stops
+            .get(s)
+            .and_then(|x| x.parent.clone())
+            .unwrap_or_else(|| s.to_string())
+    };
     let mut at: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
     for (id, block) in &net.blocks {
-        let ids: std::collections::BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
-        let mut run: Vec<&MaterializedTrip> = day.iter().filter(|t| ids.contains(t.trip.as_str())).collect();
+        let ids: std::collections::BTreeSet<&str> =
+            block.trips.iter().map(|t| t.trip.as_str()).collect();
+        let mut run: Vec<&MaterializedTrip> = day
+            .iter()
+            .filter(|t| ids.contains(t.trip.as_str()))
+            .collect();
         run.sort_by_key(|t| t.start_secs);
         for w in run.windows(2) {
-            let (end, start) = (&w[0].stop_times.last().unwrap().stop, &w[1].stop_times.first().unwrap().stop);
+            let (end, start) = (
+                &w[0].stop_times.last().unwrap().stop,
+                &w[1].stop_times.first().unwrap().stop,
+            );
             if end == start || station(end) == station(start) {
                 at.entry(end.clone()).or_default().insert(id.clone());
             }
@@ -353,8 +417,17 @@ fn a_reference_to_a_trip_the_block_does_not_run_is_refused() {
     let day = materialize(&net, date()).unwrap();
     let blocks = DayBlocks::new(&net, &day, None, None);
     let block = net.blocks.keys().next().unwrap().clone();
-    let bad = PieceRef { block: block.clone(), first_trip: "nope".into(), first_start_secs: None, last_trip: "nope".into(), last_start_secs: None };
+    let bad = PieceRef {
+        block: block.clone(),
+        first_trip: "nope".into(),
+        first_start_secs: None,
+        last_trip: "nope".into(),
+        last_start_secs: None,
+    };
     assert!(blocks.resolve(&bad).unwrap_err().contains("no trip nope"));
-    let missing = PieceRef { block: "none".into(), ..bad };
+    let missing = PieceRef {
+        block: "none".into(),
+        ..bad
+    };
     assert!(blocks.resolve(&missing).unwrap_err().contains("block none"));
 }

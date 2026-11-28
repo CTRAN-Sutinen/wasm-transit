@@ -16,19 +16,21 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, MigrationSpec, OpDoc, OpExample};
+use cap_abi::manifest::{
+    CapManifest, Capability, KernelOp, LinkedAssembly, MigrationSpec, OpDoc, OpExample,
+};
 
 // gen-assemblies stays in the kernel's crate, because it writes the module
 // crates before any build.
 #[path = "../../cap-abi/src/bin/common/assemblies.rs"]
 mod common;
-mod schema_lock;
 pub mod kind_table;
+mod schema_lock;
 pub use common::server_capabilities;
 pub mod checks;
 pub mod doc_check;
-use fixtures::*;
 use cap_abi::validate::validate_assembly;
+use fixtures::*;
 use sha2::{Digest as _, Sha256};
 
 /// The gates that `just registry` runs before publishing. It sets
@@ -54,30 +56,63 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
         id: "example",
         json: |_| String::new(),
         bytes: |_, _| String::new(),
-        documents: &[loader::<transit_network::Network>, loader::<transit_rt::RtOverview>],
+        documents: &[
+            loader::<transit_network::Network>,
+            loader::<transit_rt::RtOverview>,
+        ],
     };
-    let answer = |text: String| serde_json::from_str::<serde_json::Value>(&text).expect("the kernel answers JSON");
-    let rt_bytes = fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-rt.pb")).expect("rt fixture");
+    let answer = |text: String| {
+        serde_json::from_str::<serde_json::Value>(&text).expect("the kernel answers JSON")
+    };
+    let rt_bytes = fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-rt.pb"
+    ))
+    .expect("rt fixture");
     if let Some(ctx) = net {
-        kind::<transit_network::Network>().register(ctx.network.clone()).expect("the fixture network registers");
+        kind::<transit_network::Network>()
+            .register(ctx.network.clone())
+            .expect("the fixture network registers");
     }
-    let (rt_hash, _) = kind::<transit_rt::RtOverview>().register_bytes(&rt_bytes).expect("the rt fixture decodes");
+    let (rt_hash, _) = kind::<transit_rt::RtOverview>()
+        .register_bytes(&rt_bytes)
+        .expect("the rt fixture decodes");
     let held = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_HELD, b""));
     let keep = serde_json::json!({ "keep": [rt_hash] });
-    let evicted = answer(kernel::invoke_bytes(&[&EXAMPLE], OP_EVICT, keep.to_string().as_bytes()));
+    let evicted = answer(kernel::invoke_bytes(
+        &[&EXAMPLE],
+        OP_EVICT,
+        keep.to_string().as_bytes(),
+    ));
     let about = answer(kernel::invoke_bytes(&[&EXAMPLE], kernel::OP_ABOUT, b""));
 
     // A load's id, op, and code are its type's, and its line in
     // the kind list must agree.
-    fn load<T: cap_abi::kernel::Load>(description: &str, net: Option<&NetworkExampleContext>) -> KernelOp {
-        let line = cap_abi::kinds::by_load(T::ID)
-            .unwrap_or_else(|| panic!("the kernel load {} has no line in crates/cap-abi/src/kinds.rs", T::LOAD_OP));
+    fn load<T: cap_abi::kernel::Load>(
+        description: &str,
+        net: Option<&NetworkExampleContext>,
+    ) -> KernelOp {
+        let line = cap_abi::kinds::by_load(T::ID).unwrap_or_else(|| {
+            panic!(
+                "the kernel load {} has no line in crates/cap-abi/src/kinds.rs",
+                T::LOAD_OP
+            )
+        });
         let listed = line.load.expect("by_load finds a load");
-        assert_eq!((listed.op, listed.code), (T::LOAD_OP, T::CODE), "{}: the kind list's op and code are its type's", T::ID);
+        assert_eq!(
+            (listed.op, listed.code),
+            (T::LOAD_OP, T::CODE),
+            "{}: the kind list's op and code are its type's",
+            T::ID
+        );
         let ty = std::any::type_name::<T>();
-        let (krate, name) = (ty.split("::").next().unwrap(), ty.rsplit("::").next().unwrap());
+        let (krate, name) = (
+            ty.split("::").next().unwrap(),
+            ty.rsplit("::").next().unwrap(),
+        );
         assert!(
-            line.library.starts_with(&format!("{krate}::")) && line.library.ends_with(&format!("::{name}")),
+            line.library.starts_with(&format!("{krate}::"))
+                && line.library.ends_with(&format!("::{name}")),
             "{}: the line names {}, and the load is {ty}'s",
             T::ID,
             line.library
@@ -130,9 +165,16 @@ fn kernel_ops(net: Option<&NetworkExampleContext>) -> Vec<KernelOp> {
             example: Some(OpExample { request: serde_json::json!(null), response: about }),
         },
     ];
-    let listed: std::collections::BTreeSet<&str> = cap_abi::kinds::KINDS.iter().filter_map(|k| k.load.map(|l| l.id)).collect();
-    let loaded: std::collections::BTreeSet<&str> = ops.iter().filter_map(|op| op.kind.as_deref()).collect();
-    assert_eq!(listed, loaded, "each line of crates/cap-abi/src/kinds.rs with a load is a kernel load");
+    let listed: std::collections::BTreeSet<&str> = cap_abi::kinds::KINDS
+        .iter()
+        .filter_map(|k| k.load.map(|l| l.id))
+        .collect();
+    let loaded: std::collections::BTreeSet<&str> =
+        ops.iter().filter_map(|op| op.kind.as_deref()).collect();
+    assert_eq!(
+        listed, loaded,
+        "each line of crates/cap-abi/src/kinds.rs with a load is a kernel load"
+    );
     ops
 }
 
@@ -152,10 +194,18 @@ pub fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
             sections.push((h.trim().to_string(), Vec::new()));
         } else if let Some(h) = line.strip_prefix("# ") {
             assert!(sections.is_empty(), "{place}: one `#` heading, first");
-            assert_eq!(h.trim(), module.id, "{place}: the `#` heading names the capability");
+            assert_eq!(
+                h.trim(),
+                module.id,
+                "{place}: the `#` heading names the capability"
+            );
             sections.push((String::new(), Vec::new()));
         } else {
-            sections.last_mut().unwrap_or_else(|| panic!("{place}: starts with `# {}`", module.id)).1.push(line);
+            sections
+                .last_mut()
+                .unwrap_or_else(|| panic!("{place}: starts with `# {}`", module.id))
+                .1
+                .push(line);
         }
     }
     let body = |lines: &[&str]| lines.join("\n").trim_matches('\n').to_string();
@@ -169,16 +219,26 @@ pub fn read_docs(module: &cap_abi::kernel::Declared) -> CapDocs {
     sorted.sort_unstable();
     let mut ops_sorted: Vec<&str> = module.ops.iter().map(String::as_str).collect();
     ops_sorted.sort_unstable();
-    assert_eq!(sorted, ops_sorted, "{place}: one `## <op>` section for each op of its `Request` enum, and no other");
+    assert_eq!(
+        sorted, ops_sorted,
+        "{place}: one `## <op>` section for each op of its `Request` enum, and no other"
+    );
     for (op, d) in &ops {
         assert!(!d.is_empty(), "{place}: `## {op}` says nothing");
     }
-    CapDocs { purpose: body(&purpose), ops }
+    CapDocs {
+        purpose: body(&purpose),
+        ops,
+    }
 }
 
 pub fn main(capabilities: &[Linked]) {
     let caps = capabilities;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
     let profile = std::env::var("CAPS_PROFILE").unwrap_or_else(|_| "release".into());
     let target = root.join("target/wasm32-unknown-unknown").join(&profile);
     let dist = root.join("web/public/caps");
@@ -243,7 +303,10 @@ pub fn main(capabilities: &[Linked]) {
                 .speaks
                 .iter()
                 .map(|(kind, versions)| {
-                    ((*kind).to_string(), versions.iter().copied().collect::<Vec<_>>())
+                    (
+                        (*kind).to_string(),
+                        versions.iter().copied().collect::<Vec<_>>(),
+                    )
                 })
                 .collect(),
             migrates: module
@@ -270,22 +333,37 @@ pub fn main(capabilities: &[Linked]) {
                     };
                     (
                         op.clone(),
-                        OpDoc { description: description.clone(), example, kinds },
+                        OpDoc {
+                            description: description.clone(),
+                            example,
+                            kinds,
+                        },
                     )
                 })
                 .collect(),
         });
-        println!("cap {}: sha256:{hex} ({:.1} KiB)", module.id, bytes.len() as f64 / 1024.0);
+        println!(
+            "cap {}: sha256:{hex} ({:.1} KiB)",
+            module.id,
+            bytes.len() as f64 / 1024.0
+        );
     }
 
     let mut assemblies = Vec::new();
-    for assembly in common::assemblies(root).into_iter().filter(|a| a.ui.is_some()) {
+    for assembly in common::assemblies(root)
+        .into_iter()
+        .filter(|a| a.ui.is_some())
+    {
         let ui = assembly.ui.clone().expect("a UI assembly");
         let file = format!("{}.wasm", assembly.name.replace('-', "_"));
         let bytes = fs::read(target.join(&file)).expect("assembly module (run the build first)");
         let hex = format!("{:x}", Sha256::digest(&bytes));
         fs::write(dist.join(format!("ui-{ui}-{hex}.wasm")), &bytes).expect("write assembly");
-        println!("assembly {ui}: sha256:{hex} ({:.1} KiB: {})", bytes.len() as f64 / 1024.0, assembly.caps.join(", "));
+        println!(
+            "assembly {ui}: sha256:{hex} ({:.1} KiB: {})",
+            bytes.len() as f64 / 1024.0,
+            assembly.caps.join(", ")
+        );
         assemblies.push(LinkedAssembly {
             ui: ui.clone(),
             hash: format!("sha256:{hex}"),
@@ -295,7 +373,12 @@ pub fn main(capabilities: &[Linked]) {
         });
     }
 
-    let manifest = CapManifest { kernel: KERNEL, kernel_ops, capabilities, assemblies };
+    let manifest = CapManifest {
+        kernel: KERNEL,
+        kernel_ops,
+        capabilities,
+        assemblies,
+    };
 
     if let Err(issues) = validate_assembly(&manifest) {
         eprintln!("generated assembly is NOT valid:");
@@ -314,19 +397,37 @@ pub fn main(capabilities: &[Linked]) {
     publish_registry(root, &manifest, &documents, &locks, &profile);
     publish_kind_table(root, &table, &table_schemas);
 
-    println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", caps.len());
+    println!(
+        "manifest: {} capabilities, kernel v{KERNEL}, assembly valid",
+        caps.len()
+    );
 }
 
 fn toolchain_pin(root: &Path) -> String {
-    let text = fs::read_to_string(root.join("rust-toolchain.toml")).expect("rust-toolchain.toml (the toolchain pin)");
+    let text = fs::read_to_string(root.join("rust-toolchain.toml"))
+        .expect("rust-toolchain.toml (the toolchain pin)");
     text.lines()
-        .find_map(|l| l.trim().strip_prefix("channel").map(|v| v.trim().trim_start_matches('=').trim().trim_matches('"').to_string()))
+        .find_map(|l| {
+            l.trim().strip_prefix("channel").map(|v| {
+                v.trim()
+                    .trim_start_matches('=')
+                    .trim()
+                    .trim_matches('"')
+                    .to_string()
+            })
+        })
         .expect("rust-toolchain.toml names a channel")
 }
 
 /// The evidence record says which gates the publish recipe ran against the
 /// bytes, and at which commit, so "known good" is a checkable claim.
-fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[schema_lock::Lock], profile: &str) {
+fn publish_registry(
+    root: &Path,
+    manifest: &CapManifest,
+    documents: &[DocumentKind],
+    locks: &[schema_lock::Lock],
+    profile: &str,
+) {
     let registry = root.join("registry");
     let blobs = registry.join("blobs");
     let caps_dir = registry.join("capabilities");
@@ -346,7 +447,10 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let dirty = !run(&["git", "status", "--porcelain"]).is_empty();
     let rustc = run(&["rustc", "--version"]);
     let gated = std::env::var("CAPS_PUBLISH_GATED").is_ok_and(|v| v == "1");
-    assert!(!gated || profile == "release", "a gated publish takes release modules, not {profile} (unset CAPS_PROFILE)");
+    assert!(
+        !gated || profile == "release",
+        "a gated publish takes release modules, not {profile} (unset CAPS_PROFILE)"
+    );
     // A gated publish refuses a compiler other than the pin, so the
     // published hashes are rebuildable from the tree alone.
     let verbose = run(&["rustc", "-vV"]);
@@ -385,8 +489,11 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     });
 
     for cap in &manifest.capabilities {
-        let bytes = fs::read(root.join("web/public/caps").join(Path::new(&cap.url).file_name().unwrap()))
-            .expect("module bytes (the manifest step wrote them)");
+        let bytes = fs::read(
+            root.join("web/public/caps")
+                .join(Path::new(&cap.url).file_name().unwrap()),
+        )
+        .expect("module bytes (the manifest step wrote them)");
         let hex = cap.hash.strip_prefix("sha256:").expect("hash format");
         fs::write(blobs.join(format!("{hex}.wasm")), &bytes).expect("write blob");
 
@@ -406,8 +513,7 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
             "evidence": evidence,
         });
         let json = serde_json::to_string_pretty(&record).expect("record serializes");
-        fs::write(caps_dir.join(format!("{}.json", cap.id)), json + "\n")
-            .expect("write record");
+        fs::write(caps_dir.join(format!("{}.json", cap.id)), json + "\n").expect("write record");
     }
 
     // Blobs are immutable. This file moves.
@@ -445,22 +551,36 @@ impl DocumentKind {
 }
 
 /// A type whose tag has no line in the kind list stops the run.
-fn kind<T>(example: Option<serde_json::Value>, migrate: Option<schema_lock::Migrate>) -> DocumentKind
+fn kind<T>(
+    example: Option<serde_json::Value>,
+    migrate: Option<schema_lock::Migrate>,
+) -> DocumentKind
 where
-    T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
+    T: transit_version::Versioned
+        + schemars::JsonSchema
+        + serde::Serialize
+        + serde::de::DeserializeOwned,
 {
     let line = cap_abi::kinds::by_tag(T::KIND)
         .unwrap_or_else(|| panic!("the tag {:?} has no line in crates/cap-abi/src/kinds.rs: a kind exists only if it has one", T::KIND));
-    DocumentKind { line, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
+    DocumentKind {
+        line,
+        spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate),
+    }
 }
 
-fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<schema_lock::Lock> {
+fn lock_documents(
+    root: &Path,
+    documents: &[DocumentKind],
+    locking: bool,
+) -> Vec<schema_lock::Lock> {
     let mut drifts = Vec::new();
     let mut locks = Vec::new();
     for doc in documents {
         let owner = doc.line.owner;
         let dir = root.join("crates").join(owner).join("locks");
-        let lock = schema_lock::read_lock(&dir, doc.spec.tag).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+        let lock = schema_lock::read_lock(&dir, doc.spec.tag)
+            .unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
         if !locking {
             drifts.extend(schema_lock::check(&doc.spec, &lock));
             locks.push(lock);
@@ -469,8 +589,12 @@ fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec
         match schema_lock::freeze(&doc.spec, &lock) {
             Ok(next) if next == lock => locks.push(lock),
             Ok(next) => {
-                schema_lock::write_lock(&dir, &next).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
-                println!("schema lock: crates/{owner}/locks/ records {} v{}", doc.spec.tag, doc.spec.current);
+                schema_lock::write_lock(&dir, &next)
+                    .unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+                println!(
+                    "schema lock: crates/{owner}/locks/ records {} v{}",
+                    doc.spec.tag, doc.spec.current
+                );
                 locks.push(next);
             }
             Err(refused) => {
@@ -494,7 +618,8 @@ fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Val
 }
 
 fn migrate_watchlist(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
-    transit_rider::watchlist::migrate_to(doc, transit_rider::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
+    transit_rider::watchlist::migrate_to(doc, transit_rider::watchlist::SCHEMA_VERSION)
+        .map(|(doc, _)| doc)
 }
 
 fn migrate_alerts(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
@@ -517,59 +642,104 @@ fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value
 /// specs, and the manifest is the Go host's own document (docs/FORMATS.md).
 fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<DocumentKind> {
     let plans_example = net.and_then(|n| {
-        let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
-            transit_plans::publish(&set, plan, &n.network_hash, fixture_today()).unwrap_or(set)
-        });
+        let set =
+            fixture_plan_set()
+                .iter()
+                .fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+                    transit_plans::publish(&set, plan, &n.network_hash, fixture_today())
+                        .unwrap_or(set)
+                });
         serde_json::to_value(set).ok()
     });
     let walks_example = caps
         .iter()
         .find(|c| c.declared.ops.iter().any(|op| op == "walks"))
-        .and_then(|c| run_examples(caps, c.declared.id, "walks")).and_then(|(ex, _)| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
+        .and_then(|c| run_examples(caps, c.declared.id, "walks"))
+        .and_then(|(ex, _)| {
+            ex.response
+                .get("ok")
+                .and_then(|ok| ok.get("walks"))
+                .cloned()
+        });
     vec![
         kind::<transit_network::Network>(net.map(|n| n.derived.clone()), Some(migrate_network)),
         kind::<transit_codec::Boundary>(net.map(|n| n.boundary.clone()), None),
-        kind::<transit_sync::EditDocument>(Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
+        kind::<transit_sync::EditDocument>(
+            Some(value(&transit_sync::EditDocument::new(
+                dispatch_fixture_edits(),
+            ))),
             Some(migrate_edits),
         ),
         kind::<transit_log::Entry>(Some(value(&fixture_stops_log().1[1])), None),
         kind::<transit_log::Checkpoint>(Some(value(&fixture_stops_log().0)), None),
-        kind::<transit_network::PlanSet>(net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
+        kind::<transit_network::PlanSet>(
+            net.map(|n| {
+                value(&transit_network::PlanSet {
+                    plans: [("plan-1".to_string(), n.derived_network().clone())].into(),
+                    ..Default::default()
+                })
+            }),
             None,
         ),
-        kind::<transit_rider::watchlist::Watchlist>(Some(value(&fixture_watchlist())),
+        kind::<transit_rider::watchlist::Watchlist>(
+            Some(value(&fixture_watchlist())),
             Some(migrate_watchlist),
         ),
         kind::<transit_plans::PublishedPlans>(plans_example, None),
-        kind::<transit_plans::FrozenVersions>(net.and_then(|n| {
-                let frozen = transit_plans::freeze(&transit_plans::FrozenVersions::empty(), &fixture_plan_set()[0], &n.network_hash, "proposal for public comment").ok()?;
+        kind::<transit_plans::FrozenVersions>(
+            net.and_then(|n| {
+                let frozen = transit_plans::freeze(
+                    &transit_plans::FrozenVersions::empty(),
+                    &fixture_plan_set()[0],
+                    &n.network_hash,
+                    "proposal for public comment",
+                )
+                .ok()?;
                 serde_json::to_value(frozen).ok()
             }),
             None,
         ),
-        kind::<transit_rider::device::RecentPlaces>(Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
-                {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
-                {"id": "STN", "name": "Central Station"}
-            ]})),
+        kind::<transit_rider::device::RecentPlaces>(
+            Some(
+                serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
+                    {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
+                    {"id": "STN", "name": "Central Station"}
+                ]}),
+            ),
             None,
         ),
-        kind::<transit_rider::device::LiveFeeds>(Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
-                "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""})),
+        kind::<transit_rider::device::LiveFeeds>(
+            Some(
+                serde_json::json!({"kind": "live_feeds", "schema_version": 1,
+                "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""}),
+            ),
             None,
         ),
-        kind::<transit_authz::Policy>(Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
-                name: "ops-write-edits".into(),
-                roles: vec!["dispatcher".into()],
-                pointers: vec!["edits".into()],
-                actions: vec!["write".into()],
-                extra: Default::default(),
-            }]))),
+        kind::<transit_authz::Policy>(
+            Some(value(&transit_authz::Policy::current(vec![
+                transit_authz::Rule {
+                    name: "ops-write-edits".into(),
+                    roles: vec!["dispatcher".into()],
+                    pointers: vec!["edits".into()],
+                    actions: vec!["write".into()],
+                    extra: Default::default(),
+                },
+            ]))),
             None,
         ),
-        kind::<transit_streets::Streets>(streets_example_context().map(|c| value(&c.streets)), None),
+        kind::<transit_streets::Streets>(
+            streets_example_context().map(|c| value(&c.streets)),
+            None,
+        ),
         kind::<transit_streets::walking::WalkTable>(walks_example, None),
-        kind::<transit_runs::WorkRules>(Some(value(&fixture_work_rules())), Some(migrate_work_rules)),
-        kind::<transit_runs::SchedulingConstraints>(Some(value(&fixture_scheduling_constraints())), None),
+        kind::<transit_runs::WorkRules>(
+            Some(value(&fixture_work_rules())),
+            Some(migrate_work_rules),
+        ),
+        kind::<transit_runs::SchedulingConstraints>(
+            Some(value(&fixture_scheduling_constraints())),
+            None,
+        ),
         // The example holds no versions, because they would move it with
         // every schema.
         kind::<kind_table::KindTable>(
@@ -582,7 +752,10 @@ fn document_kinds(net: Option<&NetworkExampleContext>, caps: &[Linked]) -> Vec<D
             None,
         ),
         kind::<transit_stops::Stops>(Some(value(&fixture_stops())), None),
-        kind::<transit_requests::StopRequests>(Some(value(&fixture_requests())), Some(migrate_requests)),
+        kind::<transit_requests::StopRequests>(
+            Some(value(&fixture_requests())),
+            Some(migrate_requests),
+        ),
         kind::<transit_alerts::ServiceAlerts>(Some(value(&fixture_alerts())), Some(migrate_alerts)),
         kind::<transit_alerts::AlertTemplates>(Some(value(&fixture_templates())), None),
         kind::<transit_notes::Notes>(Some(value(&fixture_notes())), None),
@@ -598,7 +771,10 @@ fn value<T: serde::Serialize>(example: &T) -> serde_json::Value {
 /// serves the schemas of the build it moves to. The server copies the
 /// `Link` header values from `links` and decides nothing.
 fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
-    let web = registry.parent().expect("the registry is in the tree").join("web/public/schemas");
+    let web = registry
+        .parent()
+        .expect("the registry is in the tree")
+        .join("web/public/schemas");
     let _ = fs::remove_dir_all(&web);
     fs::create_dir_all(&web).expect("create web/public/schemas");
     let mut served = Vec::new();
@@ -606,22 +782,39 @@ fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
     for entry in index {
         let mut entry = entry.clone();
         for (field, suffix) in [("schema", ".schema.json"), ("example", ".example.json")] {
-            let Some(path) = entry[field].as_str().map(str::to_string) else { continue };
-            let file = format!("{}.v{}{suffix}", entry["tag"].as_str().expect("an entry has its tag"), entry["schema_version"]);
+            let Some(path) = entry[field].as_str().map(str::to_string) else {
+                continue;
+            };
+            let file = format!(
+                "{}.v{}{suffix}",
+                entry["tag"].as_str().expect("an entry has its tag"),
+                entry["schema_version"]
+            );
             fs::copy(registry.join(&path), web.join(&file)).expect("copy a schema file");
             entry[field] = file.into();
         }
-        let link = format!("</schemas/{}>; rel=\"describedby\"; type=\"application/schema+json\"", entry["schema"].as_str().expect("a schema"));
+        let link = format!(
+            "</schemas/{}>; rel=\"describedby\"; type=\"application/schema+json\"",
+            entry["schema"].as_str().expect("a schema")
+        );
         if let Some(store_kind) = entry["store_kind"].as_str() {
-            stored.insert(format!("{store_kind} v{}", entry["schema_version"]), link.clone().into());
+            stored.insert(
+                format!("{store_kind} v{}", entry["schema_version"]),
+                link.clone().into(),
+            );
         }
         if entry["written"] == true {
-            published.insert(entry["tag"].as_str().expect("a tag").to_string(), link.into());
+            published.insert(
+                entry["tag"].as_str().expect("a tag").to_string(),
+                link.into(),
+            );
         }
         served.push(entry);
     }
     let links = serde_json::json!({ "stored": stored, "published": published });
-    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": served, "links": links })).expect("the served index serializes");
+    let json =
+        serde_json::to_string_pretty(&serde_json::json!({ "documents": served, "links": links }))
+            .expect("the served index serializes");
     fs::write(web.join("documents.json"), json + "\n").expect("write the served index");
 }
 
@@ -633,7 +826,12 @@ const HOST_OWNED: &[(&str, u32)] = &[("build", 1), ("derivation", 1), ("store_la
 /// this build writes that version or reads it only through a migration.
 /// `go test ./server/...` validates every example against its schema with
 /// no Rust.
-fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
+fn publish_documents(
+    registry: &Path,
+    documents: &[DocumentKind],
+    locks: &[schema_lock::Lock],
+    evidence: &serde_json::Value,
+) {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
     fs::create_dir_all(&schemas).expect("create registry schemas");
@@ -668,11 +866,28 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
     // The manifest's schema is the HTTP contract's (`server/openapi.json`).
     for &(tag, version) in HOST_OWNED {
         let stem = format!("{tag}.v{version}");
-        let dir = registry.parent().expect("the registry is in the tree").join("server/schemas");
-        let read = |file: String| fs::read_to_string(dir.join(&file)).unwrap_or_else(|e| panic!("server/schemas/{file}: {e}"));
-        let schema = published_schema(tag, version, &host_owned_schema(registry.parent().expect("the registry is in the tree"), tag, version));
+        let dir = registry
+            .parent()
+            .expect("the registry is in the tree")
+            .join("server/schemas");
+        let read = |file: String| {
+            fs::read_to_string(dir.join(&file))
+                .unwrap_or_else(|e| panic!("server/schemas/{file}: {e}"))
+        };
+        let schema = published_schema(
+            tag,
+            version,
+            &host_owned_schema(
+                registry.parent().expect("the registry is in the tree"),
+                tag,
+                version,
+            ),
+        );
         let example = read(format!("{stem}.example.json"));
-        let (schema_path, example_path) = (format!("schemas/{stem}.schema.json"), format!("examples/{stem}.json"));
+        let (schema_path, example_path) = (
+            format!("schemas/{stem}.schema.json"),
+            format!("examples/{stem}.json"),
+        );
         fs::write(registry.join(&schema_path), &schema).expect("write schema");
         fs::write(registry.join(&example_path), &example).expect("write example");
         index.push(serde_json::json!({
@@ -688,39 +903,64 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schem
             "example_hash": cap_abi::content_hash(example.as_bytes()),
         }));
     }
-    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": index, "evidence": evidence }))
-        .expect("documents index serializes");
+    let json = serde_json::to_string_pretty(
+        &serde_json::json!({ "documents": index, "evidence": evidence }),
+    )
+    .expect("documents index serializes");
     fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
     publish_web_schemas(registry, &index);
-    println!("registry: {} document versions published (schemas + worked examples)", index.len());
+    println!(
+        "registry: {} document versions published (schemas + worked examples)",
+        index.len()
+    );
 }
 
 /// A function of the list and the locks alone, so the checked-in copy
 /// (`crates/cap-abi/kinds.json`) needs no module build (D-232).
-fn kind_table(root: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock]) -> (kind_table::KindTable, Vec<(String, String)>) {
+fn kind_table(
+    root: &Path,
+    documents: &[DocumentKind],
+    locks: &[schema_lock::Lock],
+) -> (kind_table::KindTable, Vec<(String, String)>) {
     let mut kinds = kind_table::kinds();
     let mut schemas = Vec::new();
-    let mut versions = |tag: &str, version: u32, schema: &serde_json::Value| -> Option<kind_table::VersionEntry> {
-        let text = published_schema(tag, version, schema);
-        let hash = cap_abi::content_hash(text.as_bytes());
-        schemas.push((hash.clone(), text));
-        Some(kind_table::VersionEntry { version, schema: hash })
-    };
+    let mut versions =
+        |tag: &str, version: u32, schema: &serde_json::Value| -> Option<kind_table::VersionEntry> {
+            let text = published_schema(tag, version, schema);
+            let hash = cap_abi::content_hash(text.as_bytes());
+            schemas.push((hash.clone(), text));
+            Some(kind_table::VersionEntry {
+                version,
+                schema: hash,
+            })
+        };
     for (doc, lock) in documents.iter().zip(locks) {
-        let Some(entry) = kinds.iter_mut().find(|k| k.tag == doc.spec.tag) else { continue };
+        let Some(entry) = kinds.iter_mut().find(|k| k.tag == doc.spec.tag) else {
+            continue;
+        };
         for (&version, locked) in &lock.versions {
-            entry.versions.extend(versions(doc.spec.tag, version, &locked.schema));
+            entry
+                .versions
+                .extend(versions(doc.spec.tag, version, &locked.schema));
         }
         if let Some(current) = lock.versions.get(&doc.spec.current) {
             entry.references = transit_version::references(&current.schema);
         }
     }
     for &(tag, version) in HOST_OWNED {
-        let entry = kinds.iter_mut().find(|k| k.tag == tag).unwrap_or_else(|| panic!("the host-owned {tag} has no line in the kind list"));
+        let entry = kinds
+            .iter_mut()
+            .find(|k| k.tag == tag)
+            .unwrap_or_else(|| panic!("the host-owned {tag} has no line in the kind list"));
         let schema = host_owned_schema(root, tag, version);
         entry.versions.extend(versions(tag, version, &schema));
     }
-    let table = kind_table::KindTable { kind: kind_table::KindTableKind, schema_version: kind_table::SCHEMA_VERSION, kinds, extra: Default::default() };
+    let table = kind_table::KindTable {
+        kind: kind_table::KindTableKind,
+        schema_version: kind_table::SCHEMA_VERSION,
+        kinds,
+        extra: Default::default(),
+    };
     (table, schemas)
 }
 
@@ -754,11 +994,19 @@ fn publish_kind_table(root: &Path, table: &kind_table::KindTable, schemas: &[(St
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("create web/pkg/schemas");
     for (hash, text) in schemas {
-        fs::write(dir.join(format!("{}.json", hash.trim_start_matches("sha256:"))), text).expect("write the schema");
+        fs::write(
+            dir.join(format!("{}.json", hash.trim_start_matches("sha256:"))),
+            text,
+        )
+        .expect("write the schema");
     }
     let json = cap_abi::canonical_bytes(table).expect("the kind table serializes");
     fs::write(pkg.join("kinds.json"), json).expect("write web/pkg/kinds.json");
-    println!("kind table: {} kinds, {} schemas (web/pkg/kinds.json)", table.kinds.len(), fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0));
+    println!(
+        "kind table: {} kinds, {} schemas (web/pkg/kinds.json)",
+        table.kinds.len(),
+        fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0)
+    );
 }
 
 /// The `$id` names no host.
@@ -780,40 +1028,73 @@ fn host_owned_schema(root: &Path, tag: &str, version: u32) -> serde_json::Value 
 /// when the registry was published from another tree. `None` without git.
 fn source_digest(root: &Path) -> Option<String> {
     let listing = Command::new("git")
-        .args(["ls-files", "-co", "--exclude-standard", "-z", "--", "crates", "Cargo.toml", "Cargo.lock"])
+        .args([
+            "ls-files",
+            "-co",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "crates",
+            "Cargo.toml",
+            "Cargo.lock",
+        ])
         .current_dir(root)
         .output()
         .ok()
         .filter(|o| o.status.success())?;
-    let mut paths: Vec<&str> =
-        std::str::from_utf8(&listing.stdout).ok()?.split('\0').filter(|p| !p.is_empty()).collect();
+    let mut paths: Vec<&str> = std::str::from_utf8(&listing.stdout)
+        .ok()?
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .collect();
     paths.sort_unstable();
     paths.dedup();
     let mut digest = Sha256::new();
     for path in paths {
-        let Ok(bytes) = fs::read(root.join(path)) else { continue };
+        let Ok(bytes) = fs::read(root.join(path)) else {
+            continue;
+        };
         digest.update(format!("{path}\n{:x}\n", Sha256::digest(&bytes)).as_bytes());
     }
     Some(format!("sha256:{:x}", digest.finalize()))
 }
 
-
-
-fn run_examples(caps: &[Linked], capability: &str, op: &str) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
+fn run_examples(
+    caps: &[Linked],
+    capability: &str,
+    op: &str,
+) -> Option<(OpExample, Vec<cap_abi::manifest::KindExample>)> {
     let linked = caps.iter().find(|c| c.declared.id == capability)?;
-    let (examples, invoke, invoke_bytes) = (linked.examples, linked.declared.invoke, linked.declared.invoke_bytes);
+    let (examples, invoke, invoke_bytes) = (
+        linked.examples,
+        linked.declared.invoke,
+        linked.declared.invoke_bytes,
+    );
     let example = examples().into_iter().find(|e| e.op == op)?;
     for load in &example.loads {
-        let answer: serde_json::Value = serde_json::from_str(&invoke(&load.to_string())).expect("a load answers JSON");
-        assert!(answer.get("ok").is_some(), "{capability}.{op}: a load of its example failed: {answer}");
+        let answer: serde_json::Value =
+            serde_json::from_str(&invoke(&load.to_string())).expect("a load answers JSON");
+        assert!(
+            answer.get("ok").is_some(),
+            "{capability}.{op}: a load of its example failed: {answer}"
+        );
     }
     let answer = match &example.bytes {
         Some((code, bytes)) => invoke_bytes(*code, bytes),
         None => invoke(&example.request.to_string()),
     };
     let response: serde_json::Value = serde_json::from_str(&answer).expect("an op answers JSON");
-    assert!(response.get("ok").is_some(), "{capability}.{op}: its example failed: {response}");
-    Some((OpExample { request: example.request, response }, example.kinds))
+    assert!(
+        response.get("ok").is_some(),
+        "{capability}.{op}: its example failed: {response}"
+    );
+    Some((
+        OpExample {
+            request: example.request,
+            response,
+        },
+        example.kinds,
+    ))
 }
 
 /// The kernel's examples stay with the kernel and the kind list. Each
@@ -823,8 +1104,14 @@ fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExa
     let (request, response) = match ("kernel", op) {
         ("kernel", "load_walks") => {
             let net = net?;
-            let walk = |from: &str, to: &str| transit_streets::walking::Walk { from: from.into(), to: to.into(), walk_secs: 95 };
-            let table = transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
+            let walk = |from: &str, to: &str| transit_streets::walking::Walk {
+                from: from.into(),
+                to: to.into(),
+                walk_secs: 95,
+            };
+            let table = transit_streets::walking::WalkTable {
+                kind: Default::default(),
+                schema_version: Default::default(),
                 streets_hash: "sha256:…".into(),
                 network_hash: net.network_hash.clone(),
                 speed_mps: transit_streets::walking::WALK_SPEED_MPS,
@@ -942,4 +1229,3 @@ fn kernel_example(op: &str, net: Option<&NetworkExampleContext>) -> Option<OpExa
     };
     Some(OpExample { request, response })
 }
-

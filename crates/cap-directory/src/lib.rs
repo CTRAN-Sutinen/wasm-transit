@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+use transit_network::Network;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use transit_network::Network;
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -63,7 +63,9 @@ pub struct StopWalk {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    About { network_hash: String },
+    About {
+        network_hash: String,
+    },
     Stops {
         network_hash: String,
         #[serde(default)]
@@ -86,11 +88,25 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         walks: Option<Vec<StopWalk>>,
     },
-    StopsByIds { network_hash: String, ids: Vec<String> },
-    Routes { network_hash: String },
-    RouteStopSequence { network_hash: String, route_id: String },
-    Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
-    ServiceKeys { network_hash: String },
+    StopsByIds {
+        network_hash: String,
+        ids: Vec<String>,
+    },
+    Routes {
+        network_hash: String,
+    },
+    RouteStopSequence {
+        network_hash: String,
+        route_id: String,
+    },
+    Focus {
+        network_hash: String,
+        kind: transit_network::EntityKind,
+        id: String,
+    },
+    ServiceKeys {
+        network_hash: String,
+    },
     RouteLines {
         network_hash: String,
         #[serde(default)]
@@ -104,7 +120,10 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         query: Option<String>,
     },
-    RouteDetail { network_hash: String, route_id: String },
+    RouteDetail {
+        network_hash: String,
+        route_id: String,
+    },
     StopDetail {
         network_hash: String,
         stop_id: String,
@@ -130,19 +149,46 @@ pub enum Request {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_directory/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    About { name: String, plan: transit_network::PlanMeta },
-    Stops { stops: Vec<DirectoryStop> },
-    StopsNear { stops: Vec<transit_network::listing::NearbyStop> },
-    StopsByIds { stops: Vec<DirectoryStop> },
-    Routes { routes: Vec<DirectoryRoute> },
-    RouteStopSequence { patterns: Vec<PatternStops> },
-    Focus { focus: Option<transit_network::EntityFocus> },
-    RouteLines { routes: Vec<transit_network::RouteLines> },
-    ServiceKeys { keys: Vec<transit_network::ServiceKey> },
-    Entities { rows: Vec<transit_network::EntityRow> },
-    RouteDetail { detail: Option<transit_network::RouteDetail> },
-    StopDetail { detail: Option<transit_network::StopDetail> },
-    Timetable { timetable: Option<transit_network::Timetable> },
+    About {
+        name: String,
+        plan: transit_network::PlanMeta,
+    },
+    Stops {
+        stops: Vec<DirectoryStop>,
+    },
+    StopsNear {
+        stops: Vec<transit_network::listing::NearbyStop>,
+    },
+    StopsByIds {
+        stops: Vec<DirectoryStop>,
+    },
+    Routes {
+        routes: Vec<DirectoryRoute>,
+    },
+    RouteStopSequence {
+        patterns: Vec<PatternStops>,
+    },
+    Focus {
+        focus: Option<transit_network::EntityFocus>,
+    },
+    RouteLines {
+        routes: Vec<transit_network::RouteLines>,
+    },
+    ServiceKeys {
+        keys: Vec<transit_network::ServiceKey>,
+    },
+    Entities {
+        rows: Vec<transit_network::EntityRow>,
+    },
+    RouteDetail {
+        detail: Option<transit_network::RouteDetail>,
+    },
+    StopDetail {
+        detail: Option<transit_network::StopDetail>,
+    },
+    Timetable {
+        timetable: Option<transit_network::Timetable>,
+    },
 }
 
 pub const STOPS_NEAR_LIMIT: u32 = 10;
@@ -164,18 +210,30 @@ fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::Stops { network_hash, query, limit } => {
+        Request::Stops {
+            network_hash,
+            query,
+            limit,
+        } => {
             let network = network_arc(&network_hash)?;
-            let mut stops: Vec<DirectoryStop> = transit_network::listing::find_stops(&network, query.as_deref().unwrap_or(""))
-                .iter()
-                .filter_map(|id| directory_stop(&network, id))
-                .collect();
+            let mut stops: Vec<DirectoryStop> =
+                transit_network::listing::find_stops(&network, query.as_deref().unwrap_or(""))
+                    .iter()
+                    .filter_map(|id| directory_stop(&network, id))
+                    .collect();
             if let Some(limit) = limit {
                 stops.truncate(limit as usize);
             }
             Ok(Response::Stops { stops })
         }
-        Request::StopsNear { network_hash, lat, lon, limit, radius_m, walks } => {
+        Request::StopsNear {
+            network_hash,
+            lat,
+            lon,
+            limit,
+            radius_m,
+            walks,
+        } => {
             if !(-90.0..=90.0).contains(&lat) {
                 return Err(format!("lat {lat} is not a latitude (-90..=90)").into());
             }
@@ -187,8 +245,14 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             }
             let network = network_arc(&network_hash)?;
             let limit = limit.unwrap_or(STOPS_NEAR_LIMIT) as usize;
-            let walks: Vec<(String, u32)> = walks.unwrap_or_default().into_iter().map(|w| (w.stop_id, w.walk_secs)).collect();
-            let stops = transit_network::listing::stops_near_walked(&network, lat, lon, limit, radius_m, &walks);
+            let walks: Vec<(String, u32)> = walks
+                .unwrap_or_default()
+                .into_iter()
+                .map(|w| (w.stop_id, w.walk_secs))
+                .collect();
+            let stops = transit_network::listing::stops_near_walked(
+                &network, lat, lon, limit, radius_m, &walks,
+            );
             Ok(Response::StopsNear { stops })
         }
         Request::StopsByIds { network_hash, ids } => {
@@ -201,7 +265,10 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
         }
         Request::About { network_hash } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::About { name: network.name.clone(), plan: network.plan.clone() })
+            Ok(Response::About {
+                name: network.name.clone(),
+                plan: network.plan.clone(),
+            })
         }
         Request::Routes { network_hash } => {
             let network = network_arc(&network_hash)?;
@@ -216,10 +283,17 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                     color: r.color.clone(),
                 })
                 .collect();
-            routes.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.route_id.cmp(&b.route_id)));
+            routes.sort_by(|a, b| {
+                a.name
+                    .cmp(&b.name)
+                    .then_with(|| a.route_id.cmp(&b.route_id))
+            });
             Ok(Response::Routes { routes })
         }
-        Request::RouteStopSequence { network_hash, route_id } => {
+        Request::RouteStopSequence {
+            network_hash,
+            route_id,
+        } => {
             let network = network_arc(&network_hash)?;
             let patterns = network
                 .patterns
@@ -244,33 +318,67 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 .collect();
             Ok(Response::RouteStopSequence { patterns })
         }
-        Request::Focus { network_hash, kind, id } => {
+        Request::Focus {
+            network_hash,
+            kind,
+            id,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Focus { focus: transit_network::entity_focus(&network, kind, &id) })
+            Ok(Response::Focus {
+                focus: transit_network::entity_focus(&network, kind, &id),
+            })
         }
         Request::ServiceKeys { network_hash } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::ServiceKeys { keys: transit_network::service_keys(&network) })
+            Ok(Response::ServiceKeys {
+                keys: transit_network::service_keys(&network),
+            })
         }
-        Request::RouteLines { network_hash, members } => {
+        Request::RouteLines {
+            network_hash,
+            members,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::RouteLines { routes: transit_network::route_lines(&network, members.as_deref()) })
+            Ok(Response::RouteLines {
+                routes: transit_network::route_lines(&network, members.as_deref()),
+            })
         }
-        Request::Entities { network_hash, kind, query } => {
+        Request::Entities {
+            network_hash,
+            kind,
+            query,
+        } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::Entities {
                 rows: transit_network::entity_rows(&network, kind, query.as_deref().unwrap_or("")),
             })
         }
-        Request::RouteDetail { network_hash, route_id } => {
+        Request::RouteDetail {
+            network_hash,
+            route_id,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::RouteDetail { detail: transit_network::route_detail(&network, &route_id) })
+            Ok(Response::RouteDetail {
+                detail: transit_network::route_detail(&network, &route_id),
+            })
         }
-        Request::StopDetail { network_hash, stop_id, members } => {
+        Request::StopDetail {
+            network_hash,
+            stop_id,
+            members,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id, members.as_deref()) })
+            Ok(Response::StopDetail {
+                detail: transit_network::stop_detail(&network, &stop_id, members.as_deref()),
+            })
         }
-        Request::Timetable { network_hash, route_id, direction, members, compare_hash } => {
+        Request::Timetable {
+            network_hash,
+            route_id,
+            direction,
+            members,
+            compare_hash,
+        } => {
             let network = network_arc(&network_hash)?;
             let timetable = match compare_hash {
                 Some(base) => transit_network::timetable_against(
@@ -280,7 +388,9 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                     direction.as_deref(),
                     &members,
                 ),
-                None => transit_network::timetable(&network, &route_id, direction.as_deref(), &members),
+                None => {
+                    transit_network::timetable(&network, &route_id, direction.as_deref(), &members)
+                }
             };
             Ok(Response::Timetable { timetable })
         }
@@ -292,7 +402,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: directory has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: directory has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]

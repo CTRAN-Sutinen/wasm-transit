@@ -96,15 +96,30 @@ fn a_build_reads_its_version_and_the_one_it_declares_ahead() {
     assert_eq!(reads::<Thing>(1), Ok(ReadAs::Current));
     assert_eq!(reads::<Thing>(2), Ok(ReadAs::Ahead(Ahead::Lossless)));
     assert_eq!(reads::<Rated>(2), Ok(ReadAs::Ahead(Ahead::ReadOnly)));
-    assert!(reads::<Plain>(2).is_err(), "a kind that declares nothing ahead reads only its version");
+    assert!(
+        reads::<Plain>(2).is_err(),
+        "a kind that declares nothing ahead reads only its version"
+    );
 }
 
 #[test]
 fn a_version_past_the_next_or_an_older_one_is_refused_as_before() {
-    let newer = read_versioned::<Thing>(&bytes(&json!({"kind": "thing", "schema_version": 3, "title": "a"}))).unwrap_err();
-    assert!(newer.message.contains("thing v3 is newer") && newer.message.contains("reads v1"), "{newer}");
-    let plain = read_versioned::<Plain>(&bytes(&json!({"kind": "plain", "schema_version": 2, "name": "a"}))).unwrap_err();
-    assert!(plain.message.contains("plain v2 is newer") && plain.message.contains("reads v1"), "{plain}");
+    let newer = read_versioned::<Thing>(&bytes(
+        &json!({"kind": "thing", "schema_version": 3, "title": "a"}),
+    ))
+    .unwrap_err();
+    assert!(
+        newer.message.contains("thing v3 is newer") && newer.message.contains("reads v1"),
+        "{newer}"
+    );
+    let plain = read_versioned::<Plain>(&bytes(
+        &json!({"kind": "plain", "schema_version": 2, "name": "a"}),
+    ))
+    .unwrap_err();
+    assert!(
+        plain.message.contains("plain v2 is newer") && plain.message.contains("reads v1"),
+        "{plain}"
+    );
     let older = cap_abi::speaks("thing", 0, 1).unwrap_err();
     assert!(older.message.contains("migrate.migrate"), "{older}");
 }
@@ -139,17 +154,34 @@ fn a_read_only_step_reads_and_refuses_a_write_naming_both() {
     let v2 = json!({"kind": "rated", "schema_version": 2, "name": "a", "stars": 4});
     let (rated, ahead) = read_versioned::<Rated>(&bytes(&v2)).unwrap();
     assert_eq!(rated.name, "a");
-    assert_eq!(ahead.map(|read| (read.how, read.found)), Some((Ahead::ReadOnly, 2)));
+    assert_eq!(
+        ahead.map(|read| (read.how, read.found)),
+        Some((Ahead::ReadOnly, 2))
+    );
     let read: Current<Rated> = serde_json::from_value(v2.clone()).unwrap();
     assert_eq!(read.name, "a", "an op that only reads it reads it");
-    let refused = serde_json::from_value::<Base<Rated>>(v2).unwrap_err().to_string();
-    assert!(refused.contains("rated v2") && refused.contains("v1") && refused.contains("does not write over it"), "{refused}");
-    let current: Base<Rated> = serde_json::from_value(json!({"kind": "rated", "schema_version": 1, "name": "b"})).unwrap();
-    assert_eq!(current.name, "b", "a copy in this version is a base as usual");
+    let refused = serde_json::from_value::<Base<Rated>>(v2)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("rated v2")
+            && refused.contains("v1")
+            && refused.contains("does not write over it"),
+        "{refused}"
+    );
+    let current: Base<Rated> =
+        serde_json::from_value(json!({"kind": "rated", "schema_version": 1, "name": "b"})).unwrap();
+    assert_eq!(
+        current.name, "b",
+        "a copy in this version is a base as usual"
+    );
 }
 
 #[test]
 fn a_request_field_reads_ahead_like_bulk_bytes() {
     let v2 = json!({"kind": "thing", "schema_version": 2, "title": "a"});
-    assert_eq!(versioned::<Thing>(v2.clone()).unwrap(), read_versioned::<Thing>(&bytes(&v2)).unwrap().0);
+    assert_eq!(
+        versioned::<Thing>(v2.clone()).unwrap(),
+        read_versioned::<Thing>(&bytes(&v2)).unwrap().0
+    );
 }

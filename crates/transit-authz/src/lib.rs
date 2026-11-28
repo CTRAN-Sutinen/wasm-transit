@@ -61,16 +61,17 @@ pub struct Rule {
 impl Rule {
     fn matches(&self, action: Action, pointer: &str) -> bool {
         let action_ok = self.actions.is_empty()
-            || self.actions.iter().any(|a| a == "*" || a == action.as_str());
-        let pointer_ok = self.pointers.is_empty()
-            || self.pointers.iter().any(|p| p == "*" || p == pointer);
+            || self
+                .actions
+                .iter()
+                .any(|a| a == "*" || a == action.as_str());
+        let pointer_ok =
+            self.pointers.is_empty() || self.pointers.iter().any(|p| p == "*" || p == pointer);
         action_ok && pointer_ok
     }
 }
 
-transit_version::kind_tag!(
-    PolicyKind = "policy"
-);
+transit_version::kind_tag!(PolicyKind = "policy");
 
 impl transit_version::Versioned for Policy {
     const KIND: &'static str = "policy";
@@ -98,7 +99,12 @@ pub struct Policy {
 
 impl Policy {
     pub fn current(rules: Vec<Rule>) -> Self {
-        Policy { kind: PolicyKind, schema_version: SCHEMA_VERSION, rules, extra: Default::default() }
+        Policy {
+            kind: PolicyKind,
+            schema_version: SCHEMA_VERSION,
+            rules,
+            extra: Default::default(),
+        }
     }
 }
 
@@ -118,23 +124,36 @@ pub struct Decision {
 /// reported rule name may.
 pub fn authorize(policy: &Policy, identity: &Identity, action: Action, pointer: &str) -> Decision {
     if identity.sub.is_empty() {
-        return Decision { allow: false, matched_rule: None, reason: "no subject".into() };
+        return Decision {
+            allow: false,
+            matched_rule: None,
+            reason: "no subject".into(),
+        };
     }
     for rule in &policy.rules {
-        let role_ok = !rule.roles.is_empty()
-            && rule.roles.iter().any(|r| identity.roles.contains(r));
+        let role_ok =
+            !rule.roles.is_empty() && rule.roles.iter().any(|r| identity.roles.contains(r));
         if role_ok && rule.matches(action, pointer) {
             return Decision {
                 allow: true,
                 matched_rule: Some(rule.name.clone()),
-                reason: format!("rule {:?} grants {} on {} to a held role", rule.name, action.as_str(), pointer),
+                reason: format!(
+                    "rule {:?} grants {} on {} to a held role",
+                    rule.name,
+                    action.as_str(),
+                    pointer
+                ),
             };
         }
     }
     Decision {
         allow: false,
         matched_rule: None,
-        reason: format!("no rule grants {} on {} to the identity's roles", action.as_str(), pointer),
+        reason: format!(
+            "no rule grants {} on {} to the identity's roles",
+            action.as_str(),
+            pointer
+        ),
     }
 }
 
@@ -163,8 +182,16 @@ pub fn effective(policy: &Policy, identity: &Identity) -> EffectivePolicy {
         if rule.roles.is_empty() || !rule.roles.iter().any(|r| identity.roles.contains(r)) {
             continue;
         }
-        let actions = if rule.actions.is_empty() { vec!["*".to_string()] } else { rule.actions.clone() };
-        let pointers = if rule.pointers.is_empty() { vec!["*".to_string()] } else { rule.pointers.clone() };
+        let actions = if rule.actions.is_empty() {
+            vec!["*".to_string()]
+        } else {
+            rule.actions.clone()
+        };
+        let pointers = if rule.pointers.is_empty() {
+            vec!["*".to_string()]
+        } else {
+            rule.pointers.clone()
+        };
         for p in pointers {
             match caps.iter_mut().find(|c| c.pointer == p) {
                 Some(c) => {
@@ -174,7 +201,10 @@ pub fn effective(policy: &Policy, identity: &Identity) -> EffectivePolicy {
                         }
                     }
                 }
-                None => caps.push(Capability { pointer: p, actions: actions.clone() }),
+                None => caps.push(Capability {
+                    pointer: p,
+                    actions: actions.clone(),
+                }),
             }
         }
     }
@@ -183,7 +213,10 @@ pub fn effective(policy: &Policy, identity: &Identity) -> EffectivePolicy {
         c.actions.dedup();
     }
     caps.sort_by(|a, b| a.pointer.cmp(&b.pointer));
-    EffectivePolicy { roles: identity.roles.clone(), capabilities: caps }
+    EffectivePolicy {
+        roles: identity.roles.clone(),
+        capabilities: caps,
+    }
 }
 
 #[cfg(test)]
@@ -191,7 +224,10 @@ mod laws {
     use super::*;
 
     fn id(roles: &[&str]) -> Identity {
-        Identity { sub: "user-1".into(), roles: roles.iter().map(|r| r.to_string()).collect() }
+        Identity {
+            sub: "user-1".into(),
+            roles: roles.iter().map(|r| r.to_string()).collect(),
+        }
     }
 
     fn rule(name: &str, roles: &[&str], pointers: &[&str], actions: &[&str]) -> Rule {
@@ -217,9 +253,18 @@ mod laws {
     fn a_rule_matches_only_on_role_action_and_pointer() {
         let policy = Policy::current(vec![rule("ops", &["dispatcher"], &["edits"], &["write"])]);
         assert!(authorize(&policy, &id(&["dispatcher"]), Action::Write, "edits").allow);
-        assert!(!authorize(&policy, &id(&["dispatcher"]), Action::Read, "edits").allow, "write does not imply read");
-        assert!(!authorize(&policy, &id(&["dispatcher"]), Action::Write, "policy").allow, "other pointer");
-        assert!(!authorize(&policy, &id(&["rider"]), Action::Write, "edits").allow, "role not held");
+        assert!(
+            !authorize(&policy, &id(&["dispatcher"]), Action::Read, "edits").allow,
+            "write does not imply read"
+        );
+        assert!(
+            !authorize(&policy, &id(&["dispatcher"]), Action::Write, "policy").allow,
+            "other pointer"
+        );
+        assert!(
+            !authorize(&policy, &id(&["rider"]), Action::Write, "edits").allow,
+            "role not held"
+        );
     }
 
     #[test]
@@ -230,15 +275,27 @@ mod laws {
             rule("admin-all", &["admin"], &["*"], &["*"]),
         ]);
         assert!(!authorize(&policy, &id(&["rider"]), Action::Write, "edits").allow);
-        assert!(authorize(&policy, &id(&["rider"]), Action::Read, "anything").allow, "* pointer, read action");
-        assert!(authorize(&policy, &id(&["admin"]), Action::Write, "policy").allow, "*/* for admin");
-        assert!(!authorize(&policy, &id(&[]), Action::Read, "x").allow, "identity with no roles");
+        assert!(
+            authorize(&policy, &id(&["rider"]), Action::Read, "anything").allow,
+            "* pointer, read action"
+        );
+        assert!(
+            authorize(&policy, &id(&["admin"]), Action::Write, "policy").allow,
+            "*/* for admin"
+        );
+        assert!(
+            !authorize(&policy, &id(&[]), Action::Read, "x").allow,
+            "identity with no roles"
+        );
     }
 
     #[test]
     fn no_subject_is_a_deny() {
         let policy = Policy::current(vec![rule("all", &["admin"], &["*"], &["*"])]);
-        let anon = Identity { sub: "".into(), roles: vec!["admin".into()] };
+        let anon = Identity {
+            sub: "".into(),
+            roles: vec!["admin".into()],
+        };
         assert!(!authorize(&policy, &anon, Action::Write, "edits").allow);
     }
 
@@ -257,7 +314,10 @@ mod laws {
                     let i = id(&roles.iter().map(|s| *s).collect::<Vec<_>>());
                     let d1 = authorize(&p1, &i, action, pointer);
                     let d2 = authorize(&p2, &i, action, pointer);
-                    assert_eq!(d1.allow, d2.allow, "order changed the verdict for {roles:?} {action:?} {pointer}");
+                    assert_eq!(
+                        d1.allow, d2.allow,
+                        "order changed the verdict for {roles:?} {action:?} {pointer}"
+                    );
                 }
             }
         }
@@ -265,7 +325,12 @@ mod laws {
 
     #[test]
     fn policy_round_trips_through_json() {
-        let policy = Policy::current(vec![rule("ops", &["dispatcher"], &["edits"], &["write", "read"])]);
+        let policy = Policy::current(vec![rule(
+            "ops",
+            &["dispatcher"],
+            &["edits"],
+            &["write", "read"],
+        )]);
         let json = serde_json::to_string(&policy).unwrap();
         assert!(json.contains("\"schema_version\":1"), "{json}");
         assert_eq!(serde_json::from_str::<Policy>(&json).unwrap(), policy);
@@ -280,13 +345,24 @@ mod laws {
         ]);
         let eff = effective(&policy, &id(&["dispatcher"]));
         assert_eq!(eff.roles, vec!["dispatcher".to_string()]);
-        assert_eq!(eff.capabilities, vec![Capability {
-            pointer: "edits".into(),
-            actions: vec!["read".into(), "write".into()],
-        }]);
+        assert_eq!(
+            eff.capabilities,
+            vec![Capability {
+                pointer: "edits".into(),
+                actions: vec!["read".into(), "write".into()],
+            }]
+        );
         let eff = effective(&policy, &id(&["auditor"]));
-        assert_eq!(eff.capabilities, vec![Capability { pointer: "*".into(), actions: vec!["audit".into()] }]);
-        assert!(effective(&Policy::current(vec![]), &id(&["admin"])).capabilities.is_empty());
+        assert_eq!(
+            eff.capabilities,
+            vec![Capability {
+                pointer: "*".into(),
+                actions: vec!["audit".into()]
+            }]
+        );
+        assert!(effective(&Policy::current(vec![]), &id(&["admin"]))
+            .capabilities
+            .is_empty());
         assert!(effective(&policy, &id(&[])).capabilities.is_empty());
     }
 
@@ -298,8 +374,16 @@ mod laws {
         ]);
         let eff = effective(&policy, &id(&["ops"]));
         assert_eq!(eff.capabilities.len(), 2, "edits merged, * separate");
-        let edits = eff.capabilities.iter().find(|c| c.pointer == "edits").unwrap();
-        assert_eq!(edits.actions, vec!["read".to_string(), "write".to_string()], "sorted, deduped");
+        let edits = eff
+            .capabilities
+            .iter()
+            .find(|c| c.pointer == "edits")
+            .unwrap();
+        assert_eq!(
+            edits.actions,
+            vec!["read".to_string(), "write".to_string()],
+            "sorted, deduped"
+        );
         let star = eff.capabilities.iter().find(|c| c.pointer == "*").unwrap();
         assert_eq!(star.actions, vec!["write".to_string()]);
     }
@@ -308,21 +392,46 @@ mod laws {
 #[cfg(test)]
 mod prop {
     use super::*;
-    use proptest::prelude::*;
     use proptest::collection::vec;
+    use proptest::prelude::*;
 
     fn role_name() -> impl Strategy<Value = String> {
-        proptest::sample::select(vec!["admin".to_string(), "dispatcher".to_string(), "rider".to_string()])
+        proptest::sample::select(vec![
+            "admin".to_string(),
+            "dispatcher".to_string(),
+            "rider".to_string(),
+        ])
     }
 
     fn rule_strat() -> impl Strategy<Value = Rule> {
         (
             "[a-z]{1,6}",
             vec(role_name(), 0..3),
-            vec(proptest::sample::select(vec!["*".to_string(), "edits".to_string(), "policy".to_string(), "manifest".to_string()]), 0..3),
-            vec(proptest::sample::select(vec!["*".to_string(), "read".to_string(), "write".to_string()]), 0..3),
+            vec(
+                proptest::sample::select(vec![
+                    "*".to_string(),
+                    "edits".to_string(),
+                    "policy".to_string(),
+                    "manifest".to_string(),
+                ]),
+                0..3,
+            ),
+            vec(
+                proptest::sample::select(vec![
+                    "*".to_string(),
+                    "read".to_string(),
+                    "write".to_string(),
+                ]),
+                0..3,
+            ),
         )
-            .prop_map(|(name, roles, pointers, actions)| Rule { name, roles, pointers, actions, extra: Default::default() })
+            .prop_map(|(name, roles, pointers, actions)| Rule {
+                name,
+                roles,
+                pointers,
+                actions,
+                extra: Default::default(),
+            })
     }
 
     proptest! {
@@ -418,15 +527,27 @@ pub fn validate(policy: &Policy) -> PolicyCheck {
         if rule.name.trim().is_empty() {
             issues.push(PolicyIssue::UnnamedRule { index });
         } else if !seen.insert(rule.name.as_str()) && duplicated.insert(rule.name.as_str()) {
-            issues.push(PolicyIssue::DuplicateRuleName { name: rule.name.clone() });
+            issues.push(PolicyIssue::DuplicateRuleName {
+                name: rule.name.clone(),
+            });
         }
         for action in &rule.actions {
             if !matches!(action.as_str(), "read" | "write" | "audit" | "*") {
-                issues.push(PolicyIssue::UnknownAction { rule: rule.name.clone(), action: action.clone() });
+                issues.push(PolicyIssue::UnknownAction {
+                    rule: rule.name.clone(),
+                    action: action.clone(),
+                });
             }
         }
     }
-    let writer = policy.rules.iter().any(|r| !r.roles.is_empty() && r.matches(Action::Write, "policy"));
-    let warnings = if writer { vec![] } else { vec![PolicyWarning::NoPolicyWriter] };
+    let writer = policy
+        .rules
+        .iter()
+        .any(|r| !r.roles.is_empty() && r.matches(Action::Write, "policy"));
+    let warnings = if writer {
+        vec![]
+    } else {
+        vec![PolicyWarning::NoPolicyWriter]
+    };
     PolicyCheck { issues, warnings }
 }

@@ -89,7 +89,10 @@ pub struct LiveVisit {
 /// document states it once. A prediction is clamped to the time before it, so
 /// times never run backwards.
 pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVisit>> {
-    let entry = live.trips.iter().find(|t| t.trip == trip.trip && t.start_secs == trip.start_secs)?;
+    let entry = live
+        .trips
+        .iter()
+        .find(|t| t.trip == trip.trip && t.start_secs == trip.start_secs)?;
     if entry.stops.is_empty() {
         return None;
     }
@@ -97,10 +100,14 @@ pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVis
     let mut floor = 0u32;
     for st in &trip.stop_times {
         let at_stop = || entry.stops.iter().filter(|s| s.stop == st.stop);
-        let stated = at_stop().find(|s| s.scheduled_departure == Some(st.departure_secs)).or_else(|| {
-            let visits = trip.stop_times.iter().filter(|v| v.stop == st.stop).count();
-            (visits == 1 && at_stop().count() == 1).then(|| at_stop().next()).flatten()
-        });
+        let stated = at_stop()
+            .find(|s| s.scheduled_departure == Some(st.departure_secs))
+            .or_else(|| {
+                let visits = trip.stop_times.iter().filter(|v| v.stop == st.stop).count();
+                (visits == 1 && at_stop().count() == 1)
+                    .then(|| at_stop().next())
+                    .flatten()
+            });
         let (mut arr, mut dep) = (st.arrival_secs, st.departure_secs);
         let mut is_stated = false;
         if let Some(s) = stated {
@@ -119,7 +126,11 @@ pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVis
         arr = arr.max(floor);
         dep = dep.max(arr);
         floor = dep;
-        out.push(LiveVisit { arrival_secs: arr, departure_secs: dep, stated: is_stated });
+        out.push(LiveVisit {
+            arrival_secs: arr,
+            departure_secs: dep,
+            stated: is_stated,
+        });
     }
     Some(out)
 }
@@ -139,8 +150,12 @@ impl RouterNetwork {
             stop.footpaths.clear();
         }
         for walk in &walks.walks {
-            if let (Some(from), Some(to)) = (self.stop_index(&walk.from), self.stop_index(&walk.to)) {
-                self.stops[from as usize].footpaths.push(Footpath { to, walk_secs: walk.walk_secs });
+            if let (Some(from), Some(to)) = (self.stop_index(&walk.from), self.stop_index(&walk.to))
+            {
+                self.stops[from as usize].footpaths.push(Footpath {
+                    to,
+                    walk_secs: walk.walk_secs,
+                });
             }
         }
         self
@@ -159,7 +174,11 @@ impl RouterNetwork {
             .unwrap_or(0)
     }
 
-    pub fn build_from_day(network: &Network, day: &[MaterializedTrip], date: Date) -> RouterNetwork {
+    pub fn build_from_day(
+        network: &Network,
+        day: &[MaterializedTrip],
+        date: Date,
+    ) -> RouterNetwork {
         Self::build(network, day, date, None)
     }
 
@@ -192,9 +211,15 @@ impl RouterNetwork {
             // is not a stop of the trip.
             let kept;
             let trip = match live {
-                Some(l) if trip.stop_times.iter().any(|st| !l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs)) => {
+                Some(l)
+                    if trip.stop_times.iter().any(|st| {
+                        !l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs)
+                    }) =>
+                {
                     let mut t = trip.clone();
-                    t.stop_times.retain(|st| l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs));
+                    t.stop_times.retain(|st| {
+                        l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs)
+                    });
                     kept = t;
                     &kept
                 }
@@ -219,8 +244,12 @@ impl RouterNetwork {
             }
 
             let route = network.routes.get(&trip.route);
-            let route_name = route.map(|r| r.label().to_string()).unwrap_or_else(|| trip.route.clone());
-            let route_long_name = route.and_then(|r| r.long_name.clone()).filter(|n| !n.is_empty());
+            let route_name = route
+                .map(|r| r.label().to_string())
+                .unwrap_or_else(|| trip.route.clone());
+            let route_long_name = route
+                .and_then(|r| r.long_name.clone())
+                .filter(|n| !n.is_empty());
             let mut headsigns: Vec<(u32, String)> = Vec::new();
             for v in 0..trip.stop_times.len() {
                 let sign = transit_network::visit_destination(network, trip, v);
@@ -232,7 +261,11 @@ impl RouterNetwork {
             let own: Vec<LiveVisit> = trip
                 .stop_times
                 .iter()
-                .map(|st| LiveVisit { arrival_secs: st.arrival_secs, departure_secs: st.departure_secs, stated: false })
+                .map(|st| LiveVisit {
+                    arrival_secs: st.arrival_secs,
+                    departure_secs: st.departure_secs,
+                    stated: false,
+                })
                 .collect();
             let predicted = live.and_then(|l| live_times(trip, l));
             let times = predicted.as_deref().unwrap_or(&own);
@@ -242,8 +275,13 @@ impl RouterNetwork {
                     .iter()
                     .zip(&own)
                     .map(|(p, o)| {
-                        let moved = |pt: u32, ot: u32| (p.stated || pt != ot).then(|| pt as i32 - ot as i32);
-                        (moved(p.arrival_secs, o.arrival_secs), moved(p.departure_secs, o.departure_secs))
+                        let moved = |pt: u32, ot: u32| {
+                            (p.stated || pt != ot).then(|| pt as i32 - ot as i32)
+                        };
+                        (
+                            moved(p.arrival_secs, o.arrival_secs),
+                            moved(p.departure_secs, o.departure_secs),
+                        )
                     })
                     .collect(),
             };
@@ -264,7 +302,10 @@ impl RouterNetwork {
         let mut patterns: Vec<Pattern> = Vec::with_capacity(pattern_map.len());
         for (positions, mut trips) in pattern_map {
             trips.sort_by_key(|t| t.departures[0]);
-            patterns.push(Pattern { stop_positions: positions, trips });
+            patterns.push(Pattern {
+                stop_positions: positions,
+                trips,
+            });
         }
         patterns.sort_by(|a, b| a.stop_positions.cmp(&b.stop_positions));
 
@@ -282,7 +323,13 @@ impl RouterNetwork {
             stops[i].footpaths = edges;
         }
 
-        RouterNetwork { date, stops, stop_index, patterns, patterns_at_stop }
+        RouterNetwork {
+            date,
+            stops,
+            stop_index,
+            patterns,
+            patterns_at_stop,
+        }
     }
 }
 
@@ -301,16 +348,22 @@ fn build_footpaths(coords: &[Option<(f64, f64)>]) -> Vec<Vec<Footpath>> {
 
     let mut result: Vec<Vec<Footpath>> = vec![Vec::new(); coords.len()];
     for i in 0..coords.len() {
-        let Some((lat1, lon1)) = coords[i] else { continue };
+        let Some((lat1, lon1)) = coords[i] else {
+            continue;
+        };
         let (cy, cx) = ((lat1 / CELL).floor() as i64, (lon1 / CELL).floor() as i64);
         for dy in -1..=1 {
             for dx in -1..=1 {
-                let Some(candidates) = grid.get(&(cy + dy, cx + dx)) else { continue };
+                let Some(candidates) = grid.get(&(cy + dy, cx + dx)) else {
+                    continue;
+                };
                 for &j in candidates {
                     if i == j {
                         continue;
                     }
-                    let Some((lat2, lon2)) = coords[j] else { continue };
+                    let Some((lat2, lon2)) = coords[j] else {
+                        continue;
+                    };
                     let dist = transit_geo::distance_m(lat1, lon1, lat2, lon2);
                     if dist <= WALK_RADIUS_M {
                         result[i].push(Footpath {

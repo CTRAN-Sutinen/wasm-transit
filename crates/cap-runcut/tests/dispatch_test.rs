@@ -21,7 +21,10 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>()
+        .register(derived_network())
+        .unwrap()
+        .0
 }
 
 /// The test reads the schedule id from the model and does not rely on the
@@ -31,8 +34,11 @@ fn route10_schedule(net: &Network) -> String {
     net.pattern_trips
         .iter()
         .find(|(_, s)| {
-            net.patterns.get(&s.pattern).is_some_and(|p| p.route == "10")
-                && net.service_types
+            net.patterns
+                .get(&s.pattern)
+                .is_some_and(|p| p.route == "10")
+                && net
+                    .service_types
                     .get(&s.service_type)
                     .is_some_and(|st| st.rule.runs_on(date))
         })
@@ -65,7 +71,10 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0
+    cap_abi::kernel::kind::<transit_sync::EditDocument>()
+        .register(transit_sync::EditDocument::new(records))
+        .unwrap()
+        .0
 }
 
 #[test]
@@ -93,7 +102,11 @@ fn the_days_blocks_are_the_index_facet_of_the_chain() {
         Response::Blocks { blocks } => blocks,
         _ => panic!("blocks"),
     };
-    assert_eq!(blocks.len(), 1, "only B1 has authored trips running: {blocks:?}");
+    assert_eq!(
+        blocks.len(),
+        1,
+        "only B1 has authored trips running: {blocks:?}"
+    );
     assert_eq!(blocks[0].block_id, "B1");
     assert_eq!(blocks[0].trip_count, 2, "t10 and t20 both run");
 
@@ -127,16 +140,32 @@ fn the_fleet_summary_folds_the_day_into_one_answer() {
     assert_eq!(summary.blocks, 1, "only B1 runs");
     assert_eq!(summary.peak_vehicles, 1, "one vehicle is out at a time");
     assert_eq!(summary.peak_at_secs, Some(28800), "out from t10's 08:00");
-    assert!((summary.platform_hours - 1800.0 / 3600.0).abs() < 1e-9, "platform hours");
-    assert!((summary.revenue_hours - 1200.0 / 3600.0).abs() < 1e-9, "revenue hours");
-    assert!((summary.layover_hours - 600.0 / 3600.0).abs() < 1e-9, "layover hours");
+    assert!(
+        (summary.platform_hours - 1800.0 / 3600.0).abs() < 1e-9,
+        "platform hours"
+    );
+    assert!(
+        (summary.revenue_hours - 1200.0 / 3600.0).abs() < 1e-9,
+        "revenue hours"
+    );
+    assert!(
+        (summary.layover_hours - 600.0 / 3600.0).abs() < 1e-9,
+        "layover hours"
+    );
     assert!(
         (summary.platform_hours - summary.revenue_hours - summary.layover_hours).abs() < 1e-9,
         "platform = revenue + layover"
     );
     let b1 = &summary.spans[0];
     assert_eq!(
-        (b1.block_id.as_str(), b1.trips, b1.first_start_secs, b1.span_secs, b1.longest_gap_secs, b1.longest_gap_at_secs),
+        (
+            b1.block_id.as_str(),
+            b1.trips,
+            b1.first_start_secs,
+            b1.span_secs,
+            b1.longest_gap_secs,
+            b1.longest_gap_at_secs
+        ),
         ("B1", 2, 28800, 1800, Some(600), Some(29400))
     );
 
@@ -177,8 +206,16 @@ fn the_block_chain_ripples_under_the_edit() {
         _ => panic!("block_trips"),
     };
     assert_eq!(base.len(), 2);
-    assert_eq!(base[0].layover_after_secs, Some(600), "t10 ends 08:10, t20 starts 08:20");
-    assert_eq!(base[0].layover_remaining_secs, Some(600), "no edits: the layover stands");
+    assert_eq!(
+        base[0].layover_after_secs,
+        Some(600),
+        "t10 ends 08:10, t20 starts 08:20"
+    );
+    assert_eq!(
+        base[0].layover_remaining_secs,
+        Some(600),
+        "no edits: the layover stands"
+    );
     assert!(base.iter().all(|t| t.runs));
 
     let ghost = match dispatch(Request::BlockTrips {
@@ -210,7 +247,11 @@ fn the_block_chain_ripples_under_the_edit() {
         Response::BlockTrips { trips, .. } => trips,
         _ => panic!("block_trips"),
     };
-    assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
+    assert_eq!(
+        ripped[0].layover_remaining_secs,
+        Some(300),
+        "the diverted end eats the layover (600 - 300)"
+    );
     assert_eq!(ripped[0].pattern_trips, route10_schedule(&net));
 }
 
@@ -234,9 +275,12 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         _ => panic!("block_trips"),
     };
     let first = chain(None).remove(0);
-    let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
+    let live = LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip { date: None,
+        trips: vec![LiveTrip {
+            date: None,
             trip: first.trip.clone(),
             start_secs: first.start_secs,
             route: None,
@@ -258,11 +302,17 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>().register(live).unwrap().0;
+    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>()
+        .register(live)
+        .unwrap()
+        .0;
     let rippled = chain(Some(live_hash));
     assert_eq!(rippled[0].live_end_delay_secs, Some(370));
     assert_eq!(rippled[0].layover_remaining_secs, Some(230));
-    assert_eq!(rippled[0].layover_health, Some(transit_dispatch::LayoverHealth::Tight));
+    assert_eq!(
+        rippled[0].layover_health,
+        Some(transit_dispatch::LayoverHealth::Tight)
+    );
 
     let err = dispatch(Request::BlockTrips {
         network_hash: network_hash.clone(),
@@ -306,14 +356,23 @@ fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
         .find(|(_, s)| {
             net.patterns.get(&s.pattern).is_some_and(|p| {
                 p.route == "10"
-                    && p.stops.iter().map(|ps| ps.stop.as_str()).collect::<Vec<_>>() == seq
+                    && p.stops
+                        .iter()
+                        .map(|ps| ps.stop.as_str())
+                        .collect::<Vec<_>>()
+                        == seq
             }) && net
                 .service_types
                 .get(&s.service_type)
                 .is_some_and(|st| st.rule.runs_on(date))
         })
         .map(|(id, _)| id.clone())
-        .unwrap_or_else(|| panic!("route 10 has a {:?} pattern running on the fixture Friday", seq))
+        .unwrap_or_else(|| {
+            panic!(
+                "route 10 has a {:?} pattern running on the fixture Friday",
+                seq
+            )
+        })
 }
 
 #[test]
@@ -370,11 +429,18 @@ fn the_trip_detail_answers_the_effective_day() {
         _ => panic!("trip_stops"),
     };
     assert_eq!(
-        patched.iter().map(|s| s.stop_id.as_str()).collect::<Vec<_>>(),
+        patched
+            .iter()
+            .map(|s| s.stop_id.as_str())
+            .collect::<Vec<_>>(),
         ["A", "B"],
         "the effective trip answers its patched sequence"
     );
-    assert_eq!(patched[1].arrival_secs, 8 * 3600 + 55 * 60, "B arrives 08:55 (08:50 + 300 s)");
+    assert_eq!(
+        patched[1].arrival_secs,
+        8 * 3600 + 55 * 60,
+        "B arrives 08:55 (08:50 + 300 s)"
+    );
 }
 
 #[test]
@@ -396,7 +462,10 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let bad = dispatch_json(r#"{"op":"blocks","network_hash":"sha256:x","date":"2026-13-99"}"#);
     assert!(bad.contains("invalid date"), "{bad}");
     let bad = dispatch_bytes(0, b"whatever");
-    assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
+    assert!(
+        bad.contains("unknown bulk op"),
+        "the module takes JSON documents: {bad}"
+    );
 }
 
 #[test]
@@ -416,7 +485,10 @@ fn the_trip_line_is_the_effective_day_drawn() {
         Response::TripPath { path } => path,
         _ => panic!("trip_path"),
     };
-    let first_start = net.pattern_trips[&via_c].trips[0].departs.first_start().expect("a start");
+    let first_start = net.pattern_trips[&via_c].trips[0]
+        .departs
+        .first_start()
+        .expect("a start");
     assert_eq!(path(first_start).len(), 3, "A, C, B joined");
     assert!(path(1).is_empty());
 }
@@ -424,19 +496,38 @@ fn the_trip_line_is_the_effective_day_drawn() {
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let doc = include_str!("../../../testdata/network.json");
-    let via_json: serde_json::Value =
-        serde_json::from_str(&cap_runcut::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
-    let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_runcut::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
-    assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
+    let via_json: serde_json::Value = serde_json::from_str(&cap_runcut::invoke(&format!(
+        r#"{{"op":"load_network","network":{doc}}}"#
+    )))
+    .unwrap();
+    let via_bytes: serde_json::Value = serde_json::from_str(&cap_runcut::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        doc.as_bytes(),
+    ))
+    .unwrap();
+    assert!(
+        via_json["ok"]["network_hash"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("sha256:")),
+        "{via_json}"
+    );
     assert_eq!(via_bytes, via_json);
-    let bad = cap_runcut::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
+    let bad = cap_runcut::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        b"{not a network",
+    );
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
 fn load_rules(min_secs: u32) -> String {
     let rules = transit_runs::SchedulingConstraints {
-        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None, extra: Default::default() }],
+        recovery: vec![transit_runs::RecoveryRule {
+            route: None,
+            service_type: None,
+            min_secs: Some(min_secs),
+            pct_of_run: None,
+            extra: Default::default(),
+        }],
         ..Default::default()
     };
     let answer = cap_abi::kernel::invoke(
@@ -445,7 +536,10 @@ fn load_rules(min_secs: u32) -> String {
     );
     let value: serde_json::Value = serde_json::from_str(&answer).unwrap();
     assert_eq!(value["ok"]["version"], 1, "{answer}");
-    value["ok"]["scheduling_constraints_hash"].as_str().unwrap().to_string()
+    value["ok"]["scheduling_constraints_hash"]
+        .as_str()
+        .unwrap()
+        .to_string()
 }
 
 #[test]
@@ -464,8 +558,19 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
     };
     let floor = view(None);
     let w = &floor.waits[0];
-    assert_eq!((w.block_id.as_str(), w.gap_secs, w.required_secs, w.slack_secs), ("B1", 600, Some(600), Some(0)));
-    assert_eq!(w.required_by, Some(transit_network::RecoverySource::Terminal));
+    assert_eq!(
+        (
+            w.block_id.as_str(),
+            w.gap_secs,
+            w.required_secs,
+            w.slack_secs
+        ),
+        ("B1", 600, Some(600), Some(0))
+    );
+    assert_eq!(
+        w.required_by,
+        Some(transit_network::RecoverySource::Terminal)
+    );
     let ruled = view(Some(load_rules(900)));
     let w = &ruled.waits[0];
     assert_eq!((w.required_secs, w.slack_secs), (Some(900), Some(-300)));
@@ -486,7 +591,10 @@ fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
 fn a_suggestion_adopts_into_the_fleet_it_names() {
     let mut cleared = derived_network();
     cleared.blocks.clear();
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(cleared.clone()).unwrap().0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(cleared.clone())
+        .unwrap()
+        .0;
     let suggestion = match dispatch(Request::SuggestBlocks {
         network_hash,
         edits_hash: None,
@@ -505,9 +613,16 @@ fn a_suggestion_adopts_into_the_fleet_it_names() {
     assert_eq!(suggestion.authored_peak_vehicles, 0);
     let adopted = transit_network::apply_edits(&cleared, &suggestion.edits).unwrap();
     assert_eq!(transit_network::validation_issues(&adopted), vec![]);
-    let adopted_hash = cap_abi::kernel::kind::<transit_network::Network>().register(adopted).unwrap().0;
-    let fleet = match dispatch(Request::FleetSummary { network_hash: adopted_hash, edits_hash: None, date: DATE.into() })
+    let adopted_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(adopted)
         .unwrap()
+        .0;
+    let fleet = match dispatch(Request::FleetSummary {
+        network_hash: adopted_hash,
+        edits_hash: None,
+        date: DATE.into(),
+    })
+    .unwrap()
     {
         Response::FleetSummary { summary } => summary,
         _ => panic!("fleet_summary"),

@@ -8,18 +8,21 @@ use std::sync::Arc;
 use cap_abi::kernel::kind;
 use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "bindings")]
-use ts_rs::TS;
 use transit_dispatch::{CancelRow, DiversionDraft, DiversionRow, DraftView};
 use transit_network::Network;
 use transit_sync::EditDocument;
+#[cfg(feature = "bindings")]
+use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_divert/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    Draft { network_hash: String, draft: DiversionDraft },
+    Draft {
+        network_hash: String,
+        draft: DiversionDraft,
+    },
     List {
         network_hash: String,
         #[cfg_attr(feature = "bindings", ts(as = "EditDocument"))]
@@ -72,13 +75,28 @@ pub enum Request {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_divert/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    Draft { view: DraftView },
-    List { rows: Vec<DiversionRow>, cancels: Vec<CancelRow> },
-    Reports { reports: Vec<transit_sync::EditReport> },
-    Propose { edits: EditDocument },
-    Cancel { edits: EditDocument },
-    Retire { edits: EditDocument },
-    Restore { edits: EditDocument },
+    Draft {
+        view: DraftView,
+    },
+    List {
+        rows: Vec<DiversionRow>,
+        cancels: Vec<CancelRow>,
+    },
+    Reports {
+        reports: Vec<transit_sync::EditReport>,
+    },
+    Propose {
+        edits: EditDocument,
+    },
+    Cancel {
+        edits: EditDocument,
+    },
+    Retire {
+        edits: EditDocument,
+    },
+    Restore {
+        edits: EditDocument,
+    },
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
@@ -88,22 +106,41 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, cap_abi::Refusal> {
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     let next = |records| EditDocument::new(records);
     match request {
-        Request::Draft { network_hash, draft } => {
+        Request::Draft {
+            network_hash,
+            draft,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Draft { view: transit_dispatch::draft_view(&network, &draft) })
+            Ok(Response::Draft {
+                view: transit_dispatch::draft_view(&network, &draft),
+            })
         }
-        Request::List { network_hash, edits } => {
+        Request::List {
+            network_hash,
+            edits,
+        } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::List {
                 rows: transit_dispatch::diversion_rows(&network, &edits.records),
                 cancels: transit_dispatch::cancel_rows(&network, &edits.records),
             })
         }
-        Request::Reports { network_hash, edits } => {
+        Request::Reports {
+            network_hash,
+            edits,
+        } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Reports { reports: transit_dispatch::report_against_network(&network, &edits.records) })
+            Ok(Response::Reports {
+                reports: transit_dispatch::report_against_network(&network, &edits.records),
+            })
         }
-        Request::Propose { network_hash, draft, edits, record_id, now_ms } => {
+        Request::Propose {
+            network_hash,
+            draft,
+            edits,
+            record_id,
+            now_ms,
+        } => {
             let network = network_arc(&network_hash)?;
             // The domain id is stable across re-proposals of one record.
             let id = edits
@@ -114,9 +151,24 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 .map(|d| d.id.clone())
                 .unwrap_or_else(|| format!("div-{}-{now_ms}", draft.route_id));
             let diversion = transit_dispatch::diversion_of(&network, &draft, &id)?;
-            Ok(Response::Propose { edits: next(transit_sync::propose(&edits.records, &record_id, diversion, now_ms)) })
+            Ok(Response::Propose {
+                edits: next(transit_sync::propose(
+                    &edits.records,
+                    &record_id,
+                    diversion,
+                    now_ms,
+                )),
+            })
         }
-        Request::Cancel { network_hash, edits, record_id, trip_id, start_secs, date, now_ms } => {
+        Request::Cancel {
+            network_hash,
+            edits,
+            record_id,
+            trip_id,
+            start_secs,
+            date,
+            now_ms,
+        } => {
             let network = network_arc(&network_hash)?;
             // The domain id is stable across re-proposals of one record.
             let id = edits
@@ -127,14 +179,39 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 .map(|c| c.id.clone())
                 .unwrap_or_else(|| format!("cancel-{trip_id}-{now_ms}"));
             let cancel = transit_dispatch::cancel_of(&network, &id, &trip_id, start_secs, &date)?;
-            Ok(Response::Cancel { edits: next(transit_sync::propose_cancel(&edits.records, &record_id, cancel, now_ms)) })
+            Ok(Response::Cancel {
+                edits: next(transit_sync::propose_cancel(
+                    &edits.records,
+                    &record_id,
+                    cancel,
+                    now_ms,
+                )),
+            })
         }
-        Request::Retire { edits, record_id, now_ms } => {
-            Ok(Response::Retire { edits: next(transit_sync::set_retired(&edits.records, &record_id, true, now_ms)?) })
-        }
-        Request::Restore { edits, record_id, now_ms } => {
-            Ok(Response::Restore { edits: next(transit_sync::set_retired(&edits.records, &record_id, false, now_ms)?) })
-        }
+        Request::Retire {
+            edits,
+            record_id,
+            now_ms,
+        } => Ok(Response::Retire {
+            edits: next(transit_sync::set_retired(
+                &edits.records,
+                &record_id,
+                true,
+                now_ms,
+            )?),
+        }),
+        Request::Restore {
+            edits,
+            record_id,
+            now_ms,
+        } => Ok(Response::Restore {
+            edits: next(transit_sync::set_retired(
+                &edits.records,
+                &record_id,
+                false,
+                now_ms,
+            )?),
+        }),
     }
 }
 
@@ -143,7 +220,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: divert has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: divert has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]

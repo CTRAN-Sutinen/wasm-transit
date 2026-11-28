@@ -19,7 +19,11 @@ fn dispatch(request: cap_gtfs::Request) -> cap_gtfs::Response {
 }
 
 fn load_feed(bytes: &[u8]) -> serde_json::Value {
-    serde_json::from_str(&cap_gtfs::invoke_bytes(<transit_codec::Feed as cap_abi::kernel::Load>::CODE, bytes)).unwrap()
+    serde_json::from_str(&cap_gtfs::invoke_bytes(
+        <transit_codec::Feed as cap_abi::kernel::Load>::CODE,
+        bytes,
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -27,7 +31,10 @@ fn load_feed_returns_a_content_hash_and_summary() {
     let bytes = fixture_zip();
     let ok = &load_feed(&bytes)["ok"];
     assert_eq!(ok["op"], "load_feed");
-    assert_eq!(ok["summary"]["stops"], 6, "A, B, C, the station pin, two bays");
+    assert_eq!(
+        ok["summary"]["stops"], 6,
+        "A, B, C, the station pin, two bays"
+    );
     assert_eq!(ok["summary"]["trips"], 7);
     assert_eq!(ok["feed_hash"], cap_abi::content_hash(&bytes));
 }
@@ -49,19 +56,30 @@ fn unknown_hash_and_bad_input_are_errors_not_panics() {
     assert!(err.message.contains("unknown feed"));
 
     let err = load_feed(b"not a zip");
-    assert!(err["error"]["message"].as_str().unwrap().contains("parse"), "garbage must error, not panic: {err}");
+    assert!(
+        err["error"]["message"].as_str().unwrap().contains("parse"),
+        "garbage must error, not panic: {err}"
+    );
 }
 
 #[test]
 fn json_seam_round_trips_the_tagged_form() {
     let bytes = fixture_zip();
     let request = serde_json::json!({ "op": "load_feed", "bytes": bytes });
-    let outcome: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(&request.to_string())).unwrap();
-    assert!(outcome["ok"]["op"] == "load_feed", "tagged response, got {outcome}");
+    let outcome: serde_json::Value =
+        serde_json::from_str(&cap_gtfs::invoke(&request.to_string())).unwrap();
+    assert!(
+        outcome["ok"]["op"] == "load_feed",
+        "tagged response, got {outcome}"
+    );
     assert_eq!(outcome["ok"]["feed_hash"], cap_abi::content_hash(&bytes));
 
-    let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
-    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid request"));
+    let bad: serde_json::Value =
+        serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
+    assert!(bad["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid request"));
 
     for retired in [
         "departures",
@@ -77,19 +95,28 @@ fn json_seam_round_trips_the_tagged_form() {
         ))
         .unwrap();
         assert!(
-            bad["error"]["message"].as_str().unwrap().contains("invalid request"),
+            bad["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("invalid request"),
             "{retired} is retired: {bad}"
         );
     }
 
     let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke_bytes(9, b"")).unwrap();
-    assert!(bad["error"]["message"].as_str().unwrap().contains("unknown bulk op"));
+    assert!(bad["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("unknown bulk op"));
 }
 
 #[test]
 fn feed_info_answers_the_feeds_identity() {
     let bytes = fixture_zip();
-    let feed_hash = load_feed(&bytes)["ok"]["feed_hash"].as_str().unwrap().to_string();
+    let feed_hash = load_feed(&bytes)["ok"]["feed_hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let info = match dispatch(cap_gtfs::Request::FeedInfo { feed_hash }) {
         cap_gtfs::Response::FeedInfo { info } => info,
         _ => panic!("feed_info"),
@@ -98,4 +125,3 @@ fn feed_info_answers_the_feeds_identity() {
     assert_eq!(info.feed_version.as_deref(), Some("2026.10.1"));
     assert_eq!(info.feed_publisher_name.as_deref(), Some("Test Transit"));
 }
-

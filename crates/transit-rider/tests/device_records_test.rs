@@ -22,14 +22,22 @@ fn recent_places_write_their_tags_and_keep_what_they_do_not_know() {
             "pinned": true
         })
     );
-    let bare: RecentPlaces = serde_json::from_value(json!({"places": [{"id": "B", "name": "Elm"}]})).unwrap();
-    assert_eq!(serde_json::to_value(&bare).unwrap()["places"], json!([{"id": "B", "name": "Elm"}]));
-    assert!(serde_json::from_value::<RecentPlaces>(json!({"kind": "live_feeds", "places": []})).is_err());
+    let bare: RecentPlaces =
+        serde_json::from_value(json!({"places": [{"id": "B", "name": "Elm"}]})).unwrap();
+    assert_eq!(
+        serde_json::to_value(&bare).unwrap()["places"],
+        json!([{"id": "B", "name": "Elm"}])
+    );
+    assert!(
+        serde_json::from_value::<RecentPlaces>(json!({"kind": "live_feeds", "places": []}))
+            .is_err()
+    );
 }
 
 #[test]
 fn live_feeds_write_their_tags_and_read_an_absent_feed_as_none() {
-    let read: LiveFeeds = serde_json::from_value(json!({"trips": "https://agency.example/tu.pb"})).unwrap();
+    let read: LiveFeeds =
+        serde_json::from_value(json!({"trips": "https://agency.example/tu.pb"})).unwrap();
     assert_eq!(read.schema_version(), 1);
     assert_eq!(
         serde_json::to_value(&read).unwrap(),

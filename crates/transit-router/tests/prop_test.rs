@@ -3,9 +3,9 @@
 //! search. The test fails when RAPTOR arrives earlier than the oracle or misses
 //! a connection that the oracle finds.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_router::{earliest_arrival, Itinerary, Leg, RouterNetwork};
 
 #[path = "prop_support.rs"]
@@ -26,8 +26,7 @@ prop_compose! {
     }
 }
 
-fn feed()
--> impl Strategy<Value = (usize, Vec<TripSpec>, usize, usize, u32)> {
+fn feed() -> impl Strategy<Value = (usize, Vec<TripSpec>, usize, usize, u32)> {
     (3usize..=8).prop_flat_map(|n_stops| {
         (
             Just(n_stops),
@@ -151,7 +150,12 @@ fn assert_itinerary_consistent(it: &Itinerary, depart: u32) {
     }
     for leg in &it.legs {
         match leg {
-            Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {
+            Leg::Walk {
+                from_stop_id,
+                to_stop_id,
+                walk_secs,
+                ..
+            } => {
                 if let Some(p) = place {
                     assert_eq!(p, from_stop_id, "walk starts where the last leg ended");
                 }
@@ -159,7 +163,13 @@ fn assert_itinerary_consistent(it: &Itinerary, depart: u32) {
                 t += walk_secs;
                 place = Some(to_stop_id);
             }
-            Leg::Transit { board_stop_id, board_secs, alight_stop_id, alight_secs, .. } => {
+            Leg::Transit {
+                board_stop_id,
+                board_secs,
+                alight_stop_id,
+                alight_secs,
+                ..
+            } => {
                 if let Some(p) = place {
                     assert_eq!(p, board_stop_id, "transit boards where the last leg ended");
                 }
@@ -175,5 +185,8 @@ fn assert_itinerary_consistent(it: &Itinerary, depart: u32) {
     if let Some(p) = place {
         assert_eq!(p, it.to_stop_id, "itinerary must end at the destination");
     }
-    assert_eq!(t, it.arrival_secs, "last leg must end at the promised arrival");
+    assert_eq!(
+        t, it.arrival_secs,
+        "last leg must end at the promised arrival"
+    );
 }

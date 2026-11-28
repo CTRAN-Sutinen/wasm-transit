@@ -16,8 +16,8 @@
 //! property test checks that the rule covers every status in
 //! `transit_requests::STATUSES`.
 
-use transit_date::Date;
 use serde::{Deserialize, Serialize};
+use transit_date::Date;
 use transit_requests::StopRequest;
 
 use crate::{EventKind, Status, Stops};
@@ -41,7 +41,14 @@ pub fn request_needs(status: &str) -> Option<Needs> {
 pub fn allows(needs: Needs, status: Status) -> bool {
     match (needs, status) {
         (Needs::AnyState, _) => true,
-        (Needs::NotRetired, Status::Planned | Status::Permitted | Status::Built | Status::InService | Status::Suspended) => true,
+        (
+            Needs::NotRetired,
+            Status::Planned
+            | Status::Permitted
+            | Status::Built
+            | Status::InService
+            | Status::Suspended,
+        ) => true,
         (Needs::NotRetired, Status::Retired) => false,
     }
 }
@@ -73,12 +80,18 @@ pub fn request_rule(stops: &Stops, id: &str, request: &StopRequest, on: Date) ->
     if allows(needs, stop.status) {
         return None;
     }
-    let retired_by_it = stops
-        .stops
-        .get(&request.stop)
-        .is_some_and(|events| events.iter().any(|e| e.event == EventKind::Retired && e.request.as_deref() == Some(id)));
+    let retired_by_it = stops.stops.get(&request.stop).is_some_and(|events| {
+        events
+            .iter()
+            .any(|e| e.event == EventKind::Retired && e.request.as_deref() == Some(id))
+    });
     if retired_by_it {
         return None;
     }
-    Some(RuleBreak { request: id.to_string(), stop: request.stop.clone(), status: stop.status, since: stop.since })
+    Some(RuleBreak {
+        request: id.to_string(),
+        stop: request.stop.clone(),
+        status: stop.status,
+        since: stop.since,
+    })
 }

@@ -21,13 +21,13 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use transit_date::Date;
 use serde::{Deserialize, Serialize};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-pub mod version;
 pub mod load;
+pub mod version;
 
 pub use version::{ALERTS_VERSION, TEMPLATES_VERSION};
 
@@ -94,13 +94,9 @@ pub struct AlertPeriod {
     pub end: Option<u64>,
 }
 
-transit_version::kind_tag!(
-    ServiceAlertsKind = "service_alerts"
-);
+transit_version::kind_tag!(ServiceAlertsKind = "service_alerts");
 
-transit_version::kind_tag!(
-    AlertTemplatesKind = "alert_templates"
-);
+transit_version::kind_tag!(AlertTemplatesKind = "alert_templates");
 
 impl transit_version::Versioned for ServiceAlerts {
     const KIND: &'static str = "service_alerts";
@@ -243,11 +239,18 @@ pub enum AlertSource {
     },
     /// A trip instance that the live feed cancels. Version 2.
     #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "trip_instance")))]
-    Trip { trip: String, date: String, start_secs: u32 },
+    Trip {
+        trip: String,
+        date: String,
+        start_secs: u32,
+    },
 }
 
 fn in_periods(periods: &[AlertPeriod], t: u64) -> bool {
-    periods.is_empty() || periods.iter().any(|p| p.start.is_none_or(|s| s <= t) && p.end.is_none_or(|e| t <= e))
+    periods.is_empty()
+        || periods
+            .iter()
+            .any(|p| p.start.is_none_or(|s| s <= t) && p.end.is_none_or(|e| t <= e))
 }
 
 impl ServiceAlert {
@@ -256,11 +259,19 @@ impl ServiceAlert {
     }
 
     pub fn ended_by(&self, t: u64) -> bool {
-        !self.communication.is_empty() && self.communication.iter().all(|p| p.end.is_some_and(|e| e < t))
+        !self.communication.is_empty()
+            && self
+                .communication
+                .iter()
+                .all(|p| p.end.is_some_and(|e| e < t))
     }
 
     fn upcoming_at(&self, t: u64) -> bool {
-        !in_periods(&self.communication, t) && self.communication.iter().any(|p| p.start.is_some_and(|s| s > t))
+        !in_periods(&self.communication, t)
+            && self
+                .communication
+                .iter()
+                .any(|p| p.start.is_some_and(|s| s > t))
     }
 }
 
@@ -279,11 +290,17 @@ impl ServiceAlerts {
             periods
                 .iter()
                 .filter(|p| p.start.is_none_or(|s| s <= at))
-                .map(|p| AlertPeriod { start: p.start, end: Some(p.end.map_or(at, |e| e.min(at))) })
+                .map(|p| AlertPeriod {
+                    start: p.start,
+                    end: Some(p.end.map_or(at, |e| e.min(at))),
+                })
                 .collect()
         };
         if a.communication.is_empty() {
-            a.communication = vec![AlertPeriod { start: None, end: Some(at) }];
+            a.communication = vec![AlertPeriod {
+                start: None,
+                end: Some(at),
+            }];
             a.impact = clip(&a.impact);
         } else {
             let communication = clip(&a.communication);
@@ -300,7 +317,11 @@ impl ServiceAlerts {
     pub fn list(&self, now: u64) -> AlertList {
         let mut list = AlertList::default();
         for (id, a) in &self.alerts {
-            let row = |open_secs| AlertRow { id: id.clone(), alert: a.clone(), open_secs };
+            let row = |open_secs| AlertRow {
+                id: id.clone(),
+                alert: a.clone(),
+                open_secs,
+            };
             match a.status {
                 AlertStatus::Draft => list.drafts.push(row(None)),
                 AlertStatus::Retired => list.ended.push(row(None)),
@@ -325,8 +346,21 @@ impl ServiceAlerts {
         let refusals: Vec<AlertRefusal> = self
             .alerts
             .iter()
-            .flat_map(|(id, a)| check(a).into_iter().map(move |problem| AlertRefusal { alert: id.clone(), problem }))
-            .chain(self.alerts.keys().filter(|k| k.trim().is_empty()).map(|_| AlertRefusal { alert: String::new(), problem: AlertProblem::NoId }))
+            .flat_map(|(id, a)| {
+                check(a).into_iter().map(move |problem| AlertRefusal {
+                    alert: id.clone(),
+                    problem,
+                })
+            })
+            .chain(
+                self.alerts
+                    .keys()
+                    .filter(|k| k.trim().is_empty())
+                    .map(|_| AlertRefusal {
+                        alert: String::new(),
+                        problem: AlertProblem::NoId,
+                    }),
+            )
             .collect();
         if refusals.is_empty() {
             Ok(self)
@@ -335,17 +369,37 @@ impl ServiceAlerts {
         }
     }
 
-    pub fn flags(&self, network: &transit_network::Network, languages: &[String]) -> Vec<AlertFlag> {
+    pub fn flags(
+        &self,
+        network: &transit_network::Network,
+        languages: &[String],
+    ) -> Vec<AlertFlag> {
         let mut out = Vec::new();
-        for (id, a) in self.alerts.iter().filter(|(_, a)| a.status != AlertStatus::Retired) {
-            let mut push = |notice| out.push(AlertFlag { alert: id.clone(), notice });
+        for (id, a) in self
+            .alerts
+            .iter()
+            .filter(|(_, a)| a.status != AlertStatus::Retired)
+        {
+            let mut push = |notice| {
+                out.push(AlertFlag {
+                    alert: id.clone(),
+                    notice,
+                })
+            };
             for e in &a.informed {
                 if let Some(r) = &e.route {
                     match network.routes.get(r) {
                         None => push(AlertNotice::UnknownRoute { route: r.clone() }),
                         Some(route) => {
-                            if let Some(d) = e.direction.as_ref().filter(|d| !route.directions.contains_key(*d)) {
-                                push(AlertNotice::UnknownDirection { route: r.clone(), direction: d.clone() });
+                            if let Some(d) = e
+                                .direction
+                                .as_ref()
+                                .filter(|d| !route.directions.contains_key(*d))
+                            {
+                                push(AlertNotice::UnknownDirection {
+                                    route: r.clone(),
+                                    direction: d.clone(),
+                                });
                             }
                         }
                     }
@@ -357,13 +411,22 @@ impl ServiceAlerts {
                     push(AlertNotice::UnknownTrip { trip: t.clone() });
                 }
             }
-            for (field, texts) in [("header", &a.header), ("description", &a.description), ("url", &a.url)] {
+            for (field, texts) in [
+                ("header", &a.header),
+                ("description", &a.description),
+                ("url", &a.url),
+            ] {
                 if field != "header" && texts.is_empty() {
                     continue;
                 }
                 for lang in languages {
-                    if !texts.iter().any(|t| t.lang.as_deref() == Some(lang.as_str()) && !t.text.trim().is_empty()) {
-                        push(AlertNotice::MissingTranslation { field: field.into(), lang: lang.clone() });
+                    if !texts.iter().any(|t| {
+                        t.lang.as_deref() == Some(lang.as_str()) && !t.text.trim().is_empty()
+                    }) {
+                        push(AlertNotice::MissingTranslation {
+                            field: field.into(),
+                            lang: lang.clone(),
+                        });
                     }
                 }
             }
@@ -421,14 +484,21 @@ impl fmt::Display for AlertRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let what = match &self.problem {
             AlertProblem::NoId => "has no id".to_string(),
-            AlertProblem::NoEntity => "is about nothing: it names no route, stop, trip, or agency".into(),
+            AlertProblem::NoEntity => {
+                "is about nothing: it names no route, stop, trip, or agency".into()
+            }
             AlertProblem::NoHeader => "has no header".into(),
             AlertProblem::EndBeforeStart => "has a period that ends before it starts".into(),
-            AlertProblem::ImpactOutsideCommunication => "has an impact period outside every communication period".into(),
+            AlertProblem::ImpactOutsideCommunication => {
+                "has an impact period outside every communication period".into()
+            }
             AlertProblem::DirectionWithoutRoute => "names a direction with no route".into(),
             AlertProblem::InstanceWithoutTrip => "names a trip date or start with no trip".into(),
             AlertProblem::BadDate { date } => format!("has {date:?}, not a YYYY-MM-DD date"),
-            AlertProblem::RepeatedLanguage { field, lang } => format!("has two {field} texts in {}", lang.as_deref().unwrap_or("the default language")),
+            AlertProblem::RepeatedLanguage { field, lang } => format!(
+                "has two {field} texts in {}",
+                lang.as_deref().unwrap_or("the default language")
+            ),
         };
         write!(f, "alert {:?} {what}", self.alert)
     }
@@ -476,7 +546,10 @@ fn repeated_languages(field: &str, texts: &[AlertText], out: &mut Vec<AlertProbl
     let mut seen = std::collections::BTreeSet::new();
     for t in texts {
         if !seen.insert(t.lang.clone()) {
-            out.push(AlertProblem::RepeatedLanguage { field: field.into(), lang: t.lang.clone() });
+            out.push(AlertProblem::RepeatedLanguage {
+                field: field.into(),
+                lang: t.lang.clone(),
+            });
         }
     }
 }
@@ -491,7 +564,11 @@ fn check(a: &ServiceAlert) -> Vec<AlertProblem> {
     }
     if a.communication.iter().chain(&a.impact).any(bad_period) {
         out.push(AlertProblem::EndBeforeStart);
-    } else if !a.communication.is_empty() && a.impact.iter().any(|i| !a.communication.iter().any(|c| inside(i, c))) {
+    } else if !a.communication.is_empty()
+        && a.impact
+            .iter()
+            .any(|i| !a.communication.iter().any(|c| inside(i, c)))
+    {
         out.push(AlertProblem::ImpactOutsideCommunication);
     }
     for e in &a.informed {
@@ -591,8 +668,14 @@ impl fmt::Display for TemplateRefusal {
             TemplateProblem::NoId => "has no id".to_string(),
             TemplateProblem::NoName => "has no name".into(),
             TemplateProblem::NoHeader => "has no header".into(),
-            TemplateProblem::UnknownBlank { blank } => format!("has the blank {{{blank}}}, which is not one of {}", BLANKS.map(|b| format!("{{{b}}}")).join(", ")),
-            TemplateProblem::RepeatedLanguage { field, lang } => format!("has two {field} texts in {}", lang.as_deref().unwrap_or("the default language")),
+            TemplateProblem::UnknownBlank { blank } => format!(
+                "has the blank {{{blank}}}, which is not one of {}",
+                BLANKS.map(|b| format!("{{{b}}}")).join(", ")
+            ),
+            TemplateProblem::RepeatedLanguage { field, lang } => format!(
+                "has two {field} texts in {}",
+                lang.as_deref().unwrap_or("the default language")
+            ),
         };
         write!(f, "template {:?} {what}", self.template)
     }
@@ -627,7 +710,13 @@ impl AlertTemplates {
             .templates
             .iter()
             .filter(|(_, t)| !t.retired)
-            .map(|(id, t)| TemplateRow { id: id.clone(), name: t.name.clone(), cause: t.cause, effect: t.effect, severity: t.severity })
+            .map(|(id, t)| TemplateRow {
+                id: id.clone(),
+                name: t.name.clone(),
+                cause: t.cause,
+                effect: t.effect,
+                severity: t.severity,
+            })
             .collect();
         rows.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
         rows
@@ -643,7 +732,12 @@ impl AlertTemplates {
     pub fn checked(self) -> Result<Self, Vec<TemplateRefusal>> {
         let mut refusals = Vec::new();
         for (id, t) in &self.templates {
-            let mut push = |problem| refusals.push(TemplateRefusal { template: id.clone(), problem });
+            let mut push = |problem| {
+                refusals.push(TemplateRefusal {
+                    template: id.clone(),
+                    problem,
+                })
+            };
             if id.trim().is_empty() {
                 push(TemplateProblem::NoId);
             }
@@ -654,17 +748,29 @@ impl AlertTemplates {
                 push(TemplateProblem::NoHeader);
             }
             let texts = t.header.iter().chain(&t.description).chain(&t.url);
-            let mut unknown: Vec<&str> = texts.flat_map(|x| blanks_in(&x.text)).filter(|b| !BLANKS.contains(b)).collect();
+            let mut unknown: Vec<&str> = texts
+                .flat_map(|x| blanks_in(&x.text))
+                .filter(|b| !BLANKS.contains(b))
+                .collect();
             unknown.dedup();
             for blank in unknown {
-                push(TemplateProblem::UnknownBlank { blank: blank.to_string() });
+                push(TemplateProblem::UnknownBlank {
+                    blank: blank.to_string(),
+                });
             }
             let mut problems = Vec::new();
-            for (field, texts) in [("header", &t.header), ("description", &t.description), ("url", &t.url)] {
+            for (field, texts) in [
+                ("header", &t.header),
+                ("description", &t.description),
+                ("url", &t.url),
+            ] {
                 let mut seen = std::collections::BTreeSet::new();
                 for x in texts {
                     if !seen.insert(x.lang.clone()) {
-                        problems.push(TemplateProblem::RepeatedLanguage { field: field.into(), lang: x.lang.clone() });
+                        problems.push(TemplateProblem::RepeatedLanguage {
+                            field: field.into(),
+                            lang: x.lang.clone(),
+                        });
                     }
                 }
             }
@@ -705,12 +811,22 @@ pub struct FillInput {
 impl FillInput {
     /// The input's stops, then the informed entities' stops, each once.
     fn stop_ids(&self) -> Vec<String> {
-        unique(self.stops.iter().cloned().chain(self.informed.iter().filter_map(|e| e.stop.clone())))
+        unique(
+            self.stops
+                .iter()
+                .cloned()
+                .chain(self.informed.iter().filter_map(|e| e.stop.clone())),
+        )
     }
 
     /// The input's routes, then the informed entities' routes, each once.
     fn route_ids(&self) -> Vec<String> {
-        unique(self.routes.iter().cloned().chain(self.informed.iter().filter_map(|e| e.route.clone())))
+        unique(
+            self.routes
+                .iter()
+                .cloned()
+                .chain(self.informed.iter().filter_map(|e| e.route.clone())),
+        )
     }
 }
 
@@ -764,8 +880,20 @@ fn english_list(items: &[String]) -> String {
 }
 
 fn english_date(d: Date) -> String {
-    const MONTHS: [&str; 12] =
-        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
     let weekday = match d.weekday() {
         transit_date::Weekday::Mon => "Monday",
         transit_date::Weekday::Tue => "Tuesday",
@@ -778,7 +906,12 @@ fn english_date(d: Date) -> String {
     format!("{weekday}, {} {}", MONTHS[d.month0() as usize], d.day())
 }
 
-fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, input: &FillInput) -> Option<String> {
+fn value(
+    blank: &str,
+    lang: Option<&str>,
+    network: &transit_network::Network,
+    input: &FillInput,
+) -> Option<String> {
     let names = |ids: &[String], name: &dyn Fn(&str) -> Option<String>| -> Option<String> {
         if ids.is_empty() || (ids.len() > 1 && !english(lang)) {
             return None;
@@ -791,15 +924,23 @@ fn value(blank: &str, lang: Option<&str>, network: &transit_network::Network, in
         english(lang).then(|| english_date(d))
     };
     match blank {
-        "stop" => names(&input.stop_ids(), &|id| network.stops.get(id).map(|s| s.name.clone())),
-        "route" => names(&input.route_ids(), &|id| network.routes.get(id).map(|r| r.label().to_string())),
+        "stop" => names(&input.stop_ids(), &|id| {
+            network.stops.get(id).map(|s| s.name.clone())
+        }),
+        "route" => names(&input.route_ids(), &|id| {
+            network.routes.get(id).map(|r| r.label().to_string())
+        }),
         "start date" => date(&input.start_date),
         "end date" => date(&input.end_date),
         _ => None,
     }
 }
 
-pub fn fill(template: &AlertTemplate, network: &transit_network::Network, input: &FillInput) -> Filled {
+pub fn fill(
+    template: &AlertTemplate,
+    network: &transit_network::Network,
+    input: &FillInput,
+) -> Filled {
     let mut unfilled = Vec::new();
     let mut texts = |field: &str, texts: &[AlertText]| -> Vec<AlertText> {
         texts
@@ -825,13 +966,28 @@ pub fn fill(template: &AlertTemplate, network: &transit_network::Network, input:
                     rest = &after[close + 1..];
                 }
                 out.push_str(rest);
-                unfilled.extend(left.into_iter().map(|blank| Unfilled { field: field.into(), lang: t.lang.clone(), blank }));
-                AlertText { lang: t.lang.clone(), text: out }
+                unfilled.extend(left.into_iter().map(|blank| Unfilled {
+                    field: field.into(),
+                    lang: t.lang.clone(),
+                    blank,
+                }));
+                AlertText {
+                    lang: t.lang.clone(),
+                    text: out,
+                }
             })
             .collect()
     };
     let header = texts("header", &template.header);
     let description = texts("description", &template.description);
     let url = texts("url", &template.url);
-    Filled { cause: template.cause, effect: template.effect, severity: template.severity, header, description, url, unfilled }
+    Filled {
+        cause: template.cause,
+        effect: template.effect,
+        severity: template.severity,
+        header,
+        description,
+        url,
+        unfilled,
+    }
 }

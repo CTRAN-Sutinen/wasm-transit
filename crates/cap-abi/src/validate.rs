@@ -29,7 +29,10 @@ pub fn validate_with_kernel(
         issues.push(AssemblyIssue {
             capability: "(manifest)".into(),
             check: "kernel".into(),
-            detail: format!("manifest kernel v{} != host kernel v{host_kernel}", manifest.kernel),
+            detail: format!(
+                "manifest kernel v{} != host kernel v{host_kernel}",
+                manifest.kernel
+            ),
         });
     }
 
@@ -98,7 +101,10 @@ pub fn validate_with_kernel(
                     issues.push(AssemblyIssue {
                         capability: cap.id.clone(),
                         check: "migrates".into(),
-                        detail: format!("{kind}: migration {} -> {} does not move forward", step.from, step.to),
+                        detail: format!(
+                            "{kind}: migration {} -> {} does not move forward",
+                            step.from, step.to
+                        ),
                     });
                 }
             }
@@ -111,7 +117,9 @@ pub fn validate_with_kernel(
                 issues.push(AssemblyIssue {
                     capability: cap.id.clone(),
                     check: "closure".into(),
-                    detail: format!("consumes {kind:?} from {producer_id:?}, which is not in the assembly"),
+                    detail: format!(
+                        "consumes {kind:?} from {producer_id:?}, which is not in the assembly"
+                    ),
                 });
                 continue;
             };
@@ -119,7 +127,9 @@ pub fn validate_with_kernel(
                 issues.push(AssemblyIssue {
                     capability: cap.id.clone(),
                     check: "producer_speaks".into(),
-                    detail: format!("{producer_id:?} produces {kind:?} but speaks no version of it"),
+                    detail: format!(
+                        "{producer_id:?} produces {kind:?} but speaks no version of it"
+                    ),
                 });
             }
         }
@@ -129,23 +139,39 @@ pub fn validate_with_kernel(
     for asm in &manifest.assemblies {
         let name = format!("(assembly {})", asm.ui);
         if !uis.insert(asm.ui.as_str()) {
-            issues.push(AssemblyIssue { capability: name.clone(), check: "unique_ids".into(), detail: "duplicate assembly".into() });
+            issues.push(AssemblyIssue {
+                capability: name.clone(),
+                check: "unique_ids".into(),
+                detail: "duplicate assembly".into(),
+            });
         }
         let hex = asm.hash.strip_prefix("sha256:").unwrap_or("");
-        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) || !asm.url.contains(hex) {
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) || !asm.url.contains(hex)
+        {
             issues.push(AssemblyIssue {
                 capability: name.clone(),
                 check: "hash_pinned_url".into(),
-                detail: format!("hash {:?} / url {:?} is not a pinned sha256", asm.hash, asm.url),
+                detail: format!(
+                    "hash {:?} / url {:?} is not a pinned sha256",
+                    asm.hash, asm.url
+                ),
             });
         }
         if asm.capabilities.is_empty() {
-            issues.push(AssemblyIssue { capability: name.clone(), check: "linked".into(), detail: "links no capability".into() });
+            issues.push(AssemblyIssue {
+                capability: name.clone(),
+                check: "linked".into(),
+                detail: "links no capability".into(),
+            });
         }
         let mut linked = BTreeSet::new();
         for id in &asm.capabilities {
             if !linked.insert(id.as_str()) {
-                issues.push(AssemblyIssue { capability: name.clone(), check: "linked".into(), detail: format!("links {id:?} twice") });
+                issues.push(AssemblyIssue {
+                    capability: name.clone(),
+                    check: "linked".into(),
+                    detail: format!("links {id:?} twice"),
+                });
             }
             let Some(cap) = by_id.get(id.as_str()) else {
                 issues.push(AssemblyIssue {
@@ -160,7 +186,9 @@ pub fn validate_with_kernel(
                     issues.push(AssemblyIssue {
                         capability: name.clone(),
                         check: "closure".into(),
-                        detail: format!("{id:?} consumes {kind:?} from {producer:?}, which is not linked"),
+                        detail: format!(
+                            "{id:?} consumes {kind:?} from {producer:?}, which is not linked"
+                        ),
                     });
                 }
             }
@@ -214,7 +242,9 @@ pub fn validate_with_kernel(
                 continue;
             };
             for other in &manifest.capabilities {
-                let Some(existing) = other.speaks.get(kind) else { continue };
+                let Some(existing) = other.speaks.get(kind) else {
+                    continue;
+                };
                 for &version in existing {
                     if accepted.contains(&version) {
                         continue;

@@ -15,18 +15,27 @@ pub type BookingRuleId = String;
 #[cfg_attr(feature = "bindings", ts(export))]
 pub struct DemandResponsive {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<LocationGroupId, LocationGroup>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<LocationGroupId, LocationGroup>>")
+    )]
     pub location_groups: BTreeMap<LocationGroupId, LocationGroup>,
     /// A GeoJSON FeatureCollection whose feature ids are the zone ids.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "bindings", ts(optional, type = "unknown"))]
     pub zones: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<BookingRuleId, BookingRule>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<BookingRuleId, BookingRule>>")
+    )]
     pub booking_rules: BTreeMap<BookingRuleId, BookingRule>,
     /// Trip ids are unique across these and the scheduled trips.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<TripId, DemandTrip>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<TripId, DemandTrip>>")
+    )]
     pub trips: BTreeMap<TripId, DemandTrip>,
     #[serde(flatten)]
     #[cfg_attr(feature = "bindings", ts(skip))]

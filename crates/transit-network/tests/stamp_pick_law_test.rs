@@ -1,7 +1,7 @@
 //! An imported feed becomes a pick. A document that already
 //! carries a plan id, or runs no service, gets no stamp.
 
-use transit_network::{apply_edits, stamp_as_pick, first_service_date, Network, NetworkEdit};
+use transit_network::{apply_edits, first_service_date, stamp_as_pick, Network, NetworkEdit};
 
 fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -13,8 +13,18 @@ fn a_feed_is_stamped_as_a_pick_on_its_first_service_date() {
     feed.plan = Default::default();
     let first = first_service_date(&feed).expect("the fixture runs service");
     let edits = stamp_as_pick(&feed, "Fall feed", "pick-1");
-    let [NetworkEdit::SetPlan { plan, through }] = edits.as_slice() else { panic!("one set_plan edit: {edits:?}") };
-    assert_eq!((plan.id.as_str(), plan.name.as_str(), plan.effective_from, through.as_deref()), ("pick-1", "Fall feed", Some(first), None));
+    let [NetworkEdit::SetPlan { plan, through }] = edits.as_slice() else {
+        panic!("one set_plan edit: {edits:?}")
+    };
+    assert_eq!(
+        (
+            plan.id.as_str(),
+            plan.name.as_str(),
+            plan.effective_from,
+            through.as_deref()
+        ),
+        ("pick-1", "Fall feed", Some(first), None)
+    );
     let stamped = apply_edits(&feed, &edits).unwrap();
     assert_eq!(stamped.plan.id, "pick-1");
 }

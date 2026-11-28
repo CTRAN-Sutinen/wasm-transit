@@ -6,7 +6,11 @@ use proptest::prelude::*;
 use transit_notes::*;
 
 fn trip(t: &str, start: u32) -> NoteTarget {
-    NoteTarget::Trip { trip: t.into(), date: "2026-11-19".into(), start_secs: start }
+    NoteTarget::Trip {
+        trip: t.into(),
+        date: "2026-11-19".into(),
+        start_secs: start,
+    }
 }
 
 fn alert(id: &str) -> NoteTarget {
@@ -14,7 +18,11 @@ fn alert(id: &str) -> NoteTarget {
 }
 
 fn problems(r: Result<Notes, Vec<NoteRefusal>>) -> Vec<NoteProblem> {
-    r.err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
+    r.err()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| r.problem)
+        .collect()
 }
 
 fn written(notes: &Notes, id: &str) -> Note {
@@ -23,53 +31,131 @@ fn written(notes: &Notes, id: &str) -> Note {
 
 #[test]
 fn a_new_note_is_stamped_with_its_writer_and_time() {
-    let notes = Notes::default().write("n1", trip("t10", 28800), "No operator.", "r.alvarez", 1_795_120_000).unwrap();
+    let notes = Notes::default()
+        .write(
+            "n1",
+            trip("t10", 28800),
+            "No operator.",
+            "r.alvarez",
+            1_795_120_000,
+        )
+        .unwrap();
     let n = written(&notes, "n1");
     assert_eq!(n.target, trip("t10", 28800));
     assert_eq!(n.text, "No operator.");
-    assert_eq!(n.written, Stamp { by: "r.alvarez".into(), at: 1_795_120_000 });
+    assert_eq!(
+        n.written,
+        Stamp {
+            by: "r.alvarez".into(),
+            at: 1_795_120_000
+        }
+    );
     assert_eq!(n.edited, None);
 }
 
 #[test]
 fn an_edit_replaces_the_text_and_keeps_who_wrote_it_first() {
-    let notes = Notes::default().write("n1", trip("t10", 28800), "No operator.", "r.alvarez", 100).unwrap();
-    let notes = notes.write("n1", trip("t10", 28800), "No operator. Next trip covered.", "k.moore", 160).unwrap();
+    let notes = Notes::default()
+        .write("n1", trip("t10", 28800), "No operator.", "r.alvarez", 100)
+        .unwrap();
+    let notes = notes
+        .write(
+            "n1",
+            trip("t10", 28800),
+            "No operator. Next trip covered.",
+            "k.moore",
+            160,
+        )
+        .unwrap();
     let n = written(&notes, "n1");
     assert_eq!(n.text, "No operator. Next trip covered.");
-    assert_eq!(n.written, Stamp { by: "r.alvarez".into(), at: 100 });
-    assert_eq!(n.edited, Some(Stamp { by: "k.moore".into(), at: 160 }));
+    assert_eq!(
+        n.written,
+        Stamp {
+            by: "r.alvarez".into(),
+            at: 100
+        }
+    );
+    assert_eq!(
+        n.edited,
+        Some(Stamp {
+            by: "k.moore".into(),
+            at: 160
+        })
+    );
 }
 
 #[test]
 fn the_same_text_written_again_changes_nothing() {
-    let notes = Notes::default().write("n1", alert("a1"), "Posted.", "j.tran", 100).unwrap();
-    let again = notes.write("n1", alert("a1"), "Posted.", "j.tran", 200).unwrap();
+    let notes = Notes::default()
+        .write("n1", alert("a1"), "Posted.", "j.tran", 100)
+        .unwrap();
+    let again = notes
+        .write("n1", alert("a1"), "Posted.", "j.tran", 200)
+        .unwrap();
     assert_eq!(again, notes);
 }
 
 #[test]
 fn a_note_keeps_its_target() {
-    let notes = Notes::default().write("n1", trip("t10", 28800), "No operator.", "r.alvarez", 100).unwrap();
-    assert_eq!(problems(notes.write("n1", trip("t20", 30000), "No operator.", "r.alvarez", 160)), vec![NoteProblem::TargetChanged]);
+    let notes = Notes::default()
+        .write("n1", trip("t10", 28800), "No operator.", "r.alvarez", 100)
+        .unwrap();
+    assert_eq!(
+        problems(notes.write("n1", trip("t20", 30000), "No operator.", "r.alvarez", 160)),
+        vec![NoteProblem::TargetChanged]
+    );
 }
 
 #[test]
 fn an_edit_is_not_earlier_than_the_note() {
-    let notes = Notes::default().write("n1", alert("a1"), "Posted.", "j.tran", 100).unwrap();
-    assert_eq!(problems(notes.write("n1", alert("a1"), "Posted at 1:40.", "j.tran", 99)), vec![NoteProblem::EditedBeforeWritten]);
+    let notes = Notes::default()
+        .write("n1", alert("a1"), "Posted.", "j.tran", 100)
+        .unwrap();
+    assert_eq!(
+        problems(notes.write("n1", alert("a1"), "Posted at 1:40.", "j.tran", 99)),
+        vec![NoteProblem::EditedBeforeWritten]
+    );
 }
 
 #[test]
 fn a_write_refuses_what_makes_a_note_wrong() {
     let empty = Notes::default();
-    assert_eq!(problems(empty.write("n1", alert("a1"), "  ", "j.tran", 1)), vec![NoteProblem::BlankText]);
-    assert_eq!(problems(empty.write("n1", alert("a1"), "Posted.", " ", 1)), vec![NoteProblem::NoWriter]);
-    assert_eq!(problems(empty.write(" ", alert("a1"), "Posted.", "j.tran", 1)), vec![NoteProblem::NoId]);
-    assert_eq!(problems(empty.write("n1", alert(""), "Posted.", "j.tran", 1)), vec![NoteProblem::NoTarget]);
-    assert_eq!(problems(empty.write("n1", NoteTarget::Stop { stop: "".into() }, "Closed.", "j.tran", 1)), vec![NoteProblem::NoTarget]);
-    let bad_date = NoteTarget::Trip { trip: "t10".into(), date: "11/19/2026".into(), start_secs: 0 };
-    assert_eq!(problems(empty.write("n1", bad_date, "Cancelled.", "j.tran", 1)), vec![NoteProblem::BadDate]);
+    assert_eq!(
+        problems(empty.write("n1", alert("a1"), "  ", "j.tran", 1)),
+        vec![NoteProblem::BlankText]
+    );
+    assert_eq!(
+        problems(empty.write("n1", alert("a1"), "Posted.", " ", 1)),
+        vec![NoteProblem::NoWriter]
+    );
+    assert_eq!(
+        problems(empty.write(" ", alert("a1"), "Posted.", "j.tran", 1)),
+        vec![NoteProblem::NoId]
+    );
+    assert_eq!(
+        problems(empty.write("n1", alert(""), "Posted.", "j.tran", 1)),
+        vec![NoteProblem::NoTarget]
+    );
+    assert_eq!(
+        problems(empty.write(
+            "n1",
+            NoteTarget::Stop { stop: "".into() },
+            "Closed.",
+            "j.tran",
+            1
+        )),
+        vec![NoteProblem::NoTarget]
+    );
+    let bad_date = NoteTarget::Trip {
+        trip: "t10".into(),
+        date: "11/19/2026".into(),
+        start_secs: 0,
+    };
+    assert_eq!(
+        problems(empty.write("n1", bad_date, "Cancelled.", "j.tran", 1)),
+        vec![NoteProblem::BadDate]
+    );
 }
 
 #[test]
@@ -80,14 +166,28 @@ fn a_target_the_network_does_not_have_is_not_refused() {
 
 #[test]
 fn checked_refuses_an_edit_earlier_than_the_note() {
-    let mut notes = Notes::default().write("n1", alert("a1"), "Posted.", "j.tran", 100).unwrap();
-    notes.notes.get_mut("n1").unwrap().edited = Some(Stamp { by: "j.tran".into(), at: 50 });
-    assert_eq!(problems(notes.checked()), vec![NoteProblem::EditedBeforeWritten]);
+    let mut notes = Notes::default()
+        .write("n1", alert("a1"), "Posted.", "j.tran", 100)
+        .unwrap();
+    notes.notes.get_mut("n1").unwrap().edited = Some(Stamp {
+        by: "j.tran".into(),
+        at: 50,
+    });
+    assert_eq!(
+        problems(notes.checked()),
+        vec![NoteProblem::EditedBeforeWritten]
+    );
 }
 
 fn sample() -> Notes {
     Notes::default()
-        .write("b", trip("t10", 28800), "Two calls from riders.", "k.moore", 200)
+        .write(
+            "b",
+            trip("t10", 28800),
+            "Two calls from riders.",
+            "k.moore",
+            200,
+        )
         .unwrap()
         .write("a", trip("t10", 28800), "No operator.", "r.alvarez", 300)
         .unwrap()
@@ -99,22 +199,48 @@ fn sample() -> Notes {
 
 #[test]
 fn a_targets_notes_are_oldest_first() {
-    let ids: Vec<String> = sample().on(&trip("t10", 28800)).into_iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec!["b", "a"], "the other instance of t10 is another target");
+    let ids: Vec<String> = sample()
+        .on(&trip("t10", 28800))
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["b", "a"],
+        "the other instance of t10 is another target"
+    );
 }
 
 #[test]
 fn a_spans_notes_are_newest_first() {
-    let ids: Vec<String> = sample().between(150, 300).into_iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec!["d", "b"], "written in [from, to): 300 is outside, 100 is before");
+    let ids: Vec<String> = sample()
+        .between(150, 300)
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["d", "b"],
+        "written in [from, to): 300 is outside, 100 is before"
+    );
 }
 
 fn any_target() -> impl Strategy<Value = NoteTarget> {
     prop_oneof![
-        (0u8..3, 0u32..3).prop_map(|(t, s)| NoteTarget::Trip { trip: format!("t{t}"), date: "2026-11-19".into(), start_secs: s * 600 }),
-        (0u8..3).prop_map(|e| NoteTarget::Edit { id: format!("e{e}") }),
-        (0u8..3).prop_map(|a| NoteTarget::Alert { id: format!("a{a}") }),
-        (0u8..3).prop_map(|s| NoteTarget::Stop { stop: format!("s{s}") }),
+        (0u8..3, 0u32..3).prop_map(|(t, s)| NoteTarget::Trip {
+            trip: format!("t{t}"),
+            date: "2026-11-19".into(),
+            start_secs: s * 600
+        }),
+        (0u8..3).prop_map(|e| NoteTarget::Edit {
+            id: format!("e{e}")
+        }),
+        (0u8..3).prop_map(|a| NoteTarget::Alert {
+            id: format!("a{a}")
+        }),
+        (0u8..3).prop_map(|s| NoteTarget::Stop {
+            stop: format!("s{s}")
+        }),
     ]
 }
 
@@ -128,7 +254,15 @@ fn run(writes: &[(u8, NoteTarget, u8, u64)]) -> Vec<Notes> {
     let mut docs = vec![Notes::default()];
     for (id, target, text, at) in writes {
         let held = docs.last().unwrap().clone();
-        let next = held.write(&format!("n{id}"), target.clone(), &format!("text {text}"), "w", *at).unwrap_or(held);
+        let next = held
+            .write(
+                &format!("n{id}"),
+                target.clone(),
+                &format!("text {text}"),
+                "w",
+                *at,
+            )
+            .unwrap_or(held);
         docs.push(next);
     }
     docs

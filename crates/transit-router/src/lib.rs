@@ -18,12 +18,12 @@ pub mod raptor;
 pub mod walk_path;
 
 pub use network::{live_times, Footpath, LiveVisit, Pattern, PatternTrip, RouterNetwork, StopNode};
-pub use walk_path::walk_path;
 pub use notice::{diverted_instances, plan_notice, DivertedTrips, NoticeKind, PlanNotice};
 pub use raptor::{
-    earliest_arrival, earliest_arrival_between, latest_departure, latest_departure_between, ArriveBy, End,
-    Itinerary, Leg, Place, PlaceWalk,
+    earliest_arrival, earliest_arrival_between, latest_departure, latest_departure_between,
+    ArriveBy, End, Itinerary, Leg, Place, PlaceWalk,
 };
+pub use walk_path::walk_path;
 
 #[derive(Debug)]
 pub enum RouterError {

@@ -1,14 +1,20 @@
 //! GTFS export and import with the stops' history. The
 //! ops are in cap-stops' OPS.md (`export_versions`, `import_events`).
 
-use transit_date::Date;
 use proptest::prelude::*;
-use transit_stops::stop_record::{feed_events, import_feed, AddedEvent, export_versions, import_events, read_records, seed};
+use transit_date::Date;
 use transit_network::{materialize, Network};
+use transit_stops::stop_record::{
+    export_versions, feed_events, import_events, import_feed, read_records, seed, AddedEvent,
+};
 use transit_stops::{Details, Event, EventKind, Stops};
 
 fn fixture() -> Network {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/public/caps/sample-network-load.json"
+    ))
+    .unwrap();
     let load: serde_json::Value = serde_json::from_str(&text).unwrap();
     serde_json::from_value(load["network"].clone()).unwrap()
 }
@@ -23,7 +29,11 @@ fn date(n: u32) -> String {
 }
 
 fn ev(kind: EventKind, on: u32) -> Event {
-    Event { on: Some(date(on)), event: kind, ..Event::default() }
+    Event {
+        on: Some(date(on)),
+        event: kind,
+        ..Event::default()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +46,8 @@ enum Change {
 
 fn arb_change() -> impl Strategy<Value = Change> {
     prop_oneof![
-        (0u32..60, -300i32..300, proptest::option::of(1u32..30)).prop_map(|(on, d, len)| Change::Move(on, d, len)),
+        (0u32..60, -300i32..300, proptest::option::of(1u32..30))
+            .prop_map(|(on, d, len)| Change::Move(on, d, len)),
         (0u32..60).prop_map(Change::Rename),
         (0u32..60, proptest::option::of(1u32..30)).prop_map(|(on, len)| Change::Suspend(on, len)),
         (0u32..60).prop_map(Change::Retire),
@@ -54,10 +65,24 @@ fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
             let e = match change {
                 Change::Move(on, d, len) => {
                     let s = &doc.stops[id][0];
-                    Event { lat: Some(s.lat.unwrap() + d as f64 * 1e-5), lon: s.lon, until: len.map(|l| date(on + l)), ..ev(EventKind::Moved, on) }
+                    Event {
+                        lat: Some(s.lat.unwrap() + d as f64 * 1e-5),
+                        lon: s.lon,
+                        until: len.map(|l| date(on + l)),
+                        ..ev(EventKind::Moved, on)
+                    }
                 }
-                Change::Rename(on) => Event { details: Details { name: Some(format!("Renamed {on}")), ..Details::default() }, ..ev(EventKind::Changed, on) },
-                Change::Suspend(on, len) => Event { until: len.map(|l| date(on + l)), ..ev(EventKind::Suspended, on) },
+                Change::Rename(on) => Event {
+                    details: Details {
+                        name: Some(format!("Renamed {on}")),
+                        ..Details::default()
+                    },
+                    ..ev(EventKind::Changed, on)
+                },
+                Change::Suspend(on, len) => Event {
+                    until: len.map(|l| date(on + l)),
+                    ..ev(EventKind::Suspended, on)
+                },
                 Change::Retire(on) => ev(EventKind::Retired, on),
             };
             let next = doc.add_event(id, e);
@@ -77,7 +102,12 @@ fn base(id: &str) -> String {
     }
 }
 
-type Row = (String, String, u32, Vec<(String, (f64, f64, String), u32, u32)>);
+type Row = (
+    String,
+    String,
+    u32,
+    Vec<(String, (f64, f64, String), u32, u32)>,
+);
 
 fn rows(net: &Network, d: Date) -> Vec<Row> {
     let mut out: Vec<Row> = materialize(net, d)
@@ -89,7 +119,12 @@ fn rows(net: &Network, d: Date) -> Vec<Row> {
                 .iter()
                 .map(|st| {
                     let s = &net.stops[&st.stop];
-                    (base(&st.stop), (s.lat, s.lon, s.name.clone()), st.arrival_secs, st.departure_secs)
+                    (
+                        base(&st.stop),
+                        (s.lat, s.lon, s.name.clone()),
+                        st.arrival_secs,
+                        st.departure_secs,
+                    )
                 })
                 .collect();
             (base(&t.trip), base(&t.pattern), t.start_secs, visits)
@@ -189,13 +224,33 @@ fn a_move_inside_the_window_is_two_rows_and_a_calendar_split() {
     let net = fixture();
     let mut stops = seed(&net);
     let b = stops.stops["B"][0].clone();
-    stops = stops.add_event("B", Event { lat: Some(b.lat.unwrap() + 0.001), lon: b.lon, ..ev(EventKind::Moved, 30) });
+    stops = stops.add_event(
+        "B",
+        Event {
+            lat: Some(b.lat.unwrap() + 0.001),
+            lon: b.lon,
+            ..ev(EventKind::Moved, 30)
+        },
+    );
     let stops = stops.checked().unwrap();
     let exported = export_versions(&net, &stops, day(0), Some(day(91)));
-    assert_eq!(exported.stops["B@2026-09-01"].lat, b.lat.unwrap(), "the earlier version under a made id");
-    assert_eq!(exported.stops["B"].lat, b.lat.unwrap() + 0.001, "the version in force on the last date keeps the id");
+    assert_eq!(
+        exported.stops["B@2026-09-01"].lat,
+        b.lat.unwrap(),
+        "the earlier version under a made id"
+    );
+    assert_eq!(
+        exported.stops["B"].lat,
+        b.lat.unwrap() + 0.001,
+        "the version in force on the last date keeps the id"
+    );
     let visits = |d: u32| -> Vec<String> {
-        materialize(&exported, day(d)).unwrap().iter().flat_map(|t| t.stop_times.iter().map(|s| s.stop.clone())).filter(|s| base(s) == "B").collect()
+        materialize(&exported, day(d))
+            .unwrap()
+            .iter()
+            .flat_map(|t| t.stop_times.iter().map(|s| s.stop.clone()))
+            .filter(|s| base(s) == "B")
+            .collect()
     };
     assert!(!visits(29).is_empty() && visits(29).iter().all(|s| s == "B@2026-09-01"));
     assert!(!visits(30).is_empty() && visits(30).iter().all(|s| s == "B"));
@@ -206,8 +261,20 @@ fn a_move_inside_the_window_is_two_rows_and_a_calendar_split() {
 #[test]
 fn a_suspension_splits_nothing() {
     let net = fixture();
-    let stops = seed(&net).add_event("B", Event { until: Some(date(40)), ..ev(EventKind::Suspended, 30) }).checked().unwrap();
-    assert_eq!(export_versions(&net, &stops, day(0), Some(day(91))), read_records(&net, &stops, day(0)));
+    let stops = seed(&net)
+        .add_event(
+            "B",
+            Event {
+                until: Some(date(40)),
+                ..ev(EventKind::Suspended, 30)
+            },
+        )
+        .checked()
+        .unwrap();
+    assert_eq!(
+        export_versions(&net, &stops, day(0), Some(day(91))),
+        read_records(&net, &stops, day(0))
+    );
 }
 
 #[test]
@@ -215,12 +282,30 @@ fn an_import_records_a_new_stop_and_names_the_ones_it_does_not_list() {
     let net = fixture();
     let mut stops = seed(&net);
     stops.stops.remove("C");
-    stops.stops.insert("Z".into(), vec![Event { lat: Some(45.0), lon: Some(-122.0), ..Event::default() }]);
+    stops.stops.insert(
+        "Z".into(),
+        vec![Event {
+            lat: Some(45.0),
+            lon: Some(-122.0),
+            ..Event::default()
+        }],
+    );
     let stops = stops.checked().unwrap();
     let imported = import_events(&stops, &net, day(5));
-    assert_eq!(imported.unlisted, vec!["Z".to_string()], "Z keeps its events; the feed does not list it");
-    let c = imported.added.iter().find(|a| a.stop == "C").expect("C is added");
-    assert_eq!((c.event.event.clone(), c.event.on.clone()), (EventKind::InService, Some(date(5))));
+    assert_eq!(
+        imported.unlisted,
+        vec!["Z".to_string()],
+        "Z keeps its events; the feed does not list it"
+    );
+    let c = imported
+        .added
+        .iter()
+        .find(|a| a.stop == "C")
+        .expect("C is added");
+    assert_eq!(
+        (c.event.event.clone(), c.event.on.clone()),
+        (EventKind::InService, Some(date(5)))
+    );
     assert_eq!(imported.stops.stops["Z"], stops.stops["Z"]);
 }
 
@@ -229,12 +314,33 @@ fn an_import_records_a_new_stop_and_names_the_ones_it_does_not_list() {
 fn unlisted_names_only_the_stops_a_feed_should_list() {
     let net = fixture();
     let mut stops = seed(&net);
-    let at = |kind: EventKind, on: u32| Event { lat: Some(45.0), lon: Some(-122.0), ..ev(kind, on) };
-    stops.stops.insert("P".into(), vec![at(EventKind::Planned, 1)]);
-    stops.stops.insert("R".into(), vec![at(EventKind::InService, 1), ev(EventKind::Retired, 3)]);
-    stops.stops.insert("S".into(), vec![at(EventKind::InService, 1), ev(EventKind::Suspended, 3)]);
-    stops.stops.insert("L".into(), vec![at(EventKind::Planned, 20)]);
-    stops.stops.insert("Z".into(), vec![Event { lat: Some(45.0), lon: Some(-122.0), ..Event::default() }]);
+    let at = |kind: EventKind, on: u32| Event {
+        lat: Some(45.0),
+        lon: Some(-122.0),
+        ..ev(kind, on)
+    };
+    stops
+        .stops
+        .insert("P".into(), vec![at(EventKind::Planned, 1)]);
+    stops.stops.insert(
+        "R".into(),
+        vec![at(EventKind::InService, 1), ev(EventKind::Retired, 3)],
+    );
+    stops.stops.insert(
+        "S".into(),
+        vec![at(EventKind::InService, 1), ev(EventKind::Suspended, 3)],
+    );
+    stops
+        .stops
+        .insert("L".into(), vec![at(EventKind::Planned, 20)]);
+    stops.stops.insert(
+        "Z".into(),
+        vec![Event {
+            lat: Some(45.0),
+            lon: Some(-122.0),
+            ..Event::default()
+        }],
+    );
     let stops = stops.checked().unwrap();
     let imported = import_events(&stops, &net, day(5));
     assert_eq!(imported.unlisted, vec!["S".to_string(), "Z".to_string()]);
@@ -252,10 +358,27 @@ fn an_import_names_its_feed_on_every_event_it_records() {
     let plain = import_events(&stops, &net, day(5));
     let named = import_feed(&stops, &net, day(5), "sha256:feed");
     assert!(!named.added.is_empty());
-    assert!(named.added.iter().all(|a| a.event.from_feed.as_deref() == Some("sha256:feed")));
-    let strip = |events: &[AddedEvent]| events.iter().map(|a| AddedEvent { event: Event { from_feed: None, ..a.event.clone() }, ..a.clone() }).collect::<Vec<_>>();
+    assert!(named
+        .added
+        .iter()
+        .all(|a| a.event.from_feed.as_deref() == Some("sha256:feed")));
+    let strip = |events: &[AddedEvent]| {
+        events
+            .iter()
+            .map(|a| AddedEvent {
+                event: Event {
+                    from_feed: None,
+                    ..a.event.clone()
+                },
+                ..a.clone()
+            })
+            .collect::<Vec<_>>()
+    };
     assert_eq!(strip(&named.added), plain.added);
-    assert_eq!((named.unlisted.clone(), named.unapplied.clone()), (plain.unlisted, plain.unapplied));
+    assert_eq!(
+        (named.unlisted.clone(), named.unapplied.clone()),
+        (plain.unlisted, plain.unapplied)
+    );
     assert_eq!(feed_events(&named.stops, "sha256:feed"), named.added);
     assert!(feed_events(&named.stops, "sha256:other").is_empty());
     assert!(feed_events(&stops, "sha256:feed").is_empty());
@@ -266,13 +389,31 @@ fn an_import_names_its_feed_on_every_event_it_records() {
 #[test]
 fn a_feed_that_lists_a_retired_stop_names_it_unapplied() {
     let net = fixture();
-    let stops = seed(&net).add_event("B", ev(EventKind::Retired, 10)).checked().unwrap();
+    let stops = seed(&net)
+        .add_event("B", ev(EventKind::Retired, 10))
+        .checked()
+        .unwrap();
     let mut feed = read_records(&net, &stops, day(0));
     let same = import_events(&stops, &feed, day(20));
-    assert_eq!((same.added.clone(), same.unapplied.clone()), (vec![], vec!["B".to_string()]), "the same point and details");
+    assert_eq!(
+        (same.added.clone(), same.unapplied.clone()),
+        (vec![], vec!["B".to_string()]),
+        "the same point and details"
+    );
     feed.stops.get_mut("B").unwrap().lat += 0.001;
     let moved = import_events(&stops, &feed, day(20));
-    assert_eq!((moved.added.iter().filter(|a| a.stop == "B").count(), moved.unapplied.clone()), (0, vec!["B".to_string()]), "another point");
+    assert_eq!(
+        (
+            moved.added.iter().filter(|a| a.stop == "B").count(),
+            moved.unapplied.clone()
+        ),
+        (0, vec!["B".to_string()]),
+        "another point"
+    );
     let before = import_events(&stops, &read_records(&net, &stops, day(0)), day(5));
-    assert!(before.unapplied.is_empty(), "before its retirement the stop is in service: {:?}", before.unapplied);
+    assert!(
+        before.unapplied.is_empty(),
+        "before its retirement the stop is in service: {:?}",
+        before.unapplied
+    );
 }

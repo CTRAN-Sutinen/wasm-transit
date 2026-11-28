@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use transit_alerts::AlertPeriod;
 use transit_codec::Boundary;
-use transit_live::{classify, AlertScope, LiveAlert, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
-use transit_alerts::{AlertPeriod};
+use transit_live::{
+    classify, AlertScope, LiveAlert, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow,
+};
 use transit_network::Network;
 
 use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};
@@ -11,8 +13,13 @@ use crate::progress::{progress_of, resolve_instance};
 /// `Ok(None)` is the current service day. `Err` means the date is unreadable,
 /// so the descriptor names no instance.
 fn service_date(start_date: Option<&str>) -> Result<Option<String>, ()> {
-    let Some(text) = start_date else { return Ok(None) };
-    transit_codec::parse_gtfs_date(text).filter(|_| text.trim() == text).map(|d| Some(d.to_string())).ok_or(())
+    let Some(text) = start_date else {
+        return Ok(None);
+    };
+    transit_codec::parse_gtfs_date(text)
+        .filter(|_| text.trim() == text)
+        .map(|d| Some(d.to_string()))
+        .ok_or(())
 }
 
 /// The headline delay that `late_trips` and `trip_progress` also rank by.
@@ -20,7 +27,12 @@ fn stated_worst(update: &TripUpdateView) -> Option<i32> {
     if update.canceled {
         return None;
     }
-    update.stop_updates.iter().filter(|s| !s.skipped).filter_map(|s| s.arrival_delay.max(s.departure_delay)).max()
+    update
+        .stop_updates
+        .iter()
+        .filter(|s| !s.skipped)
+        .filter_map(|s| s.arrival_delay.max(s.departure_delay))
+        .max()
 }
 
 pub fn live_day(
@@ -31,7 +43,12 @@ pub fn live_day(
     alerts: Option<&RtOverview>,
     window: OnTimeWindow,
 ) -> LiveDay {
-    let route_name = |route: &Option<String>| route.as_deref().and_then(|r| network.routes.get(r)).map(|r| r.label().to_string());
+    let route_name = |route: &Option<String>| {
+        route
+            .as_deref()
+            .and_then(|r| network.routes.get(r))
+            .map(|r| r.label().to_string())
+    };
     let mut trips = Vec::new();
     let mut unmatched_trips = 0u32;
     let mut worst_by_instance: HashMap<(String, Option<String>, u32), Option<i32>> = HashMap::new();
@@ -49,8 +66,14 @@ pub fn live_day(
             };
             let progress = progress_of(network, boundary, update, &instance);
             let worst = stated_worst(update);
-            let route = update.route_id.clone().or_else(|| progress.route_id.clone());
-            worst_by_instance.insert((instance.trip.clone(), date.clone(), instance.start_secs), worst);
+            let route = update
+                .route_id
+                .clone()
+                .or_else(|| progress.route_id.clone());
+            worst_by_instance.insert(
+                (instance.trip.clone(), date.clone(), instance.start_secs),
+                worst,
+            );
             trips.push(LiveTrip {
                 trip: instance.trip.clone(),
                 date,
@@ -63,7 +86,9 @@ pub fn live_day(
                 stops: progress
                     .stops
                     .into_iter()
-                    .filter(|s| s.skipped || s.arrival_delay.is_some() || s.departure_delay.is_some())
+                    .filter(|s| {
+                        s.skipped || s.arrival_delay.is_some() || s.departure_delay.is_some()
+                    })
                     .map(|s| LiveStop {
                         stop: s.stop_id,
                         scheduled_departure: s.scheduled_departure,
@@ -91,9 +116,16 @@ pub fn live_day(
                         .filter(|_| date.is_ok())
                         .and_then(|t| resolve_instance(network, t, v.start_time.as_deref()));
                     let date = date.ok().flatten();
-                    let key = instance.as_ref().map(|i| (i.trip.clone(), date.clone(), i.start_secs));
-                    let delay = key.as_ref().and_then(|k| worst_by_instance.get(k).copied().flatten());
-                    let route = v.route_id.clone().or_else(|| instance.as_ref().map(|i| i.route.clone()));
+                    let key = instance
+                        .as_ref()
+                        .map(|i| (i.trip.clone(), date.clone(), i.start_secs));
+                    let delay = key
+                        .as_ref()
+                        .and_then(|k| worst_by_instance.get(k).copied().flatten());
+                    let route = v
+                        .route_id
+                        .clone()
+                        .or_else(|| instance.as_ref().map(|i| i.route.clone()));
                     LiveVehicle {
                         key: v.vehicle_id.clone().unwrap_or_else(|| v.entity_id.clone()),
                         vehicle_id: v.vehicle_id.clone(),
@@ -116,19 +148,37 @@ pub fn live_day(
         .unwrap_or_default();
 
     let (alerts, unmatched_alerts) = live_alerts(network, [alerts, delays, positions]);
-    LiveDay { kind: Default::default(), schema_version: Default::default(), window, trips, vehicles, unmatched_trips, alerts, unmatched_alerts }
+    LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
+        window,
+        trips,
+        vehicles,
+        unmatched_trips,
+        alerts,
+        unmatched_alerts,
+    }
 }
 
-fn live_alerts<const N: usize>(network: &Network, snapshots: [Option<&RtOverview>; N]) -> (Vec<LiveAlert>, u32) {
+fn live_alerts<const N: usize>(
+    network: &Network,
+    snapshots: [Option<&RtOverview>; N],
+) -> (Vec<LiveAlert>, u32) {
     let mut seen = std::collections::HashSet::new();
     let mut alerts = Vec::new();
     let mut unmatched = 0u32;
     for snapshot in snapshots.into_iter().flatten() {
         for view in &snapshot.service_alerts {
-            if !seen.insert(view.entity_id.clone()) || !in_force(&view.communication, snapshot.timestamp) {
+            if !seen.insert(view.entity_id.clone())
+                || !in_force(&view.communication, snapshot.timestamp)
+            {
                 continue;
             }
-            let scopes: Vec<AlertScope> = view.informed.iter().flat_map(|e| resolve_scope(network, e)).collect();
+            let scopes: Vec<AlertScope> = view
+                .informed
+                .iter()
+                .flat_map(|e| resolve_scope(network, e))
+                .collect();
             if scopes.is_empty() {
                 unmatched += 1;
                 continue;
@@ -142,7 +192,9 @@ fn live_alerts<const N: usize>(network: &Network, snapshots: [Option<&RtOverview
 fn in_force(periods: &[AlertPeriod], now: Option<u64>) -> bool {
     let Some(now) = now else { return true };
     periods.is_empty()
-        || periods.iter().any(|p| p.start.is_none_or(|s| s <= now) && p.end.is_none_or(|e| now <= e))
+        || periods
+            .iter()
+            .any(|p| p.start.is_none_or(|s| s <= now) && p.end.is_none_or(|e| now <= e))
 }
 
 fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
@@ -160,8 +212,13 @@ fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
 }
 
 pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
-    if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none() {
-        return if e.agency_id.is_some() { vec![AlertScope::default()] } else { Vec::new() };
+    if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none()
+    {
+        return if e.agency_id.is_some() {
+            vec![AlertScope::default()]
+        } else {
+            Vec::new()
+        };
     }
     let stop = match &e.stop_id {
         Some(s) if network.stops.contains_key(s) => Some(s.clone()),
@@ -173,7 +230,9 @@ pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertSco
             if network.trip(t).is_none() {
                 return Vec::new();
             }
-            let Ok(date) = service_date(e.trip_start_date.as_deref()) else { return Vec::new() };
+            let Ok(date) = service_date(e.trip_start_date.as_deref()) else {
+                return Vec::new();
+            };
             let instance = resolve_instance(network, t, e.trip_start_time.as_deref());
             if e.trip_start_time.is_some() && instance.is_none() {
                 return Vec::new();
@@ -185,7 +244,11 @@ pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertSco
     let direction = match (e.direction_id, &e.route_id) {
         (None, _) => None,
         (Some(_), None) => return Vec::new(),
-        (Some(code), Some(r)) => match network.routes.get(r).and_then(|route| transit_codec::model_direction(route, code)) {
+        (Some(code), Some(r)) => match network
+            .routes
+            .get(r)
+            .and_then(|route| transit_codec::model_direction(route, code))
+        {
             Some(d) => Some(d.clone()),
             None => return Vec::new(),
         },
@@ -193,7 +256,11 @@ pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertSco
     let routes: Vec<Option<String>> = match (&e.route_id, e.route_type) {
         (None, None) => vec![None],
         (Some(r), t) => match network.routes.get(r) {
-            Some(route) if t.is_none_or(|t| transit_codec::published_route_type(route) as i32 == t) => vec![Some(r.clone())],
+            Some(route)
+                if t.is_none_or(|t| transit_codec::published_route_type(route) as i32 == t) =>
+            {
+                vec![Some(r.clone())]
+            }
             _ => return Vec::new(),
         },
         (None, Some(t)) => network
@@ -205,6 +272,13 @@ pub(crate) fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertSco
     };
     routes
         .into_iter()
-        .map(|route| AlertScope { route, direction: direction.clone(), stop: stop.clone(), trip: trip.clone(), date: date.clone(), start_secs })
+        .map(|route| AlertScope {
+            route,
+            direction: direction.clone(),
+            stop: stop.clone(),
+            trip: trip.clone(),
+            date: date.clone(),
+            start_secs,
+        })
         .collect()
 }

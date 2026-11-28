@@ -9,7 +9,9 @@
 use std::io::Write;
 
 use transit_date::Date;
-use transit_router::{earliest_arrival, plan_notice, DivertedTrips, Leg, NoticeKind, RouterNetwork};
+use transit_router::{
+    earliest_arrival, plan_notice, DivertedTrips, Leg, NoticeKind, RouterNetwork,
+};
 
 #[path = "prop_support.rs"]
 mod support;
@@ -30,16 +32,25 @@ fn fixture_zip() -> Vec<u8> {
         w.write_all(body.as_bytes()).unwrap();
     };
 
-    add(&mut w, "agency.txt",
-        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
-    add(&mut w, "routes.txt",
-        "route_id,agency_id,route_short_name,route_type\n1,1,1,3\n2,1,2,3\n");
+    add(
+        &mut w,
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
+    );
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n1,1,1,3\n2,1,2,3\n",
+    );
     add(&mut w, "stops.txt",
         "stop_id,stop_name,stop_lat,stop_lon\nA,A Stop,45.500,-122.500\nB,B Stop,45.510,-122.510\nC,C Stop,45.520,-122.520\nD,D Stop,45.5205,-122.520\n");
     add(&mut w, "calendar.txt",
         "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nALL,1,1,1,1,1,1,1,20260101,20261231\n");
-    add(&mut w, "trips.txt",
-        "route_id,service_id,trip_id\n1,ALL,t0\n1,ALL,t1\n2,ALL,t2\n");
+    add(
+        &mut w,
+        "trips.txt",
+        "route_id,service_id,trip_id\n1,ALL,t0\n1,ALL,t1\n2,ALL,t2\n",
+    );
     add(&mut w, "stop_times.txt",
         "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,08:00:00,08:00:00,A,1\nt1,08:10:00,08:10:00,B,2\nt2,08:20:00,08:20:00,B,1\nt2,08:30:00,08:30:00,C,2\nt0,09:00:00,09:00:00,A,1\nt0,09:10:00,09:10:00,C,2\n");
 
@@ -56,7 +67,13 @@ fn transfers_beat_later_direct_trips() {
     assert_eq!(it.arrival_hhmmss, "08:30:00"); // t1 + t2, not t0's 09:10
     assert_eq!(it.legs.len(), 2, "two transit legs");
     match &it.legs[0] {
-        Leg::Transit { trip, start_secs, board_stop_id, alight_stop_id, .. } => {
+        Leg::Transit {
+            trip,
+            start_secs,
+            board_stop_id,
+            alight_stop_id,
+            ..
+        } => {
             assert_eq!((trip.as_str(), *start_secs), ("t1", 8 * 3600));
             assert_eq!(board_stop_id, "A");
             assert_eq!(alight_stop_id, "B");
@@ -64,7 +81,12 @@ fn transfers_beat_later_direct_trips() {
         other => panic!("expected transit leg, got {other:?}"),
     }
     match &it.legs[1] {
-        Leg::Transit { start_secs, board_stop_id, alight_stop_id, .. } => {
+        Leg::Transit {
+            start_secs,
+            board_stop_id,
+            alight_stop_id,
+            ..
+        } => {
             assert_eq!(*start_secs, 8 * 3600 + 20 * 60);
             assert_eq!(board_stop_id, "B");
             assert_eq!(alight_stop_id, "C");
@@ -82,10 +104,18 @@ fn walking_extends_the_plan() {
 
     assert_eq!(it.legs.len(), 3);
     let walk_secs = match &it.legs[2] {
-        Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {
+        Leg::Walk {
+            from_stop_id,
+            to_stop_id,
+            walk_secs,
+            ..
+        } => {
             assert_eq!(from_stop_id, "C");
             assert_eq!(to_stop_id, "D");
-            assert!((30..90).contains(walk_secs), "implausible walk_secs {walk_secs}");
+            assert!(
+                (30..90).contains(walk_secs),
+                "implausible walk_secs {walk_secs}"
+            );
             *walk_secs
         }
         other => panic!("expected walk leg, got {other:?}"),
@@ -113,17 +143,30 @@ fn unreachable_and_trivial_queries() {
 fn a_compared_plan_tells_the_rider_what_it_cost() {
     let (network, day) = model_day(&fixture_zip(), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
-    let found = earliest_arrival(&net, "A", "B", 8 * 3600, 4).expect("query").expect("A -> B runs");
+    let found = earliest_arrival(&net, "A", "B", 8 * 3600, 4)
+        .expect("query")
+        .expect("A -> B runs");
     let none = DivertedTrips::default();
     assert_eq!(plan_notice(&network, Some(&found), None, 6, &none), None);
-    assert_eq!(plan_notice(&network, Some(&found), Some(&found), 6, &none), None);
+    assert_eq!(
+        plan_notice(&network, Some(&found), Some(&found), 6, &none),
+        None
+    );
     let lost = plan_notice(&network, None, Some(&found), 6, &none).unwrap();
     assert_eq!(lost.kind, NoticeKind::Unreachable);
     assert_eq!(lost.baseline_arrival_secs, Some(found.arrival_secs));
-    assert!(lost.text.ends_with(&format!("arrive {}.", &found.arrival_hhmmss[..5])), "{}", lost.text);
+    assert!(
+        lost.text
+            .ends_with(&format!("arrive {}.", &found.arrival_hhmmss[..5])),
+        "{}",
+        lost.text
+    );
     let nothing = plan_notice(&network, None, None, 6, &none).unwrap();
     assert_eq!(nothing.kind, NoticeKind::NoTrip);
-    assert_eq!(nothing.text, "No trip found within 6 legs — try a different time or closer stops.");
+    assert_eq!(
+        nothing.text,
+        "No trip found within 6 legs — try a different time or closer stops."
+    );
 }
 
 #[test]
@@ -134,12 +177,28 @@ fn calendar_filters_trips_from_the_network() {
         w.start_file(name, opts).unwrap();
         w.write_all(body.as_bytes()).unwrap();
     };
-    add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n1,1,1,3\n");
-    add(&mut w, "stops.txt", "stop_id,stop_name,stop_lat,stop_lon\nA,A,45.500,-122.500\nB,B,45.800,-122.500\n"); // far apart: no footpath
+    add(
+        &mut w,
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
+    );
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n1,1,1,3\n",
+    );
+    add(
+        &mut w,
+        "stops.txt",
+        "stop_id,stop_name,stop_lat,stop_lon\nA,A,45.500,-122.500\nB,B,45.800,-122.500\n",
+    ); // far apart: no footpath
     add(&mut w, "calendar.txt",
         "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nSUN,0,0,0,0,0,0,1,20260101,20261231\n");
-    add(&mut w, "trips.txt", "route_id,service_id,trip_id\n1,SUN,t1\n");
+    add(
+        &mut w,
+        "trips.txt",
+        "route_id,service_id,trip_id\n1,SUN,t1\n",
+    );
     add(&mut w, "stop_times.txt",
         "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,08:00:00,08:00:00,A,1\nt1,08:10:00,08:10:00,B,2\n");
     let bytes = w.finish().unwrap().into_inner();
@@ -148,13 +207,19 @@ fn calendar_filters_trips_from_the_network() {
         let (network, day) = model_day(&bytes, Date::from_ymd_opt(2026, 10, 23).unwrap());
         RouterNetwork::build_from_day(&network, &day, Date::from_ymd_opt(2026, 10, 23).unwrap())
     };
-    assert!(earliest_arrival(&friday, "A", "B", 0, 4).expect("q").is_none(),
-        "trip does not run on Friday");
+    assert!(
+        earliest_arrival(&friday, "A", "B", 0, 4)
+            .expect("q")
+            .is_none(),
+        "trip does not run on Friday"
+    );
 
     let sunday = {
         let (network, day) = model_day(&bytes, Date::from_ymd_opt(2026, 10, 25).unwrap());
         RouterNetwork::build_from_day(&network, &day, Date::from_ymd_opt(2026, 10, 25).unwrap())
     };
-    let it = earliest_arrival(&sunday, "A", "B", 0, 4).expect("q").expect("runs Sunday");
+    let it = earliest_arrival(&sunday, "A", "B", 0, 4)
+        .expect("q")
+        .expect("runs Sunday");
     assert_eq!(it.arrival_hhmmss, "08:10:00");
 }

@@ -9,13 +9,13 @@
 
 use std::collections::BTreeMap;
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 use transit_dispatch::{grouped_board, with_next_service, Day, NEXT_SERVICE_DAYS};
 use transit_live::{LiveDay, LiveStatus, LiveTrip, OnTimeWindow};
 use transit_network::{
-    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType, Stop,
-    StopOffset, TimingProfile, Trip, WeekdaySet,
+    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route,
+    ServiceType, Stop, StopOffset, TimingProfile, Trip, WeekdaySet,
 };
 use transit_sync::{Diversion, EditRecord, EditStatus};
 
@@ -52,18 +52,35 @@ fn gen_route() -> impl Strategy<Value = GenRoute> {
 }
 
 fn build(routes: &[GenRoute]) -> Network {
-    let plain = |name: &str| Stop { name: name.into(), lat: 45.5, lon: -122.5, ..Default::default() };
+    let plain = |name: &str| Stop {
+        name: name.into(),
+        lat: 45.5,
+        lon: -122.5,
+        ..Default::default()
+    };
     let mut stops = BTreeMap::new();
     stops.insert("A".to_string(), plain("Origin"));
     stops.insert("X".to_string(), plain("The Stop"));
     for r in 0..routes.len() {
         stops.insert(format!("T{r}"), plain(&format!("Terminal {r}")));
     }
-    let mut net = Network { name: "Next service laws".into(), stops, ..Default::default() };
+    let mut net = Network {
+        name: "Next service laws".into(),
+        stops,
+        ..Default::default()
+    };
     for (r, route) in routes.iter().enumerate() {
         let st = format!("S{r}");
         let d = route.days;
-        let days = WeekdaySet { mon: d[0], tue: d[1], wed: d[2], thu: d[3], fri: d[4], sat: d[5], sun: d[6] };
+        let days = WeekdaySet {
+            mon: d[0],
+            tue: d[1],
+            wed: d[2],
+            thu: d[3],
+            fri: d[4],
+            sat: d[5],
+            sun: d[6],
+        };
         net.service_types.insert(
             st.clone(),
             ServiceType {
@@ -72,7 +89,9 @@ fn build(routes: &[GenRoute]) -> Network {
                     days,
                     ranges: vec![DateRange {
                         start: today(),
-                        end: today().checked_add_days(Days::new(route.ends_after as i64)).unwrap(),
+                        end: today()
+                            .checked_add_days(Days::new(route.ends_after as i64))
+                            .unwrap(),
                         extra: Default::default(),
                     }],
                     exceptions: vec![],
@@ -82,7 +101,13 @@ fn build(routes: &[GenRoute]) -> Network {
             },
         );
         let rid = format!("r{r}");
-        net.routes.insert(rid.clone(), Route { name: format!("{r}"), ..Default::default() });
+        net.routes.insert(
+            rid.clone(),
+            Route {
+                name: format!("{r}"),
+                ..Default::default()
+            },
+        );
         let pid = format!("p{r}");
         let ids = ["A".to_string(), "X".to_string(), format!("T{r}")];
         let offsets = vec![0, 600, 1_200];
@@ -96,9 +121,19 @@ fn build(routes: &[GenRoute]) -> Network {
                 stops: ids
                     .iter()
                     .enumerate()
-                    .map(|(i, s)| PatternStop { stop: s.clone(), timepoint: true, distance_m: i as f64 * 1000.0, ..Default::default() })
+                    .map(|(i, s)| PatternStop {
+                        stop: s.clone(),
+                        timepoint: true,
+                        distance_m: i as f64 * 1000.0,
+                        ..Default::default()
+                    })
                     .collect(),
-                timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.clone(), extra: Default::default() }],
+                timing: vec![TimingProfile {
+                    start_secs: 0,
+                    end_secs: 172_800,
+                    at_timepoints: offsets.clone(),
+                    extra: Default::default(),
+                }],
                 extra: Default::default(),
             },
         );
@@ -113,11 +148,17 @@ fn build(routes: &[GenRoute]) -> Network {
                     .map(|&s| Trip {
                         id: format!("r{r}@{s}"),
                         departs: Departs::At { start_secs: s },
-                        times: offsets.iter().map(|&t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).collect(),
+                        times: offsets
+                            .iter()
+                            .map(|&t| StopOffset {
+                                arrival_secs: Some(t),
+                                departure_secs: Some(t),
+                            })
+                            .collect(),
                         ..Default::default()
                     })
                     .collect(),
-                    extra: Default::default(),
+                extra: Default::default(),
             },
         );
     }
@@ -165,7 +206,13 @@ fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
             continue;
         }
         let shift = k as u32 * DAY_SECS;
-        if let Some(dep) = route.starts.iter().map(|s| s + 600).filter(|dep| dep + shift >= from_secs).min() {
+        if let Some(dep) = route
+            .starts
+            .iter()
+            .map(|s| s + 600)
+            .filter(|dep| dep + shift >= from_secs)
+            .min()
+        {
             return Some((k as u32, dep));
         }
     }
@@ -174,11 +221,14 @@ fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
 
 fn all_cancelled(net: &Network, day: &Day) -> LiveDay {
     let _ = net;
-    LiveDay { kind: Default::default(), schema_version: Default::default(),
+    LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
         trips: day
             .trips
             .iter()
-            .map(|t| LiveTrip { date: None,
+            .map(|t| LiveTrip {
+                date: None,
                 trip: t.trip.clone(),
                 start_secs: t.start_secs,
                 route: None,
@@ -243,12 +293,29 @@ proptest! {
 fn a_weekday_route_stopped_on_friday_night_next_runs_monday() {
     let mut days = [false; 7];
     days[..5].fill(true);
-    let routes = vec![GenRoute { days, ends_after: 30, starts: vec![18_000, 79_200], diverted: None }];
+    let routes = vec![GenRoute {
+        days,
+        ends_after: 30,
+        starts: vec![18_000, 79_200],
+        diverted: None,
+    }];
     let net = build(&routes);
-    let day_on = |d: Date| transit_dispatch::day(&net, d, &[]).map_err(|e| e.to_string()).map(Box::new);
+    let day_on = |d: Date| {
+        transit_dispatch::day(&net, d, &[])
+            .map_err(|e| e.to_string())
+            .map(Box::new)
+    };
     let today_day = day_on(today()).unwrap();
     let mut board = grouped_board(&net, &today_day.trips, "X", 82_000, 3, None, None);
     with_next_service(&net, &mut board, "X", today(), 82_000, day_on).unwrap();
     let next = board.groups[0].next.as_ref().expect("a next");
-    assert_eq!((next.date.as_str(), next.days_ahead, next.weekday.as_str(), next.departure_secs), ("2026-10-26", 3, "Monday", 18_600));
+    assert_eq!(
+        (
+            next.date.as_str(),
+            next.days_ahead,
+            next.weekday.as_str(),
+            next.departure_secs
+        ),
+        ("2026-10-26", 3, "Monday", 18_600)
+    );
 }

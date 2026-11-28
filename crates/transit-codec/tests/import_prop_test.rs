@@ -28,19 +28,30 @@ struct GenTrip {
 
 fn gen_trip() -> impl Strategy<Value = GenTrip> {
     (
-        0u8..2, // route
-        0u8..2, // service key
-        proptest::option::of(0u8..2), // block pool of 2
-        0u16..96, // start slot
+        0u8..2,                                   // route
+        0u8..2,                                   // service key
+        proptest::option::of(0u8..2),             // block pool of 2
+        0u16..96,                                 // start slot
         proptest::collection::vec(0u8..6, 2..=4), // raw stop picks
-        1u8..30, // leg minutes
+        1u8..30,                                  // leg minutes
     )
         .prop_map(|(route, service, block, start_slot, stops, leg_min)| {
-            let mut seq: Vec<u8> = stops.into_iter().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+            let mut seq: Vec<u8> = stops
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
             if seq.len() < 2 {
                 seq = vec![0, 1];
             }
-            GenTrip { route, service, block, start_slot, stops: seq, leg_min }
+            GenTrip {
+                route,
+                service,
+                block,
+                start_slot,
+                stops: seq,
+                leg_min,
+            }
         })
 }
 
@@ -53,7 +64,10 @@ fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
         .map(|t| {
             let b = t.block?;
             let start = (t.start_slot as u32) * 600;
-            let span = (start, start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60);
+            let span = (
+                start,
+                start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60,
+            );
             let spans = taken.entry((b, t.service)).or_default();
             if spans.iter().any(|&(s, e)| span.0 <= e && s <= span.1) {
                 return None;
@@ -79,7 +93,11 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
         "agency.txt",
         "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
     );
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n",
+    );
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));

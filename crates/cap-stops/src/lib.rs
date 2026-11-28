@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-pub use transit_stops::{Answer, Event, Refusal, Status, StatusCount, StopOn, Stops};
 use transit_requests::{RequestRefusal, StopRequest, StopRequests, WorkOrder};
+pub use transit_stops::{Answer, Event, Refusal, Status, StatusCount, StopOn, Stops};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -57,7 +57,11 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         statuses: Option<Vec<Status>>,
     },
-    Stop { stops_hash: String, stop_id: String, date: String },
+    Stop {
+        stops_hash: String,
+        stop_id: String,
+        date: String,
+    },
     RequestWarnings {
         stops_hash: String,
         requests_hash: String,
@@ -66,7 +70,9 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         stop: Option<String>,
     },
-    Seed { network_hash: String },
+    Seed {
+        network_hash: String,
+    },
     AddEvent {
         stops_hash: String,
         stop_id: String,
@@ -87,29 +93,58 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         saw: Option<String>,
     },
-    LogRecords { stops_hash: String },
+    LogRecords {
+        stops_hash: String,
+    },
     Receive {
-        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"
+            )
+        )]
         write: transit_log::Write,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(type = "Record<string, string>"))]
         heads: std::collections::BTreeMap<String, String>,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ cap: string, op: string, args?: unknown }>")
+        )]
         ops: Vec<transit_log::OpCall>,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional))]
         by: Option<String>,
     },
     LogDocument {
-        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Record<string, { version: number, value: unknown }>")
+        )]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(optional, type = "{ version: number, value: unknown }")
+        )]
         document: Option<transit_log::Held>,
     },
-    ReadRecords { network_hash: String, stops_hash: String, on: String },
-    Records { stops_hash: String, stop_ids: Vec<String>, on: String },
-    TakeStops { network_hash: String, stops_hash: String, stop_ids: Vec<String>, on: String },
+    ReadRecords {
+        network_hash: String,
+        stops_hash: String,
+        on: String,
+    },
+    Records {
+        stops_hash: String,
+        stop_ids: Vec<String>,
+        on: String,
+    },
+    TakeStops {
+        network_hash: String,
+        stops_hash: String,
+        stop_ids: Vec<String>,
+        on: String,
+    },
     ReadPick {
         network_hash: String,
         stops_hash: String,
@@ -150,7 +185,10 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(optional))]
         feed: Option<String>,
     },
-    FeedEvents { stops_hash: String, feed: String },
+    FeedEvents {
+        stops_hash: String,
+        feed: String,
+    },
     Questions {},
     AttributeSurveys {
         #[serde(default)]
@@ -183,18 +221,39 @@ pub enum Response {
         #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
         unknown_fields: Vec<String>,
     },
-    StopsOn { stops: Vec<StopOn>, counts: Vec<StatusCount> },
-    StopsNear { stops: Vec<transit_stops::NearStop> },
+    StopsOn {
+        stops: Vec<StopOn>,
+        counts: Vec<StatusCount>,
+    },
+    StopsNear {
+        stops: Vec<transit_stops::NearStop>,
+    },
     Stop {
         stop: Option<StopOn>,
         events: Vec<Event>,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"retired\">"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"retired\">"
+            )
+        )]
         next: Vec<String>,
     },
-    RequestWarnings { warnings: Vec<RequestWarning> },
-    Seed { stops_hash: String, stops: Stops },
-    AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
-    Vocabulary { statuses: Vec<String> },
+    RequestWarnings {
+        warnings: Vec<RequestWarning>,
+    },
+    Seed {
+        stops_hash: String,
+        stops: Stops,
+    },
+    AddEvent {
+        refusals: Vec<Refusal>,
+        stops_hash: Option<String>,
+        stops: Option<Stops>,
+    },
+    Vocabulary {
+        statuses: Vec<String>,
+    },
     CorrectEvent {
         refusals: Vec<Refusal>,
         stops_hash: Option<String>,
@@ -204,7 +263,12 @@ pub enum Response {
         conflict: Option<String>,
     },
     LogRecords {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"
+            )
+        )]
         next: Vec<transit_log::KindRecords>,
     },
     Receive(transit_log::Received),
@@ -232,9 +296,15 @@ pub enum Response {
         #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
         network: cap_abi::Canonical<transit_network::Network>,
     },
-    Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
-    TakeStops { edits: Vec<transit_network::NetworkEdit> },
-    VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
+    Records {
+        records: std::collections::BTreeMap<String, transit_network::Stop>,
+    },
+    TakeStops {
+        edits: Vec<transit_network::NetworkEdit>,
+    },
+    VisitWarnings {
+        warnings: Vec<transit_network::NetworkWarning>,
+    },
     ExportVersions {
         network_hash: String,
         #[cfg_attr(feature = "bindings", ts(as = "transit_network::Network"))]
@@ -248,35 +318,70 @@ pub enum Response {
         unlisted: Vec<String>,
         unapplied: Vec<String>,
     },
-    Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
-    FeedEvents { events: Vec<transit_stops::stop_record::AddedEvent> },
-    AttributeSurveys { stops: Stops },
+    Questions {
+        site: Vec<SiteQuestion>,
+        amenities: Vec<String>,
+    },
+    FeedEvents {
+        events: Vec<transit_stops::stop_record::AddedEvent>,
+    },
+    AttributeSurveys {
+        stops: Stops,
+    },
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::AttributeSurveys { stops_hash, stops, by } => {
+        Request::AttributeSurveys {
+            stops_hash,
+            stops,
+            by,
+        } => {
             let stops = match stops_hash {
-                Some(h) => kind::<transit_stops::Stops>().require(&h)?.attribute_surveys(stops, &by),
+                Some(h) => kind::<transit_stops::Stops>()
+                    .require(&h)?
+                    .attribute_surveys(stops, &by),
                 None => Stops::default().attribute_surveys(stops, &by),
             };
             Ok(Response::AttributeSurveys { stops })
         }
         Request::Questions {} => Ok(Response::Questions {
-            site: transit_stops::SITE.iter().map(|(key, answer)| SiteQuestion { key: key.to_string(), answer: answer.clone() }).collect(),
-            amenities: transit_stops::AMENITIES.iter().map(|a| a.to_string()).collect(),
+            site: transit_stops::SITE
+                .iter()
+                .map(|(key, answer)| SiteQuestion {
+                    key: key.to_string(),
+                    answer: answer.clone(),
+                })
+                .collect(),
+            amenities: transit_stops::AMENITIES
+                .iter()
+                .map(|a| a.to_string())
+                .collect(),
         }),
-        Request::Validate { stops } => {
-            Ok(match stops.0.identified().checked() {
-                Ok(stops) => {
-                    let document = cap_abi::canonical_bytes(&stops)?;
-                    let document_hash = cap_abi::content_hash(document.as_bytes());
-                    Response::Validate { refusals: vec![], document: Some(document), document_hash: Some(document_hash), unknown_fields: cap_abi::request_unknown_fields() }
+        Request::Validate { stops } => Ok(match stops.0.identified().checked() {
+            Ok(stops) => {
+                let document = cap_abi::canonical_bytes(&stops)?;
+                let document_hash = cap_abi::content_hash(document.as_bytes());
+                Response::Validate {
+                    refusals: vec![],
+                    document: Some(document),
+                    document_hash: Some(document_hash),
+                    unknown_fields: cap_abi::request_unknown_fields(),
                 }
-                Err(refusals) => Response::Validate { refusals, document: None, document_hash: None, unknown_fields: cap_abi::request_unknown_fields() },
-            })
-        }
-        Request::StopsOn { stops_hash, date, stop_ids, statuses } => {
+            }
+            Err(refusals) => Response::Validate {
+                refusals,
+                document: None,
+                document_hash: None,
+                unknown_fields: cap_abi::request_unknown_fields(),
+            },
+        }),
+        Request::StopsOn {
+            stops_hash,
+            date,
+            stop_ids,
+            statuses,
+        } => {
             let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let listed = match stop_ids {
@@ -285,15 +390,28 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                     let mut ids = ids;
                     ids.sort();
                     ids.dedup();
-                    ids.iter().filter_map(|id| stops.stop_on(id, date)).collect()
+                    ids.iter()
+                        .filter_map(|id| stops.stop_on(id, date))
+                        .collect()
                 }
             };
             Ok(Response::StopsOn {
-                stops: listed.into_iter().filter(|s| statuses.as_ref().is_none_or(|w| w.contains(&s.status))).collect(),
+                stops: listed
+                    .into_iter()
+                    .filter(|s| statuses.as_ref().is_none_or(|w| w.contains(&s.status)))
+                    .collect(),
                 counts: stops.counts_on(date),
             })
         }
-        Request::StopsNear { stops_hash, date, lat, lon, limit, radius_m, statuses } => {
+        Request::StopsNear {
+            stops_hash,
+            date,
+            lat,
+            lon,
+            limit,
+            radius_m,
+            statuses,
+        } => {
             let date = transit_date::Date::read(&date)?;
             if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
                 return Err(format!("the point {lat}, {lon} is not on the earth").into());
@@ -302,9 +420,23 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 return Err("radius_m must not be negative".into());
             }
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            Ok(Response::StopsNear { stops: stops.near(date, lat, lon, limit.unwrap_or(10) as usize, radius_m, statuses.as_deref()) })
+            Ok(Response::StopsNear {
+                stops: stops.near(
+                    date,
+                    lat,
+                    lon,
+                    limit.unwrap_or(10) as usize,
+                    radius_m,
+                    statuses.as_deref(),
+                ),
+            })
         }
-        Request::RequestWarnings { stops_hash, requests_hash, date, stop } => {
+        Request::RequestWarnings {
+            stops_hash,
+            requests_hash,
+            date,
+            stop,
+        } => {
             let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let requests = kind::<transit_requests::StopRequests>().require(&requests_hash)?;
@@ -312,43 +444,102 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 .requests
                 .iter()
                 .filter(|(_, r)| stop.as_ref().is_none_or(|s| *s == r.stop))
-                .filter_map(|(id, r)| transit_stops::request_rule::request_rule(&stops, id, r, date))
-                .map(|b| RequestWarning { reason: b.reason(), request: b.request, stop: b.stop })
+                .filter_map(|(id, r)| {
+                    transit_stops::request_rule::request_rule(&stops, id, r, date)
+                })
+                .map(|b| RequestWarning {
+                    reason: b.reason(),
+                    request: b.request,
+                    stop: b.stop,
+                })
                 .collect();
             Ok(Response::RequestWarnings { warnings })
         }
-        Request::Stop { stops_hash, stop_id, date } => {
+        Request::Stop {
+            stops_hash,
+            stop_id,
+            date,
+        } => {
             let date = transit_date::Date::read(&date)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            let events = stops.stops.get(&stop_id).ok_or_else(|| format!("no stop {stop_id:?} in the stops document"))?;
-            let next = stops.next_events(&stop_id, date).iter().map(|k| k.as_str().to_string()).collect();
-            Ok(Response::Stop { stop: stops.stop_on(&stop_id, date), events: events.clone(), next })
+            let events = stops
+                .stops
+                .get(&stop_id)
+                .ok_or_else(|| format!("no stop {stop_id:?} in the stops document"))?;
+            let next = stops
+                .next_events(&stop_id, date)
+                .iter()
+                .map(|k| k.as_str().to_string())
+                .collect();
+            Ok(Response::Stop {
+                stop: stops.stop_on(&stop_id, date),
+                events: events.clone(),
+                next,
+            })
         }
         Request::Seed { network_hash } => {
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let seeded = transit_stops::stop_record::seed(&network).identified().checked().map_err(|refusals| {
-                let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
-                format!("the network's stops do not make a stops document: {}", reasons.join("; "))
-            })?;
+            let seeded = transit_stops::stop_record::seed(&network)
+                .identified()
+                .checked()
+                .map_err(|refusals| {
+                    let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+                    format!(
+                        "the network's stops do not make a stops document: {}",
+                        reasons.join("; ")
+                    )
+                })?;
             let (stops_hash, held) = kind::<transit_stops::Stops>().register(seeded)?;
-            Ok(Response::Seed { stops_hash, stops: (*held).clone() })
+            Ok(Response::Seed {
+                stops_hash,
+                stops: (*held).clone(),
+            })
         }
-        Request::Vocabulary {} => Ok(Response::Vocabulary { statuses: Status::ALL.iter().map(|s| s.as_str().to_string()).collect() }),
-        Request::AddEvent { stops_hash, stop_id, event, new } => {
+        Request::Vocabulary {} => Ok(Response::Vocabulary {
+            statuses: Status::ALL.iter().map(|s| s.as_str().to_string()).collect(),
+        }),
+        Request::AddEvent {
+            stops_hash,
+            stop_id,
+            event,
+            new,
+        } => {
             let held = kind::<transit_stops::Stops>().require_writable(&stops_hash)?;
-            if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&stop_id)).flatten() {
-                return Ok(Response::AddEvent { refusals: vec![taken], stops_hash: None, stops: None });
+            if let Some(taken) = new
+                .unwrap_or(false)
+                .then(|| held.refuse_taken(&stop_id))
+                .flatten()
+            {
+                return Ok(Response::AddEvent {
+                    refusals: vec![taken],
+                    stops_hash: None,
+                    stops: None,
+                });
             }
             let next = held.add_event(&stop_id, event);
             Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = kind::<transit_stops::Stops>().register(next)?;
-                    Response::AddEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
+                    Response::AddEvent {
+                        refusals: vec![],
+                        stops_hash: Some(stops_hash),
+                        stops: Some((*next).clone()),
+                    }
                 }
-                Err(refusals) => Response::AddEvent { refusals, stops_hash: None, stops: None },
+                Err(refusals) => Response::AddEvent {
+                    refusals,
+                    stops_hash: None,
+                    stops: None,
+                },
             })
         }
-        Request::CorrectEvent { stops_hash, stop_id, event_id, event, saw } => {
+        Request::CorrectEvent {
+            stops_hash,
+            stop_id,
+            event_id,
+            event,
+            saw,
+        } => {
             let held = kind::<transit_stops::Stops>().require_writable(&stops_hash)?;
             if let Some(saw) = saw {
                 let now = held
@@ -358,74 +549,157 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                     .map(cap_abi::canonical_hash)
                     .transpose()?;
                 if now.as_deref() != Some(saw.as_str()) {
-                    return Ok(Response::CorrectEvent { refusals: vec![], stops_hash: None, stops: None, conflict: Some(event_id) });
+                    return Ok(Response::CorrectEvent {
+                        refusals: vec![],
+                        stops_hash: None,
+                        stops: None,
+                        conflict: Some(event_id),
+                    });
                 }
             }
             let next = held
                 .correct_event_by_id(&stop_id, &event_id, event)
-                .ok_or_else(|| format!("no event {event_id:?} of stop {stop_id:?} in the stops document"))?;
+                .ok_or_else(|| {
+                    format!("no event {event_id:?} of stop {stop_id:?} in the stops document")
+                })?;
             Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = kind::<transit_stops::Stops>().register(next)?;
-                    Response::CorrectEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()), conflict: None }
+                    Response::CorrectEvent {
+                        refusals: vec![],
+                        stops_hash: Some(stops_hash),
+                        stops: Some((*next).clone()),
+                        conflict: None,
+                    }
                 }
-                Err(refusals) => Response::CorrectEvent { refusals, stops_hash: None, stops: None, conflict: None },
+                Err(refusals) => Response::CorrectEvent {
+                    refusals,
+                    stops_hash: None,
+                    stops: None,
+                    conflict: None,
+                },
             })
         }
         Request::LogRecords { stops_hash } => {
             let held = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let doc = serde_json::to_value(&*held).map_err(|e| e.to_string())?;
-            Ok(Response::LogRecords { next: transit_log::document_records(&doc, "stops", "stop", "stops", transit_stops::SCHEMA_VERSION)? })
+            Ok(Response::LogRecords {
+                next: transit_log::document_records(
+                    &doc,
+                    "stops",
+                    "stop",
+                    "stops",
+                    transit_stops::SCHEMA_VERSION,
+                )?,
+            })
         }
         Request::LogDocument { records, document } => {
             let template = serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
-            let stops: Stops = transit_log::assemble(template, document.as_ref(), "stops", &records, false)?;
+            let stops: Stops =
+                transit_log::assemble(template, document.as_ref(), "stops", &records, false)?;
             let document = cap_abi::canonical_bytes(&stops)?;
             let (document_hash, _) = kind::<transit_stops::Stops>().register(stops)?;
-            Ok(Response::LogDocument { document_hash, document })
+            Ok(Response::LogDocument {
+                document_hash,
+                document,
+            })
         }
-        Request::Receive { write, heads, ops, by } => receive(write, heads, ops, by),
-        Request::ReadRecords { network_hash, stops_hash, on } => {
+        Request::Receive {
+            write,
+            heads,
+            ops,
+            by,
+        } => receive(write, heads, ops, by),
+        Request::ReadRecords {
+            network_hash,
+            stops_hash,
+            on,
+        } => {
             let on = transit_date::Date::read(&on)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let read = transit_stops::stop_record::read_records(&network, &stops, on);
             let (network_hash, read) = kind::<transit_network::Network>().register(read)?;
-            Ok(Response::ReadRecords { network_hash, network: cap_abi::Canonical((*read).clone()) })
+            Ok(Response::ReadRecords {
+                network_hash,
+                network: cap_abi::Canonical((*read).clone()),
+            })
         }
-        Request::ReadPick { network_hash, stops_hash, published } => {
+        Request::ReadPick {
+            network_hash,
+            stops_hash,
+            published,
+        } => {
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             match transit_stops::stop_record::read_pick(&network, &stops, published.as_ref()) {
                 Some(read) => {
-                    let (network_hash, network) = kind::<transit_network::Network>().register(read.network)?;
-                    Ok(Response::ReadPick { period: Some(read.period), network_hash, network: cap_abi::Canonical((*network).clone()), warnings: read.warnings })
+                    let (network_hash, network) =
+                        kind::<transit_network::Network>().register(read.network)?;
+                    Ok(Response::ReadPick {
+                        period: Some(read.period),
+                        network_hash,
+                        network: cap_abi::Canonical((*network).clone()),
+                        warnings: read.warnings,
+                    })
                 }
-                None => Ok(Response::ReadPick { period: None, network_hash, network: cap_abi::Canonical((*network).clone()), warnings: Vec::new() }),
+                None => Ok(Response::ReadPick {
+                    period: None,
+                    network_hash,
+                    network: cap_abi::Canonical((*network).clone()),
+                    warnings: Vec::new(),
+                }),
             }
         }
-        Request::ExportPick { network_hash, stops_hash, published } => {
+        Request::ExportPick {
+            network_hash,
+            stops_hash,
+            published,
+        } => {
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            let exported = transit_stops::stop_record::export_pick(&network, &stops, published.as_ref()).unwrap_or_else(|| (*network).clone());
+            let exported =
+                transit_stops::stop_record::export_pick(&network, &stops, published.as_ref())
+                    .unwrap_or_else(|| (*network).clone());
             let (network_hash, exported) = kind::<transit_network::Network>().register(exported)?;
-            Ok(Response::ExportPick { network_hash, network: cap_abi::Canonical((*exported).clone()) })
+            Ok(Response::ExportPick {
+                network_hash,
+                network: cap_abi::Canonical((*exported).clone()),
+            })
         }
-        Request::Records { stops_hash, stop_ids, on } => {
+        Request::Records {
+            stops_hash,
+            stop_ids,
+            on,
+        } => {
             let on = transit_date::Date::read(&on)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            Ok(Response::Records { records: transit_stops::stop_record::records(&stops, &stop_ids, on) })
+            Ok(Response::Records {
+                records: transit_stops::stop_record::records(&stops, &stop_ids, on),
+            })
         }
-        Request::TakeStops { network_hash, stops_hash, stop_ids, on } => {
+        Request::TakeStops {
+            network_hash,
+            stops_hash,
+            stop_ids,
+            on,
+        } => {
             let on = transit_date::Date::read(&on)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             match transit_stops::stop_record::take_stops(&network, &stops, &stop_ids, on) {
                 Ok(edits) => Ok(Response::TakeStops { edits }),
-                Err(missing) => Err(format!("not in the stops record on {on}: {}", missing.join(", ")).into()),
+                Err(missing) => {
+                    Err(format!("not in the stops record on {on}: {}", missing.join(", ")).into())
+                }
             }
         }
-        Request::VisitWarnings { network_hash, stops_hash, from, until } => {
+        Request::VisitWarnings {
+            network_hash,
+            stops_hash,
+            from,
+            until,
+        } => {
             let from = transit_date::Date::read(&from)?;
             let until = until.as_deref().map(transit_date::Date::read).transpose()?;
             if until.is_some_and(|u| u <= from) {
@@ -433,9 +707,16 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             }
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            Ok(Response::VisitWarnings { warnings: transit_stops::stop_record::visit_warnings(&network, &stops, from, until) })
+            Ok(Response::VisitWarnings {
+                warnings: transit_stops::stop_record::visit_warnings(&network, &stops, from, until),
+            })
         }
-        Request::ExportVersions { network_hash, stops_hash, from, until } => {
+        Request::ExportVersions {
+            network_hash,
+            stops_hash,
+            from,
+            until,
+        } => {
             let from = transit_date::Date::read(&from)?;
             let until = until.as_deref().map(transit_date::Date::read).transpose()?;
             if until.is_some_and(|u| u <= from) {
@@ -443,19 +724,32 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
             }
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            let exported = transit_stops::stop_record::export_versions(&network, &stops, from, until);
+            let exported =
+                transit_stops::stop_record::export_versions(&network, &stops, from, until);
             let (network_hash, exported) = kind::<transit_network::Network>().register(exported)?;
-            Ok(Response::ExportVersions { network_hash, network: cap_abi::Canonical((*exported).clone()) })
+            Ok(Response::ExportVersions {
+                network_hash,
+                network: cap_abi::Canonical((*exported).clone()),
+            })
         }
         Request::FeedEvents { stops_hash, feed } => {
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
-            Ok(Response::FeedEvents { events: transit_stops::stop_record::feed_events(&stops, &feed) })
+            Ok(Response::FeedEvents {
+                events: transit_stops::stop_record::feed_events(&stops, &feed),
+            })
         }
-        Request::ImportEvents { stops_hash, network_hash, on, feed } => {
+        Request::ImportEvents {
+            stops_hash,
+            network_hash,
+            on,
+            feed,
+        } => {
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let on = match on {
                 Some(on) => transit_date::Date::read(&on)?,
-                None => transit_network::first_service_date(&network).ok_or("the feed runs no service, so it has no first service date: name `on`")?,
+                None => transit_network::first_service_date(&network).ok_or(
+                    "the feed runs no service, so it has no first service date: name `on`",
+                )?,
             };
             let stops = kind::<transit_stops::Stops>().require(&stops_hash)?;
             let imported = match feed {
@@ -548,18 +842,60 @@ fn to_value<T: Serialize>(v: &T) -> Result<serde_json::Value, String> {
 const STOPS_LOG_OPS: &str = "stops: add_event, correct_event, validate, import_events, migrate; requests: put, record_work_order, validate, migrate";
 
 /// None when the op ran. Otherwise the answer that ends the write.
-fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
-    let refused = |refusals: &[Refusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
-    let held = || heads.stops.clone().ok_or_else(|| "no stops document yet".to_string());
+fn step_stops(
+    heads: &mut Heads,
+    intent: StopsIntent,
+    op: usize,
+) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
+    let refused = |refusals: &[Refusal]| {
+        Ok(Some(transit_log::Received::refused(
+            op,
+            to_value(&refusals)?,
+        )))
+    };
+    let held = || {
+        heads
+            .stops
+            .clone()
+            .ok_or_else(|| "no stops document yet".to_string())
+    };
     match intent {
-        StopsIntent::AddEvent { stop_id, event, new } => match dispatch(Request::AddEvent { stops_hash: held()?, stop_id, event, new })? {
-            Response::AddEvent { stops_hash: Some(h), .. } => (heads.stops, heads.wrote_stops) = (Some(h), Some(op)),
+        StopsIntent::AddEvent {
+            stop_id,
+            event,
+            new,
+        } => match dispatch(Request::AddEvent {
+            stops_hash: held()?,
+            stop_id,
+            event,
+            new,
+        })? {
+            Response::AddEvent {
+                stops_hash: Some(h),
+                ..
+            } => (heads.stops, heads.wrote_stops) = (Some(h), Some(op)),
             Response::AddEvent { refusals, .. } => return refused(&refusals),
             _ => unreachable!("add_event answers add_event"),
         },
-        StopsIntent::CorrectEvent { stop_id, event_id, event, saw } => match dispatch(Request::CorrectEvent { stops_hash: held()?, stop_id, event_id, event, saw })? {
-            Response::CorrectEvent { conflict: Some(id), .. } => return Ok(Some(transit_log::Received::conflict(op, id))),
-            Response::CorrectEvent { stops_hash: Some(h), .. } => (heads.stops, heads.wrote_stops) = (Some(h), Some(op)),
+        StopsIntent::CorrectEvent {
+            stop_id,
+            event_id,
+            event,
+            saw,
+        } => match dispatch(Request::CorrectEvent {
+            stops_hash: held()?,
+            stop_id,
+            event_id,
+            event,
+            saw,
+        })? {
+            Response::CorrectEvent {
+                conflict: Some(id), ..
+            } => return Ok(Some(transit_log::Received::conflict(op, id))),
+            Response::CorrectEvent {
+                stops_hash: Some(h),
+                ..
+            } => (heads.stops, heads.wrote_stops) = (Some(h), Some(op)),
             Response::CorrectEvent { refusals, .. } => return refused(&refusals),
             _ => unreachable!("correct_event answers correct_event"),
         },
@@ -568,14 +904,30 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
                 return Ok(Some(transit_log::Received::moved(heads.stops.clone())));
             }
             let (doc, unknown) = cap_abi::read_base::<Stops>(stops)?;
-            (heads.stops, heads.wrote_stops) = (Some(kind::<transit_stops::Stops>().register(doc)?.0), Some(op));
+            (heads.stops, heads.wrote_stops) = (
+                Some(kind::<transit_stops::Stops>().register(doc)?.0),
+                Some(op),
+            );
             heads.unknown_fields.extend(unknown);
         }
-        StopsIntent::ImportEvents { network_hash, on, feed } => {
-            let Some(stops_hash) = heads.stops.clone() else { return Ok(None) };
-            match dispatch(Request::ImportEvents { stops_hash, network_hash, on, feed })? {
+        StopsIntent::ImportEvents {
+            network_hash,
+            on,
+            feed,
+        } => {
+            let Some(stops_hash) = heads.stops.clone() else {
+                return Ok(None);
+            };
+            match dispatch(Request::ImportEvents {
+                stops_hash,
+                network_hash,
+                on,
+                feed,
+            })? {
                 Response::ImportEvents { added, .. } if added.is_empty() => {}
-                Response::ImportEvents { stops_hash, .. } => (heads.stops, heads.wrote_stops) = (Some(stops_hash), Some(op)),
+                Response::ImportEvents { stops_hash, .. } => {
+                    (heads.stops, heads.wrote_stops) = (Some(stops_hash), Some(op))
+                }
                 _ => unreachable!("import_events answers import_events"),
             }
         }
@@ -585,8 +937,17 @@ fn step_stops(heads: &mut Heads, intent: StopsIntent, op: usize) -> Result<Optio
     Ok(None)
 }
 
-fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
-    let refused = |refusals: &[RequestRefusal]| Ok(Some(transit_log::Received::refused(op, to_value(&refusals)?)));
+fn step_requests(
+    heads: &mut Heads,
+    intent: RequestsIntent,
+    op: usize,
+) -> Result<Option<transit_log::Received>, cap_abi::Refusal> {
+    let refused = |refusals: &[RequestRefusal]| {
+        Ok(Some(transit_log::Received::refused(
+            op,
+            to_value(&refusals)?,
+        )))
+    };
     let held = |hash: &Option<String>| -> Result<StopRequests, cap_abi::Refusal> {
         Ok(match hash {
             Some(h) => (*kind::<transit_requests::StopRequests>().require_writable(h)?).clone(),
@@ -596,24 +957,36 @@ fn step_requests(heads: &mut Heads, intent: RequestsIntent, op: usize) -> Result
     let next = match intent {
         RequestsIntent::Put { id, request, new } => {
             let held = held(&heads.requests)?;
-            if let Some(taken) = new.unwrap_or(false).then(|| held.refuse_taken(&id)).flatten() {
+            if let Some(taken) = new
+                .unwrap_or(false)
+                .then(|| held.refuse_taken(&id))
+                .flatten()
+            {
                 return refused(&[taken]);
             }
             held.put(&id, request)
         }
-        RequestsIntent::RecordWorkOrder { id, work_order } => held(&heads.requests)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?,
+        RequestsIntent::RecordWorkOrder { id, work_order } => held(&heads.requests)?
+            .record_work_order(&id, work_order)
+            .ok_or_else(|| format!("no request {id:?} in the document"))?,
         RequestsIntent::Validate { requests, from } => {
             if from != heads.requests.clone().unwrap_or_default() {
                 return Ok(Some(transit_log::Received::moved(heads.requests.clone())));
             }
-            let (doc, unknown) = cap_abi::read_base::<StopRequests>(transit_requests::version::forward(requests)?)?;
+            let (doc, unknown) =
+                cap_abi::read_base::<StopRequests>(transit_requests::version::forward(requests)?)?;
             heads.unknown_fields.extend(unknown);
             doc
         }
         RequestsIntent::Migrate {} => return Ok(migrate(heads, op)),
     };
     match next.checked() {
-        Ok(next) => (heads.requests, heads.wrote_requests) = (Some(kind::<transit_requests::StopRequests>().register(next)?.0), Some(op)),
+        Ok(next) => {
+            (heads.requests, heads.wrote_requests) = (
+                Some(kind::<transit_requests::StopRequests>().register(next)?.0),
+                Some(op),
+            )
+        }
         Err(refusals) => return refused(&refusals),
     }
     Ok(None)
@@ -625,18 +998,38 @@ fn migrate(heads: &mut Heads, op: usize) -> Option<transit_log::Received> {
     None
 }
 
-fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, String>, ops: Vec<transit_log::OpCall>, by: Option<String>) -> Result<Response, cap_abi::Refusal> {
+fn receive(
+    write: transit_log::Write,
+    given: std::collections::BTreeMap<String, String>,
+    ops: Vec<transit_log::OpCall>,
+    by: Option<String>,
+) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
     }
     let stops = given.get("stops").cloned();
-    let mut heads = Heads { held_stops: stops.clone(), stops, requests: given.get("stop_requests").cloned(), ..Default::default() };
+    let mut heads = Heads {
+        held_stops: stops.clone(),
+        stops,
+        requests: given.get("stop_requests").cloned(),
+        ..Default::default()
+    };
     for (i, call) in ops.iter().enumerate() {
         let stepped = match call.cap.as_str() {
-            "stops" => call.request::<StopsIntent>().map_err(Into::into).and_then(|intent| step_stops(&mut heads, intent, i)),
-            "requests" => call.request::<RequestsIntent>().map_err(Into::into).and_then(|intent| step_requests(&mut heads, intent, i)),
-            _ => Err(format!("{} {} is not a write to the stops log ({STOPS_LOG_OPS})", call.cap, call.op).into()),
+            "stops" => call
+                .request::<StopsIntent>()
+                .map_err(Into::into)
+                .and_then(|intent| step_stops(&mut heads, intent, i)),
+            "requests" => call
+                .request::<RequestsIntent>()
+                .map_err(Into::into)
+                .and_then(|intent| step_requests(&mut heads, intent, i)),
+            _ => Err(format!(
+                "{} {} is not a write to the stops log ({STOPS_LOG_OPS})",
+                call.cap, call.op
+            )
+            .into()),
         };
         match stepped {
             Ok(None) => {}
@@ -646,8 +1039,14 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
     }
     let mut next = Vec::new();
     let mut written = std::collections::BTreeMap::new();
-    if let (Some(_), Some(now), false) = (heads.wrote_stops, heads.stops.clone(), heads.check_stops) {
-        let Response::LogRecords { next: records } = dispatch(Request::LogRecords { stops_hash: now.clone() })? else { unreachable!("log_records answers log_records") };
+    if let (Some(_), Some(now), false) = (heads.wrote_stops, heads.stops.clone(), heads.check_stops)
+    {
+        let Response::LogRecords { next: records } = dispatch(Request::LogRecords {
+            stops_hash: now.clone(),
+        })?
+        else {
+            unreachable!("log_records answers log_records")
+        };
         next.extend(records);
         written.insert("stops".to_string(), now);
     } else if let (Some(op), Some(now)) = (heads.wrote_stops, heads.stops.clone()) {
@@ -655,28 +1054,57 @@ fn receive(write: transit_log::Write, given: std::collections::BTreeMap<String, 
         let by = by.as_deref().unwrap_or(&write.header.writer);
         let now = (*kind::<transit_stops::Stops>().require(&now)?).clone();
         let attributed = match &heads.held_stops {
-            Some(h) => kind::<transit_stops::Stops>().require(h)?.attribute_surveys(now, by),
+            Some(h) => kind::<transit_stops::Stops>()
+                .require(h)?
+                .attribute_surveys(now, by),
             None => Stops::default().attribute_surveys(now, by),
         };
         let checked = match attributed.identified().checked() {
             Ok(checked) => kind::<transit_stops::Stops>().register(checked)?.0,
-            Err(refusals) => return answer(transit_log::Received::refused(op, to_value(&refusals)?)),
+            Err(refusals) => {
+                return answer(transit_log::Received::refused(op, to_value(&refusals)?))
+            }
         };
-        let Response::LogRecords { next: records } = dispatch(Request::LogRecords { stops_hash: checked.clone() })? else { unreachable!("log_records answers log_records") };
+        let Response::LogRecords { next: records } = dispatch(Request::LogRecords {
+            stops_hash: checked.clone(),
+        })?
+        else {
+            unreachable!("log_records answers log_records")
+        };
         next.extend(records);
         written.insert("stops".to_string(), checked);
     }
     if let (Some(_), Some(now)) = (heads.wrote_requests, heads.requests.clone()) {
         let doc = to_value(&*kind::<transit_requests::StopRequests>().require(&now)?)?;
-        next.extend(transit_log::document_records(&doc, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION)?);
+        next.extend(transit_log::document_records(
+            &doc,
+            "requests",
+            "stop_request",
+            "stop_requests",
+            transit_requests::SCHEMA_VERSION,
+        )?);
         written.insert("stop_requests".to_string(), now);
     }
-    let after_stops = written.get("stops").cloned().or_else(|| heads.stops.clone());
-    let rules = judge_requests(&write, given.get("stops"), given.get("stop_requests"), after_stops.as_ref(), heads.requests.as_ref())?;
+    let after_stops = written
+        .get("stops")
+        .cloned()
+        .or_else(|| heads.stops.clone());
+    let rules = judge_requests(
+        &write,
+        given.get("stops"),
+        given.get("stop_requests"),
+        after_stops.as_ref(),
+        heads.requests.as_ref(),
+    )?;
     if !rules.refused.is_empty() {
-        return answer(transit_log::Received { broken: rules.refused, ..Default::default() });
+        return answer(transit_log::Received {
+            broken: rules.refused,
+            ..Default::default()
+        });
     }
-    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| {
+        cap_abi::canonical_bytes(e)
+    })?;
     if received.entry.is_some() {
         received.references.extend(rules.warned);
         received.references.sort();
@@ -705,10 +1133,22 @@ fn judge_requests(
 ) -> Result<Judged, cap_abi::Refusal> {
     use transit_stops::request_rule::{request_rule, RuleBreak};
     let mut out = Judged::default();
-    let (Some(on), Some(requests_after)) = (write.today.as_deref().and_then(|d| transit_date::Date::read(d).ok()), requests_after) else { return Ok(out) };
+    let (Some(on), Some(requests_after)) = (
+        write
+            .today
+            .as_deref()
+            .and_then(|d| transit_date::Date::read(d).ok()),
+        requests_after,
+    ) else {
+        return Ok(out);
+    };
     let requests_after = kind::<transit_requests::StopRequests>().require(requests_after)?;
-    let requests_before = requests_before.map(|h| kind::<transit_requests::StopRequests>().require(h)).transpose()?;
-    let stops_before = stops_before.map(|h| kind::<transit_stops::Stops>().require(h)).transpose()?;
+    let requests_before = requests_before
+        .map(|h| kind::<transit_requests::StopRequests>().require(h))
+        .transpose()?;
+    let stops_before = stops_before
+        .map(|h| kind::<transit_stops::Stops>().require(h))
+        .transpose()?;
     let stops_after = match stops_after {
         Some(h) => Some(kind::<transit_stops::Stops>().require(h)?),
         None => stops_before.clone(),
@@ -716,9 +1156,18 @@ fn judge_requests(
     let empty = Stops::default();
     let before = stops_before.as_deref().unwrap_or(&empty);
     let after = stops_after.as_deref().unwrap_or(&empty);
-    let changed_stops: std::collections::BTreeSet<&String> = after.stops.iter().filter(|(id, events)| before.stops.get(*id) != Some(events)).map(|(id, _)| id).collect();
+    let changed_stops: std::collections::BTreeSet<&String> = after
+        .stops
+        .iter()
+        .filter(|(id, events)| before.stops.get(*id) != Some(events))
+        .map(|(id, _)| id)
+        .collect();
     let held = |id: &str| requests_before.as_ref().and_then(|b| b.requests.get(id));
-    let changed: Vec<(&String, &StopRequest)> = requests_after.requests.iter().filter(|(id, r)| held(id) != Some(*r)).collect();
+    let changed: Vec<(&String, &StopRequest)> = requests_after
+        .requests
+        .iter()
+        .filter(|(id, r)| held(id) != Some(*r))
+        .collect();
     let broken = |b: RuleBreak, entry: Option<transit_log::EntryRef>| transit_log::Broken {
         log: "stops".into(),
         kind: "stop_request".into(),
@@ -729,7 +1178,12 @@ fn judge_requests(
         entry,
         rule: Some(b.reason()),
     };
-    if let Some(mut seen) = write.read.as_ref().and_then(|r| r.get("stops")).and_then(stops_of) {
+    if let Some(mut seen) = write
+        .read
+        .as_ref()
+        .and_then(|r| r.get("stops"))
+        .and_then(stops_of)
+    {
         for id in &changed_stops {
             seen.stops.insert((*id).clone(), after.stops[*id].clone());
         }
@@ -741,7 +1195,10 @@ fn judge_requests(
             }
         }
     }
-    let entry = transit_log::EntryRef { log: write.header.log.clone(), seq: write.header.seq };
+    let entry = transit_log::EntryRef {
+        log: write.header.log.clone(),
+        seq: write.header.seq,
+    };
     for (id, r) in &requests_after.requests {
         if changed.iter().any(|(c, _)| *c == id) || changed_stops.contains(&r.stop) {
             if let Some(b) = request_rule(after, id, r, on) {
@@ -756,8 +1213,12 @@ fn judge_requests(
 /// check that cannot judge refuses nothing.
 fn stops_of(records: &transit_log::Records) -> Option<Stops> {
     let stops = records.get("stop").cloned().unwrap_or_default();
-    let own = records.get("stops").and_then(|m| m.get("document")).cloned();
-    let template = serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
+    let own = records
+        .get("stops")
+        .and_then(|m| m.get("document"))
+        .cloned();
+    let template =
+        serde_json::json!({"kind": "stops", "schema_version": transit_stops::SCHEMA_VERSION});
     transit_log::assemble(template, own.as_ref(), "stops", &stops, false).ok()
 }
 

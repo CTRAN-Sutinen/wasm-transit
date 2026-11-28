@@ -3,12 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::Date;
 use crate::{Details, Event, EventKind, Status, StopOn, Stops};
+use transit_date::Date;
 
+use serde::Serialize;
 use transit_network::model::{Block, CalendarRule, DateRange, Layover, TripRef};
 use transit_network::places::{StopInfo, StopKind};
-use serde::Serialize;
 use transit_network::{Network, NetworkEdit, NetworkWarning, Stop};
 use transit_plans::{PlanInfo, PublishedPlans};
 #[cfg(feature = "bindings")]
@@ -17,8 +17,15 @@ use ts_rs::TS;
 /// The `in_service` event has no date, because no feed records when a stop
 /// went into service.
 pub fn seed(network: &Network) -> Stops {
-    let stops = network.stops.iter().map(|(id, stop)| (id.clone(), vec![opening(stop)])).collect();
-    Stops { stops, ..Stops::default() }
+    let stops = network
+        .stops
+        .iter()
+        .map(|(id, stop)| (id.clone(), vec![opening(stop)]))
+        .collect();
+    Stops {
+        stops,
+        ..Stops::default()
+    }
 }
 
 fn opening(stop: &Stop) -> Event {
@@ -62,21 +69,42 @@ pub fn read_records(network: &Network, stops: &Stops, on: Date) -> Network {
 
 /// A plan takes a stop from these records.
 pub fn records(stops: &Stops, ids: &[String], on: Date) -> BTreeMap<String, Stop> {
-    ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
+    ids.iter()
+        .filter_map(|id| {
+            stops
+                .stop_on(id, on)
+                .map(|found| (id.clone(), record(&found)))
+        })
+        .collect()
 }
 
-pub fn take_stops(network: &Network, stops: &Stops, ids: &[String], on: Date) -> Result<Vec<NetworkEdit>, Vec<String>> {
+pub fn take_stops(
+    network: &Network,
+    stops: &Stops,
+    ids: &[String],
+    on: Date,
+) -> Result<Vec<NetworkEdit>, Vec<String>> {
     let mut seen = std::collections::BTreeSet::new();
-    let wanted: Vec<&String> = ids.iter().filter(|id| !network.stops.contains_key(*id) && seen.insert(*id)).collect();
+    let wanted: Vec<&String> = ids
+        .iter()
+        .filter(|id| !network.stops.contains_key(*id) && seen.insert(*id))
+        .collect();
     let mut edits = Vec::new();
     let mut missing = Vec::new();
     for id in wanted {
         match stops.stop_on(id, on) {
-            Some(found) => edits.push(NetworkEdit::UpsertStop { id: id.clone(), stop: record(&found) }),
+            Some(found) => edits.push(NetworkEdit::UpsertStop {
+                id: id.clone(),
+                stop: record(&found),
+            }),
             None => missing.push(id.clone()),
         }
     }
-    if missing.is_empty() { Ok(edits) } else { Err(missing) }
+    if missing.is_empty() {
+        Ok(edits)
+    } else {
+        Err(missing)
+    }
 }
 
 /// Amenities, the site survey, and references stay in the stops document.
@@ -113,15 +141,30 @@ fn parse(s: &str) -> Option<Date> {
     Date::parse(s).ok()
 }
 
-pub fn visit_warnings(network: &Network, stops: &Stops, from: Date, until: Option<Date>) -> Vec<NetworkWarning> {
-    let visited: BTreeSet<&str> = network.patterns.values().flat_map(|p| p.stops.iter().map(|s| s.stop.as_str())).collect();
+pub fn visit_warnings(
+    network: &Network,
+    stops: &Stops,
+    from: Date,
+    until: Option<Date>,
+) -> Vec<NetworkWarning> {
+    let visited: BTreeSet<&str> = network
+        .patterns
+        .values()
+        .flat_map(|p| p.stops.iter().map(|s| s.stop.as_str()))
+        .collect();
     let fmt = |d: Date| d.to_string();
     let mut out = Vec::new();
     for id in visited {
-        let Some(events) = stops.stops.get(id) else { continue };
+        let Some(events) = stops.stops.get(id) else {
+            continue;
+        };
         let mut days: BTreeSet<Date> = BTreeSet::from([from]);
         for e in events {
-            for d in [e.on.as_deref(), e.until.as_deref()].into_iter().flatten().filter_map(parse) {
+            for d in [e.on.as_deref(), e.until.as_deref()]
+                .into_iter()
+                .flatten()
+                .filter_map(parse)
+            {
                 if d > from && until.is_none_or(|u| d < u) {
                     days.insert(d);
                 }
@@ -131,7 +174,12 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: Date, until: Optio
         let mut open: Option<(Option<Status>, Date)> = None;
         let mut close = |open: &mut Option<(Option<Status>, Date)>, end: Option<Date>| {
             if let Some((status, start)) = open.take() {
-                out.push(NetworkWarning::StopNotInService { stop: id.to_string(), status: status.map(|s| s.as_str().to_string()), from: fmt(start), until: end.map(fmt) });
+                out.push(NetworkWarning::StopNotInService {
+                    stop: id.to_string(),
+                    status: status.map(|s| s.as_str().to_string()),
+                    from: fmt(start),
+                    until: end.map(fmt),
+                });
             }
         };
         for (i, &d) in days.iter().enumerate() {
@@ -143,7 +191,9 @@ pub fn visit_warnings(network: &Network, stops: &Stops, from: Date, until: Optio
                     Status::Suspended => {
                         let back = s.until.as_deref().and_then(parse);
                         let since = s.since.as_deref().and_then(parse);
-                        back.is_none() || (since.is_none_or(|x| x <= from) && until.is_some_and(|u| back.is_some_and(|b| b >= u)))
+                        back.is_none()
+                            || (since.is_none_or(|x| x <= from)
+                                && until.is_some_and(|u| back.is_some_and(|b| b >= u)))
                     }
                     _ => true,
                 },
@@ -175,14 +225,25 @@ fn made_base(id: &str) -> Option<(&str, Date)> {
     Some((head, parse(tail)?))
 }
 
-pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Option<Date>) -> Network {
+pub fn export_versions(
+    network: &Network,
+    stops: &Stops,
+    from: Date,
+    until: Option<Date>,
+) -> Network {
     let mut out = read_records(network, stops, from);
     let mut versions: BTreeMap<String, Vec<(Date, Stop)>> = BTreeMap::new();
     for (id, own) in &network.stops {
-        let Some(events) = stops.stops.get(id) else { continue };
+        let Some(events) = stops.stops.get(id) else {
+            continue;
+        };
         let mut days: BTreeSet<Date> = BTreeSet::from([from]);
         for e in events {
-            for d in [e.on.as_deref(), e.until.as_deref()].into_iter().flatten().filter_map(parse) {
+            for d in [e.on.as_deref(), e.until.as_deref()]
+                .into_iter()
+                .flatten()
+                .filter_map(parse)
+            {
                 if d > from && until.is_none_or(|u| d < u) {
                     days.insert(d);
                 }
@@ -190,7 +251,10 @@ pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Opti
         }
         let mut v: Vec<(Date, Stop)> = Vec::new();
         for d in days {
-            let rec = stops.stop_on(id, d).map(|s| record(&s)).unwrap_or_else(|| own.clone());
+            let rec = stops
+                .stop_on(id, d)
+                .map(|s| record(&s))
+                .unwrap_or_else(|| own.clone());
             if v.last().is_none_or(|(_, last)| *last != rec) {
                 v.push((d, rec));
             }
@@ -207,13 +271,21 @@ pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Opti
             None => id.to_string(),
             Some(v) => {
                 let i = v.iter().rposition(|(start, _)| *start <= on).unwrap_or(0);
-                if i + 1 == v.len() { id.to_string() } else { format!("{id}@{}", fmt_date(v[i].0)) }
+                if i + 1 == v.len() {
+                    id.to_string()
+                } else {
+                    format!("{id}@{}", fmt_date(v[i].0))
+                }
             }
         }
     };
     for (id, v) in &versions {
         for (i, (start, rec)) in v.iter().enumerate() {
-            let key = if i + 1 == v.len() { id.clone() } else { format!("{id}@{}", fmt_date(*start)) };
+            let key = if i + 1 == v.len() {
+                id.clone()
+            } else {
+                format!("{id}@{}", fmt_date(*start))
+            };
             out.stops.insert(key, rec.clone());
         }
     }
@@ -240,9 +312,17 @@ pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Opti
             for ps in &mut copy.stops {
                 ps.stop = version_id(&ps.stop, start);
             }
-            let new_pid = if j == last { pid.clone() } else { format!("{pid}@{label}") };
+            let new_pid = if j == last {
+                pid.clone()
+            } else {
+                format!("{pid}@{label}")
+            };
             out.patterns.insert(new_pid.clone(), copy);
-            for (ptid, pt) in network.pattern_trips.iter().filter(|(_, pt)| &pt.pattern == pid) {
+            for (ptid, pt) in network
+                .pattern_trips
+                .iter()
+                .filter(|(_, pt)| &pt.pattern == pid)
+            {
                 // A cut calendar is named by both its ends. Two patterns that
                 // split at different dates never share one.
                 let st = match hi {
@@ -264,13 +344,27 @@ pub fn export_versions(network: &Network, stops: &Stops, from: Date, until: Opti
                         t.id = made;
                     }
                 }
-                let new_ptid = if j == last { ptid.clone() } else { format!("{ptid}@{label}") };
+                let new_ptid = if j == last {
+                    ptid.clone()
+                } else {
+                    format!("{ptid}@{label}")
+                };
                 out.pattern_trips.insert(new_ptid, next);
             }
         }
     }
-    let used: BTreeSet<String> = out.pattern_trips.values().map(|pt| pt.service_type.clone()).collect();
-    out.service_types.retain(|id, _| used.contains(id) || !network.pattern_trips.values().any(|pt| &pt.service_type == id));
+    let used: BTreeSet<String> = out
+        .pattern_trips
+        .values()
+        .map(|pt| pt.service_type.clone())
+        .collect();
+    out.service_types.retain(|id, _| {
+        used.contains(id)
+            || !network
+                .pattern_trips
+                .values()
+                .any(|pt| &pt.service_type == id)
+    });
     // Each block runs a trip's copies beside it. The copies never share a day.
     for block in out.blocks.values_mut() {
         *block = with_copies(block, &copies);
@@ -288,10 +382,19 @@ fn clip(rule: &CalendarRule, lo: Option<Date>, hi: Option<Date>) -> CalendarRule
             .filter_map(|r| {
                 let start = lo.map_or(r.start, |l| r.start.max(l));
                 let end = hi.map_or(r.end, |h| r.end.min(h));
-                (start <= end).then_some(DateRange { start, end, extra: Default::default() })
+                (start <= end).then_some(DateRange {
+                    start,
+                    end,
+                    extra: Default::default(),
+                })
             })
             .collect(),
-        exceptions: rule.exceptions.iter().filter(|e| inside(e.date)).cloned().collect(),
+        exceptions: rule
+            .exceptions
+            .iter()
+            .filter(|e| inside(e.date))
+            .cloned()
+            .collect(),
         extra: Default::default(),
     }
 }
@@ -304,17 +407,27 @@ fn with_copies(block: &Block, copies: &BTreeMap<String, Vec<String>>) -> Block {
         trips.push(t.clone());
         for made in copies.get(&t.trip).into_iter().flatten() {
             here.push(trips.len());
-            trips.push(TripRef { trip: made.clone(), extra: Default::default() });
+            trips.push(TripRef {
+                trip: made.clone(),
+                extra: Default::default(),
+            });
         }
         at.push(here);
     }
     let mut layovers: Vec<Layover> = Vec::new();
     for l in &block.layovers {
         for &i in at.get(l.after_trip).into_iter().flatten() {
-            layovers.push(Layover { after_trip: i, ..l.clone() });
+            layovers.push(Layover {
+                after_trip: i,
+                ..l.clone()
+            });
         }
     }
-    Block { trips, layovers, extra: Default::default() }
+    Block {
+        trips,
+        layovers,
+        extra: Default::default(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -351,7 +464,13 @@ pub fn feed_events(stops: &Stops, feed_id: &str) -> Vec<AddedEvent> {
         .stops
         .iter()
         .flat_map(|(id, events)| {
-            events.iter().filter(|e| e.from_feed.as_deref() == Some(feed_id)).map(move |e| AddedEvent { stop: id.clone(), event: e.clone() })
+            events
+                .iter()
+                .filter(|e| e.from_feed.as_deref() == Some(feed_id))
+                .map(move |e| AddedEvent {
+                    stop: id.clone(),
+                    event: e.clone(),
+                })
         })
         .collect()
 }
@@ -386,19 +505,35 @@ fn import(stops: &Stops, feed: &Network, on: Date, feed_id: Option<&str>) -> Imp
             continue;
         }
         match now.as_ref().map(|s| s.status) {
-            None => events.push(Event { on: Some(fmt_date(on)), ..feed_open.clone() }),
-            Some(Status::Planned | Status::Permitted | Status::Built) => {
-                events.push(Event { on: Some(fmt_date(on)), event: EventKind::InService, ..Event::default() })
-            }
+            None => events.push(Event {
+                on: Some(fmt_date(on)),
+                ..feed_open.clone()
+            }),
+            Some(Status::Planned | Status::Permitted | Status::Built) => events.push(Event {
+                on: Some(fmt_date(on)),
+                event: EventKind::InService,
+                ..Event::default()
+            }),
             _ => {}
         }
         if let Some(s) = &now {
             if (s.lat, s.lon) != (stop.lat, stop.lon) {
-                events.push(Event { on: Some(fmt_date(on)), event: EventKind::Moved, lat: Some(stop.lat), lon: Some(stop.lon), ..Event::default() });
+                events.push(Event {
+                    on: Some(fmt_date(on)),
+                    event: EventKind::Moved,
+                    lat: Some(stop.lat),
+                    lon: Some(stop.lon),
+                    ..Event::default()
+                });
             }
             let changed = differing(&s.details, &feed_open.details);
             if !changed.is_empty() {
-                events.push(Event { on: Some(fmt_date(on)), event: EventKind::Changed, details: changed, ..Event::default() });
+                events.push(Event {
+                    on: Some(fmt_date(on)),
+                    event: EventKind::Changed,
+                    details: changed,
+                    ..Event::default()
+                });
             }
         }
         if events.is_empty() {
@@ -413,7 +548,10 @@ fn import(stops: &Stops, feed: &Network, on: Date, feed_id: Option<&str>) -> Imp
         }
         if trial.clone().checked().is_ok() {
             next = trial;
-            added.extend(events.into_iter().map(|event| AddedEvent { stop: id.to_string(), event }));
+            added.extend(events.into_iter().map(|event| AddedEvent {
+                stop: id.to_string(),
+                event,
+            }));
         } else {
             unapplied.push(id.to_string());
         }
@@ -422,10 +560,20 @@ fn import(stops: &Stops, feed: &Network, on: Date, feed_id: Option<&str>) -> Imp
         .stops
         .keys()
         .filter(|id| !listed.contains_key(id.as_str()))
-        .filter(|id| matches!(stops.stop_on(id, on).map(|s| s.status), Some(Status::InService | Status::Suspended)))
+        .filter(|id| {
+            matches!(
+                stops.stop_on(id, on).map(|s| s.status),
+                Some(Status::InService | Status::Suspended)
+            )
+        })
         .cloned()
         .collect();
-    ImportedStops { stops: next, added, unlisted, unapplied }
+    ImportedStops {
+        stops: next,
+        added,
+        unlisted,
+        unapplied,
+    }
 }
 
 fn differing(now: &Details, feed: &Details) -> Details {
@@ -473,8 +621,15 @@ pub fn pick_period(network: &Network, published: Option<&PublishedPlans>) -> Opt
         return None;
     }
     let fmt = |d: Date| d.to_string();
-    let info = PlanInfo { id: plan.id.clone(), name: plan.name.clone(), effective_from: Some(fmt(from)) };
-    Some(PickPeriod { from: fmt(from), until: transit_plans::period_in(published, &info) })
+    let info = PlanInfo {
+        id: plan.id.clone(),
+        name: plan.name.clone(),
+        effective_from: Some(fmt(from)),
+    };
+    Some(PickPeriod {
+        from: fmt(from),
+        until: transit_plans::period_in(published, &info),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -484,7 +639,11 @@ pub struct PickReads {
     pub warnings: Vec<NetworkWarning>,
 }
 
-pub fn read_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<PickReads> {
+pub fn read_pick(
+    network: &Network,
+    stops: &Stops,
+    published: Option<&PublishedPlans>,
+) -> Option<PickReads> {
     let period = pick_period(network, published)?;
     let (from, until) = period_dates(&period)?;
     Some(PickReads {
@@ -494,7 +653,11 @@ pub fn read_pick(network: &Network, stops: &Stops, published: Option<&PublishedP
     })
 }
 
-pub fn export_pick(network: &Network, stops: &Stops, published: Option<&PublishedPlans>) -> Option<Network> {
+pub fn export_pick(
+    network: &Network,
+    stops: &Stops,
+    published: Option<&PublishedPlans>,
+) -> Option<Network> {
     let period = pick_period(network, published)?;
     let (from, until) = period_dates(&period)?;
     Some(export_versions(network, stops, from, until))
@@ -502,5 +665,8 @@ pub fn export_pick(network: &Network, stops: &Stops, published: Option<&Publishe
 
 fn period_dates(period: &PickPeriod) -> Option<(Date, Option<Date>)> {
     let parse = |s: &str| Date::parse(s).ok();
-    Some((parse(&period.from)?, period.until.as_deref().and_then(parse)))
+    Some((
+        parse(&period.from)?,
+        period.until.as_deref().and_then(parse),
+    ))
 }

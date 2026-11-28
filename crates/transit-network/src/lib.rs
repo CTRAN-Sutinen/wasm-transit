@@ -38,13 +38,14 @@
 //! * There are no authored stop aliases, because people would keep them by
 //!   hand. A geocoder covers everyday names (D-91).
 
-pub mod demand;
 pub mod combinations;
+pub mod demand;
 pub mod edit;
 pub mod error;
 pub mod fares;
 pub mod geometry;
 pub mod listing;
+pub mod load;
 pub mod materialize;
 pub mod migrate;
 pub mod model;
@@ -55,28 +56,44 @@ pub mod signs;
 pub mod timetable_edit;
 pub mod validate;
 pub mod version;
-pub mod load;
 
-pub use edit::{apply_edits, apply_edits_reporting, Applied, CreatedEntity, Day, EditError, NetworkEdit, Redraw, TouchedEntity};
+pub use combinations::{
+    date_spans, first_service_date, service_combination, service_combinations, stamp_as_pick,
+    DateSpan, ServiceCombination,
+};
+pub use edit::{
+    apply_edits, apply_edits_reporting, Applied, CreatedEntity, Day, EditError, NetworkEdit,
+    Redraw, TouchedEntity,
+};
 pub use error::{NetworkError, NetworkWarning, RecoverySource};
-pub use geometry::{authored_alignment, entity_focus, route_lines, RouteLines, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
-pub use combinations::{date_spans, first_service_date, stamp_as_pick, service_combination, service_combinations, DateSpan, ServiceCombination};
+pub use geometry::{
+    authored_alignment, entity_focus, pattern_alignment, pattern_stop_points, route_lines,
+    stop_point, stops_line, EntityFocus, EntityKind, RouteLines,
+};
 pub use listing::{
-    entity_rows, route_detail, service_keys, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
-    RemovedTrip, RouteDetail, RouteVariant, ServiceKey, ServiceKeyRoute, StopDetail, StopVisit, Neighbour, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
+    entity_rows, route_detail, service_keys, stop_detail, timetable, timetable_against,
+    DirectionGroup, EntityRow, Neighbour, PatternTripsGroup, RemovedTrip, RouteDetail,
+    RouteVariant, ServiceKey, ServiceKeyRoute, StopDetail, StopVisit, Timetable, TimetablePattern,
+    TimetableStop, TimetableTrip, VariantStop,
 };
 pub use materialize::{
-    materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,
+    materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance,
+    MaterializedTrip, StopTime,
 };
-pub use version::{migrate_network, migrate_step, migrate_to, schema_version_of, MigrationNote, NetworkKind, NetworkVersion, KIND, SCHEMA_VERSION};
 pub use model::{
-    Alignment, AlignmentId, AlignmentPoint, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
-    HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,
-    ServiceType, ServiceTypeId, Stop, StopOffset, StopRule, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
+    Alignment, AlignmentId, AlignmentPoint, Anchor, Block, CalendarException, CalendarRule, Coord,
+    DateRange, DayState, Departs, Direction, DirectionId, HeadwayBand, Layover, Mode, Network,
+    Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route, ServiceType,
+    ServiceTypeId, Stop, StopOffset, StopRule, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
 };
 pub use plan_set::{PlanSet, PlanSetKind, PLAN_SET_VERSION};
 pub use signs::visit_destination;
 pub use validate::{
-    publish_check, publish_refusals, recovery_floors, required_recovery, validation_issues_under, PublishCheck, RecoveryAt, routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
-    walking_group,
+    publish_check, publish_refusals, recovery_floors, required_recovery, routes_meeting_at,
+    stop_route_index, validate, validation_issues, validation_issues_under, validation_warnings,
+    walking_group, PublishCheck, RecoveryAt,
+};
+pub use version::{
+    migrate_network, migrate_step, migrate_to, schema_version_of, MigrationNote, NetworkKind,
+    NetworkVersion, KIND, SCHEMA_VERSION,
 };

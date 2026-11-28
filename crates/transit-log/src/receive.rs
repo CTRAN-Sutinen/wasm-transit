@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{compose, overlap, read_entry, Checkpoint, Composed, Entry, Hash, Header, KindRecords, Overlap, Stored};
+use crate::{
+    compose, overlap, read_entry, Checkpoint, Composed, Entry, Hash, Header, KindRecords, Overlap,
+    Stored,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(schemars::JsonSchema))]
@@ -47,18 +50,34 @@ impl Write {
             Some(v) => {
                 // The log reads no checkpoint ahead.
                 let found = v.get("schema_version").and_then(Value::as_u64).unwrap_or(0) as u32;
-                if !matches!(transit_version::reads::<Checkpoint>(found)?, transit_version::ReadAs::Current) {
-                    return Err(transit_version::refused(crate::CheckpointKind::KIND, found, crate::CHECKPOINT_VERSION));
+                if !matches!(
+                    transit_version::reads::<Checkpoint>(found)?,
+                    transit_version::ReadAs::Current
+                ) {
+                    return Err(transit_version::refused(
+                        crate::CheckpointKind::KIND,
+                        found,
+                        crate::CHECKPOINT_VERSION,
+                    ));
                 }
-                let c: Checkpoint = serde_json::from_value(v.clone()).map_err(|e| format!("invalid document: {e}"))?;
+                let c: Checkpoint = serde_json::from_value(v.clone())
+                    .map_err(|e| format!("invalid document: {e}"))?;
                 if c.log != self.header.log {
-                    return Err(format!("a checkpoint of the {} log, not the {} log", c.log, self.header.log).into());
+                    return Err(format!(
+                        "a checkpoint of the {} log, not the {} log",
+                        c.log, self.header.log
+                    )
+                    .into());
                 }
                 c
             }
         };
         if self.header.seq != fold.seq + 1 {
-            return Err(format!("the entry's seq is {}, and the fold is at {}", self.header.seq, fold.seq).into());
+            return Err(format!(
+                "the entry's seq is {}, and the fold is at {}",
+                self.header.seq, fold.seq
+            )
+            .into());
         }
         Ok(fold)
     }
@@ -66,7 +85,9 @@ impl Write {
     /// A receive op asks first, because the write's ops may no longer pass
     /// over the head they changed, and a resend answers where it landed.
     pub fn landed(&self) -> Result<Option<u64>, transit_version::Refusal> {
-        let Some(key) = &self.header.intent.key else { return Ok(None) };
+        let Some(key) = &self.header.intent.key else {
+            return Ok(None);
+        };
         Ok(self.fold()?.keys.get(key).copied())
     }
 
@@ -92,7 +113,10 @@ pub struct Received {
     #[cfg_attr(feature = "bindings", ts(optional, type = "number"))]
     pub landed: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "bindings", ts(optional, type = "{ kind: string, id: string, seq: number }"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, type = "{ kind: string, id: string, seq: number }")
+    )]
     pub overlap: Option<Overlap>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "bindings", ts(optional))]
@@ -110,7 +134,10 @@ pub struct Received {
     #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<String>>"))]
     pub unknown_fields: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, String>>")
+    )]
     pub heads: BTreeMap<String, String>,
     /// The write is refused and no entry comes back (`Write::read`, D-233).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -146,23 +173,43 @@ pub struct MadeDocument {
 
 impl Received {
     pub fn landed(seq: u64) -> Self {
-        Received { landed: Some(seq), ..Default::default() }
+        Received {
+            landed: Some(seq),
+            ..Default::default()
+        }
     }
 
     pub fn refused(op: usize, refusals: Value) -> Self {
-        Received { refused: Some(Refused { op, refusals }), ..Default::default() }
+        Received {
+            refused: Some(Refused { op, refusals }),
+            ..Default::default()
+        }
     }
 
     pub fn failed(op: usize, error: impl Into<transit_version::Refusal>) -> Self {
-        Received { failed: Some(Failed { op, error: error.into() }), ..Default::default() }
+        Received {
+            failed: Some(Failed {
+                op,
+                error: error.into(),
+            }),
+            ..Default::default()
+        }
     }
 
     pub fn conflict(op: usize, id: String) -> Self {
-        Received { conflict: Some(Conflict { op, id }), ..Default::default() }
+        Received {
+            conflict: Some(Conflict { op, id }),
+            ..Default::default()
+        }
     }
 
     pub fn moved(current: Option<String>) -> Self {
-        Received { moved: Some(Moved { current: current.unwrap_or_default() }), ..Default::default() }
+        Received {
+            moved: Some(Moved {
+                current: current.unwrap_or_default(),
+            }),
+            ..Default::default()
+        }
     }
 }
 
@@ -192,14 +239,26 @@ pub struct Moved {
     pub current: String,
 }
 
-pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn Fn(&Entry) -> Result<String, String>) -> Result<Received, transit_version::Refusal> {
+pub fn receive(
+    write: &Write,
+    next: &[KindRecords],
+    hash: Hash,
+    canonical: &dyn Fn(&Entry) -> Result<String, String>,
+) -> Result<Received, transit_version::Refusal> {
     let fold = write.fold()?;
     // An unread entry that does not read is quarantined in the fold, so it
     // changed nothing that the write could overlap.
-    let unread: Vec<Entry> = write.unread.iter().filter_map(|s| read_entry(&write.header.log, s).ok()).collect();
+    let unread: Vec<Entry> = write
+        .unread
+        .iter()
+        .filter_map(|s| read_entry(&write.header.log, s).ok())
+        .collect();
     Ok(match compose(&fold, write.header.clone(), next, hash) {
         Composed::Entry(e) => match overlap(&e.changes, &unread) {
-            Some(o) => Received { overlap: Some(o), ..Default::default() },
+            Some(o) => Received {
+                overlap: Some(o),
+                ..Default::default()
+            },
             None => {
                 let mut references = Vec::new();
                 if let Some(kinds) = &write.references {
@@ -207,7 +266,10 @@ pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn 
                     if let Some(read) = &write.read {
                         let broken = crate::added_in(kinds, read, &fold.records, log, &e);
                         if !broken.is_empty() {
-                            return Ok(Received { broken, ..Default::default() });
+                            return Ok(Received {
+                                broken,
+                                ..Default::default()
+                            });
                         }
                     }
                     if let Some(mut now) = write.now.clone().or_else(|| write.read.clone()) {
@@ -219,7 +281,13 @@ pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn 
                                 let records = after.entry(c.kind.clone()).or_default();
                                 match &c.after {
                                     Some(v) => {
-                                        records.insert(c.id.clone(), crate::Held { version: c.version, value: v.clone() });
+                                        records.insert(
+                                            c.id.clone(),
+                                            crate::Held {
+                                                version: c.version,
+                                                value: v.clone(),
+                                            },
+                                        );
                                     }
                                     None => {
                                         records.remove(&c.id);
@@ -228,14 +296,28 @@ pub fn receive(write: &Write, next: &[KindRecords], hash: Hash, canonical: &dyn 
                             }
                             now.insert(log.clone(), after);
                         }
-                        references = crate::touched_in(crate::broken(kinds, &now), kinds, log, &e, write.header.seq);
+                        references = crate::touched_in(
+                            crate::broken(kinds, &now),
+                            kinds,
+                            log,
+                            &e,
+                            write.header.seq,
+                        );
                     }
                 }
-                Received { changes: e.changes.len(), entry: Some(canonical(&e)?), references, ..Default::default() }
+                Received {
+                    changes: e.changes.len(),
+                    entry: Some(canonical(&e)?),
+                    references,
+                    ..Default::default()
+                }
             }
         },
         Composed::Unchanged => Received::default(),
-        Composed::Landed(seq) => Received { landed: Some(seq), ..Default::default() },
+        Composed::Landed(seq) => Received {
+            landed: Some(seq),
+            ..Default::default()
+        },
     })
 }
 
@@ -258,7 +340,8 @@ impl OpCall {
             _ => return Err("args is not an object".into()),
         };
         args.insert("op".into(), Value::String(self.op.clone()));
-        serde_json::from_value(Value::Object(args)).map_err(|e| format!("{} {}: {e}", self.cap, self.op))
+        serde_json::from_value(Value::Object(args))
+            .map_err(|e| format!("{} {}: {e}", self.cap, self.op))
     }
 }
 

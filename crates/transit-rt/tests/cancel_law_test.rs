@@ -16,7 +16,11 @@ fn update(trip: &str, rel: TripRel, stops: Vec<StopTimeUpdate>) -> FeedEntity {
     FeedEntity {
         id: trip.into(),
         trip_update: Some(TripUpdate {
-            trip: TripDescriptor { trip_id: Some(trip.into()), schedule_relationship: Some(rel as i32), ..Default::default() },
+            trip: TripDescriptor {
+                trip_id: Some(trip.into()),
+                schedule_relationship: Some(rel as i32),
+                ..Default::default()
+            },
             stop_time_update: stops,
             ..Default::default()
         }),
@@ -25,7 +29,10 @@ fn update(trip: &str, rel: TripRel, stops: Vec<StopTimeUpdate>) -> FeedEntity {
 }
 
 fn stop(stop: &str, seq: u32, rel: StopRel, delay: Option<i32>) -> StopTimeUpdate {
-    let event = delay.map(|d| StopTimeEvent { delay: Some(d), ..Default::default() });
+    let event = delay.map(|d| StopTimeEvent {
+        delay: Some(d),
+        ..Default::default()
+    });
     StopTimeUpdate {
         stop_id: Some(stop.into()),
         stop_sequence: Some(seq),
@@ -41,14 +48,21 @@ fn stop(stop: &str, seq: u32, rel: StopRel, delay: Option<i32>) -> StopTimeUpdat
 /// deleted, t30 skipping C one minute late.
 fn snapshot() -> FeedMessage {
     FeedMessage {
-        header: FeedHeader { gtfs_realtime_version: "2.0".into(), timestamp: Some(1_728_000_000), ..Default::default() },
+        header: FeedHeader {
+            gtfs_realtime_version: "2.0".into(),
+            timestamp: Some(1_728_000_000),
+            ..Default::default()
+        },
         entity: vec![
             update("t20", TripRel::Canceled, vec![]),
             update("t10", TripRel::Deleted, vec![]),
             update(
                 "t30",
                 TripRel::Scheduled,
-                vec![stop("A", 1, StopRel::Scheduled, Some(60)), stop("C", 2, StopRel::Skipped, None)],
+                vec![
+                    stop("A", 1, StopRel::Scheduled, Some(60)),
+                    stop("C", 2, StopRel::Skipped, None),
+                ],
             ),
         ],
     }
@@ -57,43 +71,87 @@ fn snapshot() -> FeedMessage {
 #[test]
 fn the_decode_reads_cancelled_trips_and_skipped_stops() {
     let rt = decode_overview(&snapshot().encode_to_vec()).unwrap();
-    let canceled = |id: &str| rt.trips.iter().find(|t| t.trip_id.as_deref() == Some(id)).unwrap().canceled;
+    let canceled = |id: &str| {
+        rt.trips
+            .iter()
+            .find(|t| t.trip_id.as_deref() == Some(id))
+            .unwrap()
+            .canceled
+    };
     assert!(canceled("t20"), "CANCELED");
-    assert!(canceled("t10"), "DELETED is a cancellation riders never see");
+    assert!(
+        canceled("t10"),
+        "DELETED is a cancellation riders never see"
+    );
     assert!(!canceled("t30"), "SCHEDULED runs");
-    let t30 = rt.trips.iter().find(|t| t.trip_id.as_deref() == Some("t30")).unwrap();
+    let t30 = rt
+        .trips
+        .iter()
+        .find(|t| t.trip_id.as_deref() == Some("t30"))
+        .unwrap();
     let skipped: Vec<bool> = t30.stop_updates.iter().map(|s| s.skipped).collect();
     assert_eq!(skipped, vec![false, true]);
 }
 
 #[test]
 fn the_live_document_says_what_does_not_run() {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let (net, boundary) = (&imported.network, &imported.boundary);
     let rt = decode_overview(&snapshot().encode_to_vec()).unwrap();
-    let day = live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default());
+    let day = live_day(
+        net,
+        boundary,
+        Some(&rt),
+        None,
+        None,
+        OnTimeWindow::default(),
+    );
     assert_eq!(day.unmatched_trips, 0);
 
     for (trip, start) in [("t20", H8 + 1200), ("t10", H8)] {
         let t = day.trips.iter().find(|t| t.trip == trip).unwrap();
         assert!(t.canceled, "{trip} is cancelled");
         assert_eq!(t.start_secs, start);
-        assert_eq!(t.status, LiveStatus::NoPrediction, "a cancelled trip is not late or on time");
-        assert!(!day.runs(trip, start, "A", start), "{trip} does not leave A");
-        assert!(!day.runs(trip, start, "B", start + 600), "{trip} does not reach B");
+        assert_eq!(
+            t.status,
+            LiveStatus::NoPrediction,
+            "a cancelled trip is not late or on time"
+        );
+        assert!(
+            !day.runs(trip, start, "A", start),
+            "{trip} does not leave A"
+        );
+        assert!(
+            !day.runs(trip, start, "B", start + 600),
+            "{trip} does not reach B"
+        );
     }
 
     let t30 = day.trips.iter().find(|t| t.trip == "t30").unwrap();
     assert!(!t30.canceled);
-    let c = t30.stops.iter().find(|s| s.stop == "C").expect("a skipped stop is in the document");
+    let c = t30
+        .stops
+        .iter()
+        .find(|s| s.stop == "C")
+        .expect("a skipped stop is in the document");
     assert!(c.skipped);
     assert_eq!((c.arrival_delay, c.departure_delay), (None, None));
     let b = day.visit("t30", H8 + 2400, "B", H8 + 3000).unwrap();
     assert!(!b.skipped);
-    assert_eq!(b.departure_delay, Some(60), "the delay carries past the skipped stop");
+    assert_eq!(
+        b.departure_delay,
+        Some(60),
+        "the delay carries past the skipped stop"
+    );
     assert!(day.runs("t30", H8 + 2400, "A", H8 + 2400));
-    assert!(!day.runs("t30", H8 + 2400, "C", H8 + 2700), "the skipped visit does not happen");
+    assert!(
+        !day.runs("t30", H8 + 2400, "C", H8 + 2700),
+        "the skipped visit does not happen"
+    );
     assert!(day.runs("t30", H8 + 2400, "B", H8 + 3000));
 
     assert!(day.runs("t40", H8 + 900, "SA", H8 + 900));
@@ -103,10 +161,23 @@ fn the_live_document_says_what_does_not_run() {
 fn nothing_cancelled_changes_no_bytes() {
     // A document with no cancellation serializes as before, so its hashes
     // stay put.
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
-    let day = live_day(&imported.network, &imported.boundary, Some(&rt), None, None, OnTimeWindow::default());
+    let day = live_day(
+        &imported.network,
+        &imported.boundary,
+        Some(&rt),
+        None,
+        None,
+        OnTimeWindow::default(),
+    );
     let json = serde_json::to_string(&day).unwrap();
-    assert!(!json.contains("canceled") && !json.contains("skipped"), "{json}");
+    assert!(
+        !json.contains("canceled") && !json.contains("skipped"),
+        "{json}"
+    );
 }

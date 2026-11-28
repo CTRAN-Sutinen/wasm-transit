@@ -4,12 +4,12 @@
 //! the next rev, so it wins the merge over a copy that a page still holds
 //! (`revert_record`, D-193).
 
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use serde::{Deserialize, Serialize};
 
-pub mod version;
 pub mod load;
+pub mod version;
 pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -89,7 +89,6 @@ impl TripCancel {
         self.trip_id == trip && self.start_secs.is_none_or(|s| s == start_secs)
     }
 }
-
 
 /// `Retired` is the tombstone: the record stays so that sync sees the
 /// deletion, and the UI hides it.
@@ -205,7 +204,8 @@ fn wins(a: &EditRecord, b: &EditRecord) -> bool {
 /// The result is sorted by id, so equal inputs serialize identically on every
 /// host. A later retirement beats an older in-force version.
 pub fn merge(local: &[EditRecord], remote: &[EditRecord]) -> Vec<EditRecord> {
-    let mut by_id: std::collections::BTreeMap<String, EditRecord> = std::collections::BTreeMap::new();
+    let mut by_id: std::collections::BTreeMap<String, EditRecord> =
+        std::collections::BTreeMap::new();
     for record in local.iter().chain(remote) {
         match by_id.get(&record.id) {
             Some(existing) => {
@@ -235,11 +235,21 @@ pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
         .collect()
 }
 
-pub fn propose(records: &[EditRecord], record_id: &str, diversion: Diversion, now_ms: u64) -> Vec<EditRecord> {
+pub fn propose(
+    records: &[EditRecord],
+    record_id: &str,
+    diversion: Diversion,
+    now_ms: u64,
+) -> Vec<EditRecord> {
     put(records, record_id, Some(diversion), None, now_ms)
 }
 
-pub fn propose_cancel(records: &[EditRecord], record_id: &str, cancel: TripCancel, now_ms: u64) -> Vec<EditRecord> {
+pub fn propose_cancel(
+    records: &[EditRecord],
+    record_id: &str,
+    cancel: TripCancel,
+    now_ms: u64,
+) -> Vec<EditRecord> {
     put(records, record_id, None, Some(cancel), now_ms)
 }
 
@@ -272,14 +282,23 @@ fn put(
     next
 }
 
-pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_ms: u64) -> Result<Vec<EditRecord>, String> {
+pub fn set_retired(
+    records: &[EditRecord],
+    record_id: &str,
+    retired: bool,
+    now_ms: u64,
+) -> Result<Vec<EditRecord>, String> {
     let mut next = records.to_vec();
     let r = next
         .iter_mut()
         .find(|r| r.id == record_id)
         .ok_or_else(|| format!("unknown edit record {record_id}"))?;
     if (r.status == EditStatus::Retired) != retired {
-        r.status = if retired { EditStatus::Retired } else { EditStatus::Draft };
+        r.status = if retired {
+            EditStatus::Retired
+        } else {
+            EditStatus::Draft
+        };
         r.rev += 1;
         r.updated_at = now_ms;
     }
@@ -337,18 +356,29 @@ pub fn clamp_timestamps(records: &[EditRecord], now_ms: u64) -> Vec<EditRecord> 
 }
 
 pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<EditRecord>, usize) {
-    compact_keeping(records, now_ms, horizon_ms, &std::collections::BTreeSet::new())
+    compact_keeping(
+        records,
+        now_ms,
+        horizon_ms,
+        &std::collections::BTreeSet::new(),
+    )
 }
 
 /// Like [`compact`], but a record whose id is in `keep` stays, because a live
 /// reference names it.
-pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, keep: &std::collections::BTreeSet<String>) -> (Vec<EditRecord>, usize) {
+pub fn compact_keeping(
+    records: &[EditRecord],
+    now_ms: u64,
+    horizon_ms: u64,
+    keep: &std::collections::BTreeSet<String>,
+) -> (Vec<EditRecord>, usize) {
     let horizon = now_ms.saturating_sub(horizon_ms);
     let mut dropped = 0;
     let kept = records
         .iter()
         .filter(|r| {
-            let old_tombstone = r.status == EditStatus::Retired && r.updated_at < horizon && !keep.contains(&r.id);
+            let old_tombstone =
+                r.status == EditStatus::Retired && r.updated_at < horizon && !keep.contains(&r.id);
             if old_tombstone {
                 dropped += 1;
             }
@@ -363,11 +393,24 @@ pub fn compact_keeping(records: &[EditRecord], now_ms: u64, horizon_ms: u64, kee
 /// reverted write, or, when that write created it, the current record
 /// retired. Either gets the next rev and `now_ms`, so it wins the merge over
 /// the reverted copy.
-pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_ms: u64) -> Option<EditRecord> {
+pub fn revert_record(
+    prior: Option<&EditRecord>,
+    now: Option<&EditRecord>,
+    now_ms: u64,
+) -> Option<EditRecord> {
     let next_rev = now.map_or(0, |r| r.rev).max(prior.map_or(0, |r| r.rev)) + 1;
     match (prior, now) {
-        (Some(p), _) => Some(EditRecord { rev: next_rev, updated_at: now_ms, ..p.clone() }),
-        (None, Some(n)) => Some(EditRecord { status: EditStatus::Retired, rev: next_rev, updated_at: now_ms, ..n.clone() }),
+        (Some(p), _) => Some(EditRecord {
+            rev: next_rev,
+            updated_at: now_ms,
+            ..p.clone()
+        }),
+        (None, Some(n)) => Some(EditRecord {
+            status: EditStatus::Retired,
+            rev: next_rev,
+            updated_at: now_ms,
+            ..n.clone()
+        }),
         (None, None) => None,
     }
 }
@@ -375,7 +418,9 @@ pub fn revert_record(prior: Option<&EditRecord>, now: Option<&EditRecord>, now_m
 /// An older document is refused with the op that brings it forward, and a
 /// newer one naming both versions. A document one version ahead is read down
 /// by a lossless step. A read-only step refuses the write (`Versioned::AHEAD`).
-pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), transit_version::Refusal> {
+pub fn read_document(
+    document: &serde_json::Value,
+) -> Result<(EditDocument, usize), transit_version::Refusal> {
     use transit_version::{ReadAs, Versioned};
     let found = version::schema_version_of(document)?;
     let (records, dropped) = match transit_version::reads::<EditDocument>(found)? {
@@ -391,14 +436,19 @@ pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usiz
 /// A malformed record is dropped and counted, so it never wedges the
 /// document. Anything but an array holds no records.
 pub fn sanitize_records(items: &serde_json::Value) -> (Vec<EditRecord>, usize) {
-    let Some(items) = items.as_array() else { return (Vec::new(), 0) };
+    let Some(items) = items.as_array() else {
+        return (Vec::new(), 0);
+    };
     let mut kept = Vec::new();
     let mut dropped = 0;
     for item in items {
         match serde_json::from_value::<EditRecord>(item.clone()) {
             Ok(r)
                 if r.well_formed()
-                    && r.diversion.iter().flat_map(|d| d.detour.iter().flatten()).all(|p| p.lat.is_finite() && p.lon.is_finite()) =>
+                    && r.diversion
+                        .iter()
+                        .flat_map(|d| d.detour.iter().flatten())
+                        .all(|p| p.lat.is_finite() && p.lon.is_finite()) =>
             {
                 kept.push(r)
             }
@@ -441,8 +491,14 @@ mod tests {
     fn edit_record_round_trips_through_json() {
         let rec = record(EditStatus::Accepted);
         let json = serde_json::to_string(&rec).unwrap();
-        assert!(json.contains("\"status\":\"accepted\""), "status is lowercase: {json}");
-        assert!(json.contains("\"start_date\":\"2026-10-23\""), "dates are ISO: {json}");
+        assert!(
+            json.contains("\"status\":\"accepted\""),
+            "status is lowercase: {json}"
+        );
+        assert!(
+            json.contains("\"start_date\":\"2026-10-23\""),
+            "dates are ISO: {json}"
+        );
         let back: EditRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, rec.id);
         assert_eq!(back.status, EditStatus::Accepted);
@@ -454,12 +510,22 @@ mod tests {
         let base = vec![record(EditStatus::Accepted)];
         let next = propose(&base, "e2", base[0].diversion.clone().unwrap(), 2_000);
         assert_eq!(next.len(), 2);
-        assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
+        assert_eq!(
+            (next[1].rev, next[1].status, next[1].updated_at),
+            (1, EditStatus::Draft, 2_000)
+        );
         let mut changed = base[0].diversion.clone().unwrap();
         changed.added_secs = 120;
         let again = propose(&next, &base[0].id, changed, 3_000);
         assert_eq!(again.len(), 2);
-        assert_eq!((again[0].rev, again[0].status, again[0].diversion.as_ref().unwrap().added_secs), (2, EditStatus::Draft, 120));
+        assert_eq!(
+            (
+                again[0].rev,
+                again[0].status,
+                again[0].diversion.as_ref().unwrap().added_secs
+            ),
+            (2, EditStatus::Draft, 120)
+        );
         assert_eq!(base[0].rev, 1, "the input is never mutated");
     }
 
@@ -467,10 +533,20 @@ mod tests {
     fn retire_and_restore_bump_the_envelope_once() {
         let base = vec![record(EditStatus::Submitted)];
         let retired = set_retired(&base, &base[0].id, true, 2_000).unwrap();
-        assert_eq!((retired[0].status, retired[0].rev, retired[0].updated_at), (EditStatus::Retired, 2, 2_000));
-        assert_eq!(set_retired(&retired, &base[0].id, true, 3_000).unwrap(), retired, "no rev churn");
+        assert_eq!(
+            (retired[0].status, retired[0].rev, retired[0].updated_at),
+            (EditStatus::Retired, 2, 2_000)
+        );
+        assert_eq!(
+            set_retired(&retired, &base[0].id, true, 3_000).unwrap(),
+            retired,
+            "no rev churn"
+        );
         let restored = set_retired(&retired, &base[0].id, false, 4_000).unwrap();
-        assert_eq!((restored[0].status, restored[0].rev), (EditStatus::Draft, 3));
+        assert_eq!(
+            (restored[0].status, restored[0].rev),
+            (EditStatus::Draft, 3)
+        );
         assert!(set_retired(&base, "nope", true, 1).is_err());
     }
 
@@ -487,12 +563,25 @@ mod tests {
         let doc = serde_json::json!([good, old, bad_date, {"id": "x"}, 7]);
         let (kept, dropped) = sanitize_records(&doc);
         assert_eq!((kept.len(), dropped), (2, 3));
-        assert_eq!(kept[1].diversion.as_ref().unwrap().added_secs, 0, "a record from before the field existed");
-        assert_eq!(sanitize_records(&serde_json::json!({"not": "an array"})), (vec![], 0));
+        assert_eq!(
+            kept[1].diversion.as_ref().unwrap().added_secs,
+            0,
+            "a record from before the field existed"
+        );
+        assert_eq!(
+            sanitize_records(&serde_json::json!({"not": "an array"})),
+            (vec![], 0)
+        );
     }
 
     fn cancel(trip: &str, start_secs: Option<u32>, date: Date) -> TripCancel {
-        TripCancel { id: format!("c-{trip}"), trip_id: trip.into(), start_secs, date, extra: Default::default() }
+        TripCancel {
+            id: format!("c-{trip}"),
+            trip_id: trip.into(),
+            start_secs,
+            date,
+            extra: Default::default(),
+        }
     }
 
     #[test]
@@ -503,7 +592,11 @@ mod tests {
             r#"{"id":"e1","diversion":{"id":"d1","route_id":"r1","direction_id":null,"first_kept_stop":"s0","last_kept_stop":"s1","skipped_stops":[],"detour":null,"added_secs":60,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":1,"updated_at":1000}"#
         );
         let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
-        let c = EditRecord { diversion: None, cancel: Some(cancel("755768", None, day)), ..record(EditStatus::Draft) };
+        let c = EditRecord {
+            diversion: None,
+            cancel: Some(cancel("755768", None, day)),
+            ..record(EditStatus::Draft)
+        };
         let json = serde_json::to_string(&c).unwrap();
         assert_eq!(
             json,
@@ -516,9 +609,19 @@ mod tests {
     fn sanitize_keeps_only_records_with_exactly_one_payload() {
         let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let div = record(EditStatus::Draft);
-        let can = EditRecord { diversion: None, cancel: Some(cancel("t", Some(60), day)), ..record(EditStatus::Draft) };
-        let both = EditRecord { cancel: Some(cancel("t", None, day)), ..record(EditStatus::Draft) };
-        let neither = EditRecord { diversion: None, ..record(EditStatus::Draft) };
+        let can = EditRecord {
+            diversion: None,
+            cancel: Some(cancel("t", Some(60), day)),
+            ..record(EditStatus::Draft)
+        };
+        let both = EditRecord {
+            cancel: Some(cancel("t", None, day)),
+            ..record(EditStatus::Draft)
+        };
+        let neither = EditRecord {
+            diversion: None,
+            ..record(EditStatus::Draft)
+        };
         let doc = serde_json::to_value(vec![div.clone(), can.clone(), both, neither]).unwrap();
         let (kept, dropped) = sanitize_records(&doc);
         assert_eq!((kept, dropped), (vec![div, can], 2));
@@ -528,21 +631,47 @@ mod tests {
     fn cancels_are_in_force_on_their_one_date_and_never_retired() {
         let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let next = Date::from_ymd_opt(2026, 10, 24).unwrap();
-        let docs = propose_cancel(&[record(EditStatus::Accepted)], "e2", cancel("t1", None, day), 2_000);
-        assert_eq!(cancels_in_force_on(&docs, day), vec![cancel("t1", None, day)]);
-        assert!(cancels_in_force_on(&docs, next).is_empty(), "a cancel holds on its one date");
-        assert_eq!(in_force_on(&docs, day).len(), 1, "diversions read only the diversion records");
+        let docs = propose_cancel(
+            &[record(EditStatus::Accepted)],
+            "e2",
+            cancel("t1", None, day),
+            2_000,
+        );
+        assert_eq!(
+            cancels_in_force_on(&docs, day),
+            vec![cancel("t1", None, day)]
+        );
+        assert!(
+            cancels_in_force_on(&docs, next).is_empty(),
+            "a cancel holds on its one date"
+        );
+        assert_eq!(
+            in_force_on(&docs, day).len(),
+            1,
+            "diversions read only the diversion records"
+        );
         let retired = set_retired(&docs, "e2", true, 3_000).unwrap();
-        assert!(cancels_in_force_on(&retired, day).is_empty(), "a retired cancel never applies");
+        assert!(
+            cancels_in_force_on(&retired, day).is_empty(),
+            "a retired cancel never applies"
+        );
     }
 
     #[test]
     fn a_cancel_names_its_instance_or_every_instance() {
         let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
-        assert!(cancel("t", None, day).cancels("t", 100) && cancel("t", None, day).cancels("t", 200));
+        assert!(
+            cancel("t", None, day).cancels("t", 100) && cancel("t", None, day).cancels("t", 200)
+        );
         assert!(cancel("t", Some(100), day).cancels("t", 100));
-        assert!(!cancel("t", Some(100), day).cancels("t", 200), "another instance runs");
-        assert!(!cancel("t", None, day).cancels("u", 100), "another trip runs");
+        assert!(
+            !cancel("t", Some(100), day).cancels("t", 200),
+            "another instance runs"
+        );
+        assert!(
+            !cancel("t", None, day).cancels("u", 100),
+            "another trip runs"
+        );
     }
 
     #[test]
@@ -550,10 +679,20 @@ mod tests {
         let day = Date::from_ymd_opt(2026, 10, 23).unwrap();
         let base = vec![record(EditStatus::Accepted)];
         let next = propose_cancel(&base, "e2", cancel("t1", None, day), 2_000);
-        assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
+        assert_eq!(
+            (next[1].rev, next[1].status, next[1].updated_at),
+            (1, EditStatus::Draft, 2_000)
+        );
         assert!(next[1].well_formed() && next[1].diversion.is_none());
         let again = propose_cancel(&next, "e2", cancel("t1", Some(60), day), 3_000);
-        assert_eq!((again.len(), again[1].rev, again[1].cancel.as_ref().unwrap().start_secs), (2, 2, Some(60)));
+        assert_eq!(
+            (
+                again.len(),
+                again[1].rev,
+                again[1].cancel.as_ref().unwrap().start_secs
+            ),
+            (2, 2, Some(60))
+        );
         assert_eq!(base.len(), 1, "the input is never mutated");
     }
 
@@ -573,7 +712,11 @@ mod tests {
 
     #[test]
     fn retired_is_the_only_tombstone() {
-        for status in [EditStatus::Draft, EditStatus::Submitted, EditStatus::Accepted] {
+        for status in [
+            EditStatus::Draft,
+            EditStatus::Submitted,
+            EditStatus::Accepted,
+        ] {
             assert!(status.in_force(), "{status:?} must be in force");
         }
         assert!(!EditStatus::Retired.in_force());
@@ -594,7 +737,10 @@ mod tests {
         assert_eq!(live[0].id, "d1");
 
         docs[0].status = EditStatus::Retired;
-        assert!(in_force_on(&docs, date).is_empty(), "retired edits never apply");
+        assert!(
+            in_force_on(&docs, date).is_empty(),
+            "retired edits never apply"
+        );
     }
 }
 
@@ -630,11 +776,18 @@ mod receive_tests {
     fn a_future_dated_record_is_clamped_at_receive() {
         let future = rec("e1", EditStatus::Submitted, 3, 10_000);
         let clamped = clamp_timestamps(&[future.clone()], 5_000);
-        assert_eq!(clamped[0].updated_at, 5_000, "a future stamp is treated as now");
+        assert_eq!(
+            clamped[0].updated_at, 5_000,
+            "a future stamp is treated as now"
+        );
         assert_eq!(clamped[0].rev, 3, "clamping touches only the clock");
 
         let honest = rec("e2", EditStatus::Draft, 1, 4_000);
-        assert_eq!(clamp_timestamps(&[honest], 5_000)[0].updated_at, 4_000, "honest stamps untouched");
+        assert_eq!(
+            clamp_timestamps(&[honest], 5_000)[0].updated_at,
+            4_000,
+            "honest stamps untouched"
+        );
 
         let once = clamp_timestamps(&[future], 5_000);
         assert_eq!(clamp_timestamps(&once, 5_000), once);
@@ -642,7 +795,11 @@ mod receive_tests {
         let server = vec![rec("e1", EditStatus::Retired, 4, 6_000)];
         let merged = merge(&clamped, &server);
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].status, EditStatus::Retired, "6000 beats the clamped 5000");
+        assert_eq!(
+            merged[0].status,
+            EditStatus::Retired,
+            "6000 beats the clamped 5000"
+        );
     }
 
     #[test]
@@ -650,10 +807,10 @@ mod receive_tests {
         let now = 1_000_000u64;
         let horizon = 100_000u64;
         let docs = vec![
-            rec("old-retired", EditStatus::Retired, 2, now - 200_000),   // dropped
-            rec("new-retired", EditStatus::Retired, 2, now - 50_000),    // kept
+            rec("old-retired", EditStatus::Retired, 2, now - 200_000), // dropped
+            rec("new-retired", EditStatus::Retired, 2, now - 50_000),  // kept
             rec("old-accepted", EditStatus::Accepted, 9, now - 900_000), // kept: in force
-            rec("draft", EditStatus::Draft, 1, now - 900_000),          // kept
+            rec("draft", EditStatus::Draft, 1, now - 900_000),         // kept
         ];
         let (kept, dropped) = compact(&docs, now, horizon);
         assert_eq!(dropped, 1);
@@ -675,8 +832,18 @@ mod receive_tests {
         ];
         let keep: std::collections::BTreeSet<String> = ["named".to_string()].into_iter().collect();
         let (kept, dropped) = compact_keeping(&docs, now, 100_000, &keep);
-        assert_eq!((dropped, kept.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()), (1, vec!["named"]));
-        assert_eq!(compact(&docs, now, 100_000), compact_keeping(&docs, now, 100_000, &Default::default()), "compact keeps nothing named");
+        assert_eq!(
+            (
+                dropped,
+                kept.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
+            ),
+            (1, vec!["named"])
+        );
+        assert_eq!(
+            compact(&docs, now, 100_000),
+            compact_keeping(&docs, now, 100_000, &Default::default()),
+            "compact keeps nothing named"
+        );
     }
 
     #[test]
@@ -688,7 +855,10 @@ mod receive_tests {
         };
         let json = serde_json::to_string(&env).unwrap();
         assert!(json.contains("\"kind\":\"edit_records\""), "{json}");
-        assert!(json.contains(&format!("\"schema_version\":{SCHEMA_VERSION}")), "{json}");
+        assert!(
+            json.contains(&format!("\"schema_version\":{SCHEMA_VERSION}")),
+            "{json}"
+        );
         assert_eq!(serde_json::from_str::<Envelope>(&json).unwrap(), env);
         for (kind, name) in [
             (DocumentKind::NetworkDocument, "network_document"),
@@ -706,8 +876,8 @@ mod receive_tests {
 #[cfg(test)]
 mod merge_tests {
     use super::*;
-    use proptest::prelude::*;
     use proptest::collection::vec;
+    use proptest::prelude::*;
 
     fn sample_record(id: u8, rev: u64, updated_at: u64, status: EditStatus) -> EditRecord {
         EditRecord {
@@ -763,13 +933,17 @@ mod merge_tests {
             ),
             0..8,
         )
-            .prop_map(|rows| {
-                rows.into_iter()
-                    .map(|(id, rev, at, status, is_cancel)| {
-                        if is_cancel { sample_cancel(id, rev, at, status) } else { sample_record(id, rev, at, status) }
-                    })
-                    .collect()
-            })
+        .prop_map(|rows| {
+            rows.into_iter()
+                .map(|(id, rev, at, status, is_cancel)| {
+                    if is_cancel {
+                        sample_cancel(id, rev, at, status)
+                    } else {
+                        sample_record(id, rev, at, status)
+                    }
+                })
+                .collect()
+        })
     }
 
     proptest! {
@@ -802,7 +976,10 @@ mod merge_tests {
         let merged = merge(&[older], &[b]);
         assert_eq!(merged[0].updated_at, 200);
 
-        let merged = merge(&[sample_record(1, 1, 1, EditStatus::Draft)], &[sample_record(2, 1, 1, EditStatus::Draft)]);
+        let merged = merge(
+            &[sample_record(1, 1, 1, EditStatus::Draft)],
+            &[sample_record(2, 1, 1, EditStatus::Draft)],
+        );
         assert_eq!(merged.len(), 2);
         assert!(merged[0].id < merged[1].id, "sorted by id");
     }

@@ -11,10 +11,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use common::*;
 use proptest::prelude::*;
 use transit_network::{apply_edits, materialize, validation_issues_under, Network};
-use transit_runs::{suggest_blocks, RecoveryRule, RoutePair, Suggestion, SchedulingConstraints};
+use transit_runs::{suggest_blocks, RecoveryRule, RoutePair, SchedulingConstraints, Suggestion};
 
 fn station(net: &Network, stop: &str) -> String {
-    net.stops.get(stop).and_then(|s| s.parent.clone()).unwrap_or_else(|| stop.to_string())
+    net.stops
+        .get(stop)
+        .and_then(|s| s.parent.clone())
+        .unwrap_or_else(|| stop.to_string())
 }
 
 fn rules(min_secs: Option<u32>, interline: bool) -> Option<SchedulingConstraints> {
@@ -23,17 +26,45 @@ fn rules(min_secs: Option<u32>, interline: bool) -> Option<SchedulingConstraints
     }
     Some(SchedulingConstraints {
         schema_version: Default::default(),
-        recovery: min_secs.map(|m| RecoveryRule { route: None, service_type: None, min_secs: Some(m), pct_of_run: None, extra: Default::default() }).into_iter().collect(),
-        interline: if interline { vec![RoutePair { a: "5".into(), b: "6".into(), extra: Default::default() }] } else { vec![] },
+        recovery: min_secs
+            .map(|m| RecoveryRule {
+                route: None,
+                service_type: None,
+                min_secs: Some(m),
+                pct_of_run: None,
+                extra: Default::default(),
+            })
+            .into_iter()
+            .collect(),
+        interline: if interline {
+            vec![RoutePair {
+                a: "5".into(),
+                b: "6".into(),
+                extra: Default::default(),
+            }]
+        } else {
+            vec![]
+        },
         ..Default::default()
     })
 }
 
-fn check(net: &Network, rules: Option<&SchedulingConstraints>) -> Result<Suggestion, TestCaseError> {
+fn check(
+    net: &Network,
+    rules: Option<&SchedulingConstraints>,
+) -> Result<Suggestion, TestCaseError> {
     let day = materialize(net, date()).unwrap();
     let s = suggest_blocks(net, &day, rules);
-    let blocked: BTreeSet<&str> = net.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();
-    let unassigned: BTreeSet<&str> = day.iter().map(|t| t.trip.as_str()).filter(|t| !blocked.contains(t)).collect();
+    let blocked: BTreeSet<&str> = net
+        .blocks
+        .values()
+        .flat_map(|b| b.trips.iter().map(|t| t.trip.as_str()))
+        .collect();
+    let unassigned: BTreeSet<&str> = day
+        .iter()
+        .map(|t| t.trip.as_str())
+        .filter(|t| !blocked.contains(t))
+        .collect();
 
     let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
     for b in &s.blocks {
@@ -45,15 +76,31 @@ fn check(net: &Network, rules: Option<&SchedulingConstraints>) -> Result<Suggest
         *seen.entry(u.trip.as_str()).or_default() += 1;
     }
     prop_assert_eq!(seen.keys().copied().collect::<BTreeSet<_>>(), unassigned);
-    prop_assert!(seen.values().all(|&n| n == 1), "a trip suggested twice: {:?}", seen);
+    prop_assert!(
+        seen.values().all(|&n| n == 1),
+        "a trip suggested twice: {:?}",
+        seen
+    );
 
     for b in &s.blocks {
-        prop_assert!(!net.blocks.contains_key(&b.block_id), "a suggestion never reuses a block id");
+        prop_assert!(
+            !net.blocks.contains_key(&b.block_id),
+            "a suggestion never reuses a block id"
+        );
         for pair in b.trips.windows(2) {
             let (a, n) = (&pair[0], &pair[1]);
             let wait = a.wait.as_ref().expect("a trip with a next has a wait");
-            prop_assert_eq!(station(net, &a.to_stop), station(net, &n.from_stop), "no deadheads");
-            prop_assert!(a.route == n.route || rules.is_some_and(|r| r.interlines(&a.route, &n.route)), "interlined {} → {}", a.route, n.route);
+            prop_assert_eq!(
+                station(net, &a.to_stop),
+                station(net, &n.from_stop),
+                "no deadheads"
+            );
+            prop_assert!(
+                a.route == n.route || rules.is_some_and(|r| r.interlines(&a.route, &n.route)),
+                "interlined {} → {}",
+                a.route,
+                n.route
+            );
             prop_assert_eq!(wait.gap_secs, n.start_secs - a.end_secs);
             prop_assert!(wait.gap_secs >= wait.required_secs);
             prop_assert_eq!(wait.slack_secs, wait.gap_secs - wait.required_secs);
@@ -66,7 +113,11 @@ fn check(net: &Network, rules: Option<&SchedulingConstraints>) -> Result<Suggest
 
     let adopted = apply_edits(net, &s.edits).map_err(|e| TestCaseError::fail(e.to_string()))?;
     for (id, block) in &net.blocks {
-        prop_assert_eq!(adopted.blocks.get(id), Some(block), "authored blocks are untouched");
+        prop_assert_eq!(
+            adopted.blocks.get(id),
+            Some(block),
+            "authored blocks are untouched"
+        );
     }
     let issues = validation_issues_under(&adopted, &transit_runs::required(rules));
     prop_assert_eq!(issues, vec![]);
@@ -75,12 +126,22 @@ fn check(net: &Network, rules: Option<&SchedulingConstraints>) -> Result<Suggest
     prop_assert_eq!(s.peak_at_secs, fleet.peak_at_secs);
     let authored = transit_dispatch::fleet_summary(net, &day);
     prop_assert_eq!(s.authored_peak_vehicles, authored.peak_vehicles);
-    prop_assert_eq!(s.added_vehicles, s.peak_vehicles.saturating_sub(authored.peak_vehicles));
+    prop_assert_eq!(
+        s.added_vehicles,
+        s.peak_vehicles.saturating_sub(authored.peak_vehicles)
+    );
     Ok(s)
 }
 
 fn trips() -> impl Strategy<Value = Vec<(&'static str, bool, u32)>> {
-    proptest::collection::vec((prop_oneof![Just("5"), Just("6")], any::<bool>(), (5 * 60u32..22 * 60).prop_map(|m| m * 60)), 0..40)
+    proptest::collection::vec(
+        (
+            prop_oneof![Just("5"), Just("6")],
+            any::<bool>(),
+            (5 * 60u32..22 * 60).prop_map(|m| m * 60),
+        ),
+        0..40,
+    )
 }
 
 proptest! {
@@ -115,7 +176,15 @@ fn a_turn_shorter_than_the_rule_takes_another_vehicle() {
     assert_eq!(one.blocks.len(), 1);
     assert_eq!(one.peak_vehicles, 1);
     let wait = one.blocks[0].trips[0].wait.clone().unwrap();
-    assert_eq!((wait.gap_secs, wait.required_secs, wait.slack_secs, wait.required_by), (600, 0, 600, None));
+    assert_eq!(
+        (
+            wait.gap_secs,
+            wait.required_secs,
+            wait.slack_secs,
+            wait.required_by
+        ),
+        (600, 0, 600, None)
+    );
     let two = check(&net, rules(Some(900), false).as_ref()).unwrap();
     assert_eq!(two.blocks.len(), 2);
     assert_eq!(two.peak_vehicles, 1, "two blocks, never out at once");
@@ -126,7 +195,11 @@ fn routes_interline_only_where_the_rules_allow_it() {
     let net = world(&[("6", true, 8 * H), ("5", false, 8 * H + 1800)], &[]);
     assert_eq!(check(&net, None).unwrap().blocks.len(), 2);
     let together = check(&net, rules(None, true).as_ref()).unwrap();
-    assert_eq!(together.blocks.len(), 1, "a bay of the same station is the same place");
+    assert_eq!(
+        together.blocks.len(),
+        1,
+        "a bay of the same station is the same place"
+    );
 }
 
 #[test]
@@ -134,8 +207,17 @@ fn a_proposal_names_the_vehicles_it_adds() {
     let base = [("5", true, 8 * H), ("5", false, 9 * H)];
     let mut trips = base.to_vec();
     trips.push(("5", true, 8 * H + 600));
-    let mut net = world(&trips, &[("b", vec![trip_id("5", true, 8 * H), trip_id("5", false, 9 * H)])]);
+    let mut net = world(
+        &trips,
+        &[(
+            "b",
+            vec![trip_id("5", true, 8 * H), trip_id("5", false, 9 * H)],
+        )],
+    );
     layover(&mut net, "b", 0, H - RUN);
     let s = check(&net, None).unwrap();
-    assert_eq!((s.authored_peak_vehicles, s.peak_vehicles, s.added_vehicles), (1, 2, 1));
+    assert_eq!(
+        (s.authored_peak_vehicles, s.peak_vehicles, s.added_vehicles),
+        (1, 2, 1)
+    );
 }

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-pub use transit_disruptions::{AlertGap, AlertStart, Disruption, Filter, NamedStop, Origin, RouteDay, Today};
+pub use transit_disruptions::{
+    AlertGap, AlertStart, Disruption, Filter, NamedStop, Origin, RouteDay, Today,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -75,7 +77,9 @@ pub enum Response {
         #[cfg_attr(feature = "bindings", ts(flatten))]
         today: Today,
     },
-    Gaps { gaps: Vec<AlertGap> },
+    Gaps {
+        gaps: Vec<AlertGap>,
+    },
     StartAlert {
         #[serde(flatten)]
         #[cfg_attr(feature = "bindings", ts(flatten))]
@@ -99,10 +103,17 @@ impl Held {
         Ok(Held {
             network: kind::<transit_network::Network>().require(&d.network_hash)?,
             edits: match &d.edits_hash {
-                Some(h) => kind::<transit_sync::EditDocument>().require(h)?.records.clone(),
+                Some(h) => kind::<transit_sync::EditDocument>()
+                    .require(h)?
+                    .records
+                    .clone(),
                 None => Vec::new(),
             },
-            live: d.live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?,
+            live: d
+                .live_hash
+                .as_deref()
+                .map(|h| kind::<transit_live::LiveDay>().require(h))
+                .transpose()?,
             stops: match &d.stops_hash {
                 Some(h) => kind::<transit_stops::Stops>().require(h)?,
                 None => Arc::new(transit_stops::Stops::empty()),
@@ -136,17 +147,27 @@ impl Held {
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::Today { documents, route, stop } => {
+        Request::Today {
+            documents,
+            route,
+            stop,
+        } => {
             let held = Held::of(&documents)?;
-            Ok(Response::Today { today: transit_disruptions::today(&held.inputs(), &Filter { route, stop }) })
+            Ok(Response::Today {
+                today: transit_disruptions::today(&held.inputs(), &Filter { route, stop }),
+            })
         }
         Request::Gaps { documents } => {
             let held = Held::of(&documents)?;
-            Ok(Response::Gaps { gaps: transit_disruptions::gaps(&held.inputs()) })
+            Ok(Response::Gaps {
+                gaps: transit_disruptions::gaps(&held.inputs()),
+            })
         }
         Request::StartAlert { documents, source } => {
             let held = Held::of(&documents)?;
-            Ok(Response::StartAlert { start: transit_disruptions::start_alert(&held.inputs(), source.as_ref()) })
+            Ok(Response::StartAlert {
+                start: transit_disruptions::start_alert(&held.inputs(), source.as_ref()),
+            })
         }
     }
 }

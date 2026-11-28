@@ -15,9 +15,7 @@ use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    NotesKind = "notes"
-);
+transit_version::kind_tag!(NotesKind = "notes");
 
 impl transit_version::Versioned for Notes {
     const KIND: &'static str = "notes";
@@ -77,7 +75,11 @@ pub enum NoteTarget {
     /// `start_secs` is seconds after the service-day anchor. A service date
     /// names its pick, so the instance is unambiguous.
     #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "trip_instance")))]
-    Trip { trip: String, date: String, start_secs: u32 },
+    Trip {
+        trip: String,
+        date: String,
+        start_secs: u32,
+    },
     Edit {
         #[cfg_attr(feature = "bindings", schemars(extend("x-references" = "edit_record")))]
         id: String,
@@ -172,14 +174,44 @@ fn check(id: &str, n: &Note) -> Vec<NoteProblem> {
 }
 
 impl Notes {
-    pub fn write(&self, id: &str, target: NoteTarget, text: &str, by: &str, at: u64) -> Result<Notes, Vec<NoteRefusal>> {
-        let refuse = |problems: Vec<NoteProblem>| problems.into_iter().map(|problem| NoteRefusal { note: id.to_string(), problem }).collect::<Vec<_>>();
-        let stamp = Stamp { by: by.to_string(), at };
+    pub fn write(
+        &self,
+        id: &str,
+        target: NoteTarget,
+        text: &str,
+        by: &str,
+        at: u64,
+    ) -> Result<Notes, Vec<NoteRefusal>> {
+        let refuse = |problems: Vec<NoteProblem>| {
+            problems
+                .into_iter()
+                .map(|problem| NoteRefusal {
+                    note: id.to_string(),
+                    problem,
+                })
+                .collect::<Vec<_>>()
+        };
+        let stamp = Stamp {
+            by: by.to_string(),
+            at,
+        };
         let note = match self.notes.get(id) {
-            None => Note { target, text: text.to_string(), written: stamp, edited: None, extra: Default::default() },
-            Some(held) if held.target != target => return Err(refuse(vec![NoteProblem::TargetChanged])),
+            None => Note {
+                target,
+                text: text.to_string(),
+                written: stamp,
+                edited: None,
+                extra: Default::default(),
+            },
+            Some(held) if held.target != target => {
+                return Err(refuse(vec![NoteProblem::TargetChanged]))
+            }
             Some(held) if held.text == text => return Ok(self.clone()),
-            Some(held) => Note { text: text.to_string(), edited: Some(stamp), ..held.clone() },
+            Some(held) => Note {
+                text: text.to_string(),
+                edited: Some(stamp),
+                ..held.clone()
+            },
         };
         let problems = check(id, &note);
         if !problems.is_empty() {
@@ -194,7 +226,12 @@ impl Notes {
         let refusals: Vec<NoteRefusal> = self
             .notes
             .iter()
-            .flat_map(|(id, n)| check(id, n).into_iter().map(move |problem| NoteRefusal { note: id.clone(), problem }))
+            .flat_map(|(id, n)| {
+                check(id, n).into_iter().map(move |problem| NoteRefusal {
+                    note: id.clone(),
+                    problem,
+                })
+            })
             .collect();
         if refusals.is_empty() {
             Ok(self)
@@ -204,8 +241,15 @@ impl Notes {
     }
 
     pub fn on(&self, target: &NoteTarget) -> Vec<NoteRow> {
-        let mut rows: Vec<NoteRow> =
-            self.notes.iter().filter(|(_, n)| &n.target == target).map(|(id, n)| NoteRow { id: id.clone(), note: n.clone() }).collect();
+        let mut rows: Vec<NoteRow> = self
+            .notes
+            .iter()
+            .filter(|(_, n)| &n.target == target)
+            .map(|(id, n)| NoteRow {
+                id: id.clone(),
+                note: n.clone(),
+            })
+            .collect();
         rows.sort_by(|a, b| (a.note.written.at, &a.id).cmp(&(b.note.written.at, &b.id)));
         rows
     }
@@ -215,9 +259,18 @@ impl Notes {
             .notes
             .iter()
             .filter(|(_, n)| from <= n.written.at && n.written.at < to)
-            .map(|(id, n)| NoteRow { id: id.clone(), note: n.clone() })
+            .map(|(id, n)| NoteRow {
+                id: id.clone(),
+                note: n.clone(),
+            })
             .collect();
-        rows.sort_by(|a, b| b.note.written.at.cmp(&a.note.written.at).then_with(|| a.id.cmp(&b.id)));
+        rows.sort_by(|a, b| {
+            b.note
+                .written
+                .at
+                .cmp(&a.note.written.at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         rows
     }
 }

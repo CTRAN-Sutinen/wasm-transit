@@ -5,8 +5,8 @@
 use proptest::prelude::*;
 use serde_json::Value;
 use transit_network::{
-    pattern_alignment, migrate_network, validation_issues, Alignment, AlignmentPoint, Coord, Mode, Network,
-    NetworkError, Pattern, PatternStop, Route, Stop,
+    migrate_network, pattern_alignment, validation_issues, Alignment, AlignmentPoint, Coord, Mode,
+    Network, NetworkError, Pattern, PatternStop, Route, Stop,
 };
 
 #[derive(Clone, Debug)]
@@ -25,25 +25,45 @@ struct Spec {
 const ALIGNMENT_IDS: [&str; 4] = ["sh 7", "A/1", "0", "x_line"];
 
 fn coord() -> impl Strategy<Value = (f64, f64)> {
-    (-900_000i32..900_000, -1_800_000i32..1_800_000).prop_map(|(a, b)| (a as f64 / 1e4 + 0.123456789012, b as f64 / 1e4))
+    (-900_000i32..900_000, -1_800_000i32..1_800_000)
+        .prop_map(|(a, b)| (a as f64 / 1e4 + 0.123456789012, b as f64 / 1e4))
 }
 
 fn spec_strategy() -> impl Strategy<Value = Spec> {
-    let alignment = (proptest::collection::vec(coord(), 0..=5), any::<bool>())
-        .prop_map(|(points, with_distances)| GenAlignment { points, with_distances });
+    let alignment = (proptest::collection::vec(coord(), 0..=5), any::<bool>()).prop_map(
+        |(points, with_distances)| GenAlignment {
+            points,
+            with_distances,
+        },
+    );
     (
         proptest::collection::vec(alignment, 0..=ALIGNMENT_IDS.len()),
-        proptest::collection::vec(proptest::sample::select(vec![(45.5, -122.6), (45.51, -122.6), (45.52, -122.61)]), 4),
+        proptest::collection::vec(
+            proptest::sample::select(vec![(45.5, -122.6), (45.51, -122.6), (45.52, -122.61)]),
+            4,
+        ),
     )
         .prop_flat_map(|(alignments, stops)| {
             let n = alignments.len();
             let pattern = (
                 proptest::collection::vec(0usize..4, 1..=4),
-                if n == 0 { Just(None).boxed() } else { proptest::option::of(0..n).boxed() },
+                if n == 0 {
+                    Just(None).boxed()
+                } else {
+                    proptest::option::of(0..n).boxed()
+                },
             );
-            (Just(alignments), proptest::collection::vec(pattern, 1..=4), Just(stops))
+            (
+                Just(alignments),
+                proptest::collection::vec(pattern, 1..=4),
+                Just(stops),
+            )
         })
-        .prop_map(|(alignments, patterns, stops)| Spec { alignments, patterns, stops })
+        .prop_map(|(alignments, patterns, stops)| Spec {
+            alignments,
+            patterns,
+            stops,
+        })
 }
 
 fn alignment_of(g: &GenAlignment) -> Alignment {
@@ -58,18 +78,37 @@ fn alignment_of(g: &GenAlignment) -> Alignment {
                 distance: g.with_distances.then_some(i as f64 * 123.25),
             })
             .collect(),
-            extra: Default::default(),
+        extra: Default::default(),
     }
 }
 
 fn build(spec: &Spec) -> Network {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for (i, &(lat, lon)) in spec.stops.iter().enumerate() {
-        net.stops.insert(format!("s{i}"), Stop { name: format!("Stop {i}"), lat, lon, ..Default::default() });
+        net.stops.insert(
+            format!("s{i}"),
+            Stop {
+                name: format!("Stop {i}"),
+                lat,
+                lon,
+                ..Default::default()
+            },
+        );
     }
-    net.routes.insert("r0".into(), Route { name: "R".into(), mode: Mode::Bus, ..Default::default() });
+    net.routes.insert(
+        "r0".into(),
+        Route {
+            name: "R".into(),
+            mode: Mode::Bus,
+            ..Default::default()
+        },
+    );
     for (i, g) in spec.alignments.iter().enumerate() {
-        net.alignments.insert(ALIGNMENT_IDS[i].into(), alignment_of(g));
+        net.alignments
+            .insert(ALIGNMENT_IDS[i].into(), alignment_of(g));
     }
     for (p, (stops, alignment)) in spec.patterns.iter().enumerate() {
         let n = stops.len();

@@ -22,8 +22,12 @@ fn snapshot(poll: u64) -> Vec<u8> {
 }
 
 fn decoded_hash(bytes: &[u8]) -> String {
-    let answer: serde_json::Value = serde_json::from_str(&dispatch_bytes(OP_DECODE, bytes)).unwrap();
-    answer["ok"]["rt_hash"].as_str().unwrap_or_else(|| panic!("{answer}")).to_string()
+    let answer: serde_json::Value =
+        serde_json::from_str(&dispatch_bytes(OP_DECODE, bytes)).unwrap();
+    answer["ok"]["rt_hash"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{answer}"))
+        .to_string()
 }
 
 fn held(answer: &str) -> Vec<(String, String)> {
@@ -32,7 +36,12 @@ fn held(answer: &str) -> Vec<(String, String)> {
         .as_array()
         .unwrap_or_else(|| panic!("{value}"))
         .iter()
-        .map(|e| (e["kind"].as_str().unwrap().to_string(), e["key"].as_str().unwrap().to_string()))
+        .map(|e| {
+            (
+                e["kind"].as_str().unwrap().to_string(),
+                e["key"].as_str().unwrap().to_string(),
+            )
+        })
         .collect()
 }
 
@@ -43,16 +52,32 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     let mut last = String::new();
     for poll in 0..300 {
         last = decoded_hash(&snapshot(poll));
-        assert!(kind::<transit_rt::RtOverview>().len() <= 8, "poll {poll}: {} snapshots held", kind::<transit_rt::RtOverview>().len());
+        assert!(
+            kind::<transit_rt::RtOverview>().len() <= 8,
+            "poll {poll}: {} snapshots held",
+            kind::<transit_rt::RtOverview>().len()
+        );
     }
-    assert!(kind::<transit_rt::RtOverview>().get(&last).is_some(), "the newest snapshot is held");
+    assert!(
+        kind::<transit_rt::RtOverview>().get(&last).is_some(),
+        "the newest snapshot is held"
+    );
 
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let doc = serde_json::to_vec(&imported.network).unwrap();
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, &doc)).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        &doc,
+    ))
+    .unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().unwrap().to_string();
-    let (boundary_hash, _) = kind::<transit_codec::Boundary>().register(imported.boundary).unwrap();
+    let (boundary_hash, _) = kind::<transit_codec::Boundary>()
+        .register(imported.boundary)
+        .unwrap();
     let before = held(&dispatch_bytes(OP_HELD, b""));
     assert!(before.contains(&("network".into(), network_hash.clone())));
     assert!(before.contains(&("boundary".into(), boundary_hash.clone())));
@@ -60,7 +85,13 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     // The boundary and every older snapshot drop, and the kept never do.
     let keep = serde_json::json!({ "keep": [network_hash, last] }).to_string();
     let after = held(&dispatch_bytes(OP_EVICT, keep.as_bytes()));
-    assert_eq!(after, vec![("network".into(), network_hash.clone()), ("rt snapshot".into(), last.clone())]);
+    assert_eq!(
+        after,
+        vec![
+            ("network".into(), network_hash.clone()),
+            ("rt snapshot".into(), last.clone())
+        ]
+    );
 
     // An evicted hash gives the unknown-hash error, never a wrong answer.
     let asked = dispatch(Request::Live {
@@ -73,7 +104,16 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
         late_limit: None,
         with_document: None,
     });
-    assert_eq!(asked.unwrap_err().code, Some(cap_abi::RefusalCode::UnknownDocument { kind: "boundary".into(), hash: boundary_hash.clone(), load: "load_boundary".into() }));
-    let (again, _) = kind::<transit_codec::Boundary>().register(transit_codec::import(&feed).boundary).unwrap();
+    assert_eq!(
+        asked.unwrap_err().code,
+        Some(cap_abi::RefusalCode::UnknownDocument {
+            kind: "boundary".into(),
+            hash: boundary_hash.clone(),
+            load: "load_boundary".into()
+        })
+    );
+    let (again, _) = kind::<transit_codec::Boundary>()
+        .register(transit_codec::import(&feed).boundary)
+        .unwrap();
     assert_eq!(again, boundary_hash);
 }

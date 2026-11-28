@@ -14,10 +14,13 @@
 //!    slots.
 
 use proptest::prelude::*;
-use transit_network::{apply_edits, apply_edits_reporting, validation_issues, Mode, Network, NetworkEdit, Route, Stop};
+use transit_network::{
+    apply_edits, apply_edits_reporting, validation_issues, Mode, Network, NetworkEdit, Route, Stop,
+};
 
 fn network() -> Network {
-    serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
+    serde_json::from_str(include_str!("../../../testdata/network.json"))
+        .expect("testdata network parses")
 }
 
 fn haversine_m(a: &Stop, b: &Stop) -> f64 {
@@ -40,10 +43,23 @@ fn new_route(stops: &[&str], run_secs: u32, headway: u32) -> Vec<NetworkEdit> {
     let there: Vec<String> = stops.iter().map(|s| s.to_string()).collect();
     let back: Vec<String> = there.iter().rev().cloned().collect();
     let mut edits = vec![
-        NetworkEdit::AddRoute { id: Some("20".into()) },
-        NetworkEdit::UpsertRoute { id: "20".into(), route: route("20", "Crosstown") },
-        NetworkEdit::SetDirection { route: "20".into(), id: "0".into(), name: "Outbound".into() },
-        NetworkEdit::SetDirection { route: "20".into(), id: "1".into(), name: "Inbound".into() },
+        NetworkEdit::AddRoute {
+            id: Some("20".into()),
+        },
+        NetworkEdit::UpsertRoute {
+            id: "20".into(),
+            route: route("20", "Crosstown"),
+        },
+        NetworkEdit::SetDirection {
+            route: "20".into(),
+            id: "0".into(),
+            name: "Outbound".into(),
+        },
+        NetworkEdit::SetDirection {
+            route: "20".into(),
+            id: "1".into(),
+            name: "Inbound".into(),
+        },
     ];
     for (dir, seq) in [("0", there), ("1", back)] {
         edits.push(NetworkEdit::AddPatternThrough {
@@ -70,41 +86,93 @@ fn new_route(stops: &[&str], run_secs: u32, headway: u32) -> Vec<NetworkEdit> {
 #[test]
 fn a_pattern_is_laid_through_the_stops_given() {
     let net = network();
-    let applied = apply_edits_reporting(&net, &new_route(&["A", "C", "B"], 1500, 1800)).expect("the new route applies");
+    let applied = apply_edits_reporting(&net, &new_route(&["A", "C", "B"], 1500, 1800))
+        .expect("the new route applies");
     let next = applied.network;
     let p = &next.patterns["20-0"];
-    assert_eq!(p.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), vec!["A", "C", "B"]);
-    assert_eq!(p.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), vec![true, false, true]);
-    let legs = [0.0, haversine_m(&net.stops["A"], &net.stops["C"]), haversine_m(&net.stops["C"], &net.stops["B"])];
+    assert_eq!(
+        p.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(),
+        vec!["A", "C", "B"]
+    );
+    assert_eq!(
+        p.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(),
+        vec![true, false, true]
+    );
+    let legs = [
+        0.0,
+        haversine_m(&net.stops["A"], &net.stops["C"]),
+        haversine_m(&net.stops["C"], &net.stops["B"]),
+    ];
     let mut along = 0.0;
     for (visit, leg) in p.stops.iter().zip(legs) {
         along += leg;
-        assert!((visit.distance_m - along).abs() < 0.5, "{} at {} m, not {along}", visit.stop, visit.distance_m);
+        assert!(
+            (visit.distance_m - along).abs() < 0.5,
+            "{} at {} m, not {along}",
+            visit.stop,
+            visit.distance_m
+        );
         assert!(!visit.distance_published);
     }
     assert_eq!(p.timing.len(), 1);
     assert_eq!(p.timing[0].at_timepoints, vec![0, 1500]);
     assert!(p.timing[0].start_secs == 0 && p.timing[0].end_secs >= 24 * 3600);
-    assert_eq!((p.route.as_str(), p.direction.as_deref(), p.alignment.as_deref()), ("20", Some("0"), None));
+    assert_eq!(
+        (
+            p.route.as_str(),
+            p.direction.as_deref(),
+            p.alignment.as_deref()
+        ),
+        ("20", Some("0"), None)
+    );
     assert_eq!(p.name, format!("20 → {}", net.stops["B"].name));
-    assert!(applied.created.iter().any(|c| c.kind == "pattern" && c.id == "20-0"));
-    assert_eq!(next.patterns["20-1"].stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), vec!["B", "C", "A"]);
+    assert!(applied
+        .created
+        .iter()
+        .any(|c| c.kind == "pattern" && c.id == "20-0"));
+    assert_eq!(
+        next.patterns["20-1"]
+            .stops
+            .iter()
+            .map(|s| s.stop.as_str())
+            .collect::<Vec<_>>(),
+        vec!["B", "C", "A"]
+    );
 }
 
 #[test]
 fn the_new_route_validates_and_runs_its_headway() {
-    let next = apply_edits(&network(), &new_route(&["A", "B", "C"], 1200, 1800)).expect("the new route applies");
-    assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
+    let next = apply_edits(&network(), &new_route(&["A", "B", "C"], 1200, 1800))
+        .expect("the new route applies");
+    assert!(
+        validation_issues(&next).is_empty(),
+        "{:?}",
+        validation_issues(&next)
+    );
     assert_eq!(next.routes["20"].long_name.as_deref(), Some("Crosstown"));
     for dir in ["0", "1"] {
-        let trips: Vec<_> = next.trips().filter(|(_, pt, _)| pt.pattern == format!("20-{dir}")).collect();
-        let mut starts: Vec<u32> = trips.iter().filter_map(|(_, _, t)| t.departs.first_start()).collect();
+        let trips: Vec<_> = next
+            .trips()
+            .filter(|(_, pt, _)| pt.pattern == format!("20-{dir}"))
+            .collect();
+        let mut starts: Vec<u32> = trips
+            .iter()
+            .filter_map(|(_, _, t)| t.departs.first_start())
+            .collect();
         starts.sort_unstable();
-        assert_eq!(starts, vec![25200, 27000, 28800, 30600], "direction {dir}: every 30 min from 07:00 until before 09:00");
+        assert_eq!(
+            starts,
+            vec![25200, 27000, 28800, 30600],
+            "direction {dir}: every 30 min from 07:00 until before 09:00"
+        );
         for (_, pt, t) in &trips {
             assert_eq!(pt.service_type, "weekday");
             assert_eq!(t.times.first().and_then(|o| o.departure_secs), Some(0));
-            assert_eq!(t.times.last().and_then(|o| o.arrival_secs), Some(1200), "each trip runs run_secs end to end");
+            assert_eq!(
+                t.times.last().and_then(|o| o.arrival_secs),
+                Some(1200),
+                "each trip runs run_secs end to end"
+            );
         }
     }
 }
@@ -112,28 +180,42 @@ fn the_new_route_validates_and_runs_its_headway() {
 #[test]
 fn what_cannot_be_laid_is_named_and_changes_nothing() {
     let net = network();
-    let lay = |stops: &[&str], route: &str, direction: Option<&str>, run_secs: u32, id: Option<&str>| NetworkEdit::AddPatternThrough {
-        id: id.map(str::to_string),
-        route: route.into(),
-        direction: direction.map(str::to_string),
-        name: None,
-        stops: stops.iter().map(|s| s.to_string()).collect(),
-        run_secs,
-    };
+    let lay =
+        |stops: &[&str], route: &str, direction: Option<&str>, run_secs: u32, id: Option<&str>| {
+            NetworkEdit::AddPatternThrough {
+                id: id.map(str::to_string),
+                route: route.into(),
+                direction: direction.map(str::to_string),
+                name: None,
+                stops: stops.iter().map(|s| s.to_string()).collect(),
+                run_secs,
+            }
+        };
     let taken = net.patterns.keys().next().unwrap().clone();
     let cases: Vec<(NetworkEdit, &str)> = vec![
         (lay(&["A"], "10", None, 600, None), "two stops"),
         (lay(&[], "10", None, 600, None), "two stops"),
         (lay(&["A", "Z"], "10", None, 600, None), "Z"),
-        (lay(&["A", "A", "B"], "10", None, 600, None), "twice in a row"),
+        (
+            lay(&["A", "A", "B"], "10", None, 600, None),
+            "twice in a row",
+        ),
         (lay(&["A", "B"], "99", None, 600, None), "99"),
-        (lay(&["A", "B"], "10", Some("nowhere"), 600, None), "nowhere"),
+        (
+            lay(&["A", "B"], "10", Some("nowhere"), 600, None),
+            "nowhere",
+        ),
         (lay(&["A", "B"], "10", None, 0, None), "run time"),
         (lay(&["A", "B"], "10", None, 600, Some(&taken)), &taken),
     ];
     for (edit, says) in cases {
-        let reason = apply_edits(&net, &[edit.clone()]).expect_err("refused").reason;
-        assert!(reason.contains(says), "{edit:?} refused as {reason:?}, not naming {says:?}");
+        let reason = apply_edits(&net, &[edit.clone()])
+            .expect_err("refused")
+            .reason;
+        assert!(
+            reason.contains(says),
+            "{edit:?} refused as {reason:?}, not naming {says:?}"
+        );
     }
 }
 

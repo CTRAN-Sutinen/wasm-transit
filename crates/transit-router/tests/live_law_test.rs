@@ -13,9 +13,9 @@
 //!    alighted at. The live plan is the schedule plan of the world
 //!    without them.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_live::LiveDay;
 use transit_router::{earliest_arrival, Leg, RouterNetwork};
 
@@ -41,7 +41,9 @@ struct LiveTripSpec {
 
 impl LiveTripSpec {
     fn scheduled(&self) -> Vec<u32> {
-        (0..self.stops.len() as u32).map(|i| self.start + i * self.step).collect()
+        (0..self.stops.len() as u32)
+            .map(|i| self.start + i * self.step)
+            .collect()
     }
     fn delay_at(&self, i: usize) -> Option<i32> {
         self.live.and_then(|(first, d)| (i >= first).then_some(d))
@@ -72,7 +74,13 @@ prop_compose! {
 
 fn feed() -> impl Strategy<Value = (usize, Vec<LiveTripSpec>, usize, usize, u32)> {
     (3usize..=8).prop_flat_map(|n_stops| {
-        (Just(n_stops), vec(live_trip(n_stops), 1..=10), 0usize..n_stops, 0usize..n_stops, 0u32..86_000)
+        (
+            Just(n_stops),
+            vec(live_trip(n_stops), 1..=10),
+            0usize..n_stops,
+            0usize..n_stops,
+            0u32..86_000,
+        )
     })
 }
 
@@ -86,7 +94,11 @@ fn live_doc(trips: &[LiveTripSpec], day: &[transit_network::MaterializedTrip]) -
         .filter(|(_, t)| t.live.is_some())
         .map(|(i, t)| {
             let id = format!("t{i}");
-            let start = day.iter().find(|m| m.trip == id).expect("trip materialized").start_secs;
+            let start = day
+                .iter()
+                .find(|m| m.trip == id)
+                .expect("trip materialized")
+                .start_secs;
             let sched = t.scheduled();
             let stops: Vec<serde_json::Value> = (0..t.stops.len())
                 .filter_map(|v| {
@@ -119,8 +131,20 @@ fn empty_live_with(trips: Vec<serde_json::Value>) -> LiveDay {
     .expect("a valid live document")
 }
 
-fn plan(net: &RouterNetwork, from: usize, to: usize, depart: u32) -> Option<transit_router::Itinerary> {
-    earliest_arrival(net, &format!("s{from}"), &format!("s{to}"), depart, MAX_LEGS).expect("valid query")
+fn plan(
+    net: &RouterNetwork,
+    from: usize,
+    to: usize,
+    depart: u32,
+) -> Option<transit_router::Itinerary> {
+    earliest_arrival(
+        net,
+        &format!("s{from}"),
+        &format!("s{to}"),
+        depart,
+        MAX_LEGS,
+    )
+    .expect("valid query")
 }
 
 proptest! {
@@ -179,7 +203,9 @@ proptest! {
 
 /// Two buses meet at s1, and the stops are too far apart to walk:
 /// t0 s0 08:00 → s1 08:10, t1 s1 08:12 → s2 08:30, t2 s1 08:20 → s2 08:50.
-fn connection(live: impl Fn(&[transit_network::MaterializedTrip]) -> Vec<serde_json::Value>) -> Option<transit_router::Itinerary> {
+fn connection(
+    live: impl Fn(&[transit_network::MaterializedTrip]) -> Vec<serde_json::Value>,
+) -> Option<transit_router::Itinerary> {
     let timed = vec![
         (vec![0, 1], vec![8 * 3600, 8 * 3600 + 600]),
         (vec![1, 2], vec![8 * 3600 + 720, 8 * 3600 + 1800]),
@@ -194,10 +220,12 @@ fn connection(live: impl Fn(&[transit_network::MaterializedTrip]) -> Vec<serde_j
 fn delayed(trip: &str, start: u32, stops: &[(&str, u32)], d: i32) -> serde_json::Value {
     let stops: Vec<_> = stops
         .iter()
-        .map(|(s, sched)| serde_json::json!({
-            "stop": s, "scheduled_departure": sched, "arrival_delay": d,
-            "departure_delay": d, "predicted_departure": (*sched as i64 + d as i64) as u32,
-        }))
+        .map(|(s, sched)| {
+            serde_json::json!({
+                "stop": s, "scheduled_departure": sched, "arrival_delay": d,
+                "departure_delay": d, "predicted_departure": (*sched as i64 + d as i64) as u32,
+            })
+        })
         .collect();
     serde_json::json!({ "trip": trip, "start_secs": start, "route": "1", "route_name": "R",
         "worst_delay_secs": d, "status": "late", "stops": stops })
@@ -208,13 +236,38 @@ fn a_late_first_bus_misses_the_scheduled_connection() {
     let on_time = connection(|_| vec![]).unwrap();
     assert_eq!(on_time.arrival_secs, 8 * 3600 + 1800);
     // t0 predicted 5 min late arrives 08:15. t1 is gone, so t2 arrives 08:50.
-    let late = connection(|_| vec![delayed("t0", 8 * 3600, &[("s0", 8 * 3600), ("s1", 8 * 3600 + 600)], 300)]).unwrap();
-    assert_eq!(late.arrival_secs, 8 * 3600 + 3000, "the predicted-late t0 misses t1");
+    let late = connection(|_| {
+        vec![delayed(
+            "t0",
+            8 * 3600,
+            &[("s0", 8 * 3600), ("s1", 8 * 3600 + 600)],
+            300,
+        )]
+    })
+    .unwrap();
+    assert_eq!(
+        late.arrival_secs,
+        8 * 3600 + 3000,
+        "the predicted-late t0 misses t1"
+    );
     match &late.legs[0] {
-        Leg::Transit { trip, board_secs, board_delay_secs, alight_secs, alight_delay_secs, .. } => {
+        Leg::Transit {
+            trip,
+            board_secs,
+            board_delay_secs,
+            alight_secs,
+            alight_delay_secs,
+            ..
+        } => {
             assert_eq!(trip, "t0");
-            assert_eq!((*board_secs, *board_delay_secs), (8 * 3600 + 300, Some(300)));
-            assert_eq!((*alight_secs, *alight_delay_secs), (8 * 3600 + 900, Some(300)));
+            assert_eq!(
+                (*board_secs, *board_delay_secs),
+                (8 * 3600 + 300, Some(300))
+            );
+            assert_eq!(
+                (*alight_secs, *alight_delay_secs),
+                (8 * 3600 + 900, Some(300))
+            );
         }
         other => panic!("rides t0 first, got {other:?}"),
     }
@@ -228,13 +281,27 @@ fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
     let it = connection(|_| {
         vec![
             delayed("t0", 8 * 3600, &[("s1", 8 * 3600 + 600)], 240),
-            delayed("t1", 8 * 3600 + 720, &[("s1", 8 * 3600 + 720), ("s2", 8 * 3600 + 1800)], 300),
+            delayed(
+                "t1",
+                8 * 3600 + 720,
+                &[("s1", 8 * 3600 + 720), ("s2", 8 * 3600 + 1800)],
+                300,
+            ),
         ]
     })
     .unwrap();
-    assert_eq!(it.arrival_secs, 8 * 3600 + 2100, "the late t1 waits for the late t0");
+    assert_eq!(
+        it.arrival_secs,
+        8 * 3600 + 2100,
+        "the late t1 waits for the late t0"
+    );
     match &it.legs[..] {
-        [Leg::Transit { trip: a, board_secs, board_delay_secs, .. }, Leg::Transit { trip: b, .. }] => {
+        [Leg::Transit {
+            trip: a,
+            board_secs,
+            board_delay_secs,
+            ..
+        }, Leg::Transit { trip: b, .. }] => {
             assert_eq!((a.as_str(), b.as_str()), ("t0", "t1"));
             // s0 is before t0's first stated delay, so it stays on schedule.
             assert_eq!((*board_secs, *board_delay_secs), (8 * 3600, None));
@@ -288,25 +355,35 @@ proptest! {
 fn a_cancelled_connection_waits_for_the_next_bus() {
     let it = connection(|day| {
         let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
-        vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
-            "worst_delay_secs": null, "status": "no_prediction", "canceled": true, "stops": [] })]
+        vec![
+            serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
+            "worst_delay_secs": null, "status": "no_prediction", "canceled": true, "stops": [] }),
+        ]
     })
     .unwrap();
     assert_eq!(it.arrival_secs, 8 * 3600 + 3000);
-    assert!(it.legs.iter().all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
+    assert!(it
+        .legs
+        .iter()
+        .all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
 }
 
 #[test]
 fn a_skipped_stop_is_not_boarded() {
     let it = connection(|day| {
         let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
-        vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
+        vec![
+            serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
             "worst_delay_secs": null, "status": "no_prediction", "stops": [
                 { "stop": "s1", "scheduled_departure": 8 * 3600 + 720, "arrival_delay": null,
                   "departure_delay": null, "predicted_departure": 8 * 3600 + 720, "skipped": true }
-            ] })]
+            ] }),
+        ]
     })
     .unwrap();
     assert_eq!(it.arrival_secs, 8 * 3600 + 3000);
-    assert!(it.legs.iter().all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
+    assert!(it
+        .legs
+        .iter()
+        .all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
 }

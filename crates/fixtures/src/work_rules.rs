@@ -10,7 +10,10 @@ use serde_json::json;
 use transit_runs::WorkRules;
 
 fn rules(value: serde_json::Value) -> WorkRules {
-    serde_json::from_value::<WorkRules>(value).expect("the fixture reads").checked().expect("the fixture passes")
+    serde_json::from_value::<WorkRules>(value)
+        .expect("the fixture reads")
+        .checked()
+        .expect("the fixture passes")
 }
 
 fn base() -> serde_json::Value {

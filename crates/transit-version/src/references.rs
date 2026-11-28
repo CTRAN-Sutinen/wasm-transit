@@ -24,7 +24,10 @@ pub struct Reference {
 
 impl Reference {
     pub fn new(path: &str, target: &str) -> Self {
-        Reference { path: path.into(), target: target.into() }
+        Reference {
+            path: path.into(),
+            target: target.into(),
+        }
     }
 }
 
@@ -38,13 +41,30 @@ pub fn references(schema: &Value) -> Vec<Reference> {
     out
 }
 
-fn walk<'a>(root: &'a Value, node: &'a Value, path: String, stack: &mut Vec<&'a str>, out: &mut Vec<Reference>) {
+fn walk<'a>(
+    root: &'a Value,
+    node: &'a Value,
+    path: String,
+    stack: &mut Vec<&'a str>,
+    out: &mut Vec<Reference>,
+) {
     let Some(obj) = node.as_object() else { return };
     if let Some(target) = obj.get(KEYWORD).and_then(Value::as_str) {
-        let path = if is_array(node) { format!("{path}/*") } else { path.clone() };
-        out.push(Reference { path, target: target.into() });
+        let path = if is_array(node) {
+            format!("{path}/*")
+        } else {
+            path.clone()
+        };
+        out.push(Reference {
+            path,
+            target: target.into(),
+        });
     }
-    if let Some(name) = obj.get("$ref").and_then(Value::as_str).and_then(|r| r.strip_prefix("#/$defs/")) {
+    if let Some(name) = obj
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|r| r.strip_prefix("#/$defs/"))
+    {
         if !stack.contains(&name) {
             if let Some(def) = root.get("$defs").and_then(|d| d.get(name)) {
                 stack.push(name);
@@ -83,14 +103,22 @@ fn is_array(node: &Value) -> bool {
 }
 
 fn tag_of(root: &Value, branch: &Value) -> Option<(String, String)> {
-    let branch = match branch.get("$ref").and_then(Value::as_str).and_then(|r| r.strip_prefix("#/$defs/")) {
+    let branch = match branch
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|r| r.strip_prefix("#/$defs/"))
+    {
         Some(name) => root.get("$defs")?.get(name)?,
         None => branch,
     };
-    branch.get("properties")?.as_object()?.iter().find_map(|(field, prop)| {
-        let value = prop.get("const")?.as_str()?;
-        Some((field.clone(), value.to_string()))
-    })
+    branch
+        .get("properties")?
+        .as_object()?
+        .iter()
+        .find_map(|(field, prop)| {
+            let value = prop.get("const")?.as_str()?;
+            Some((field.clone(), value.to_string()))
+        })
 }
 
 #[cfg(test)]
@@ -137,6 +165,9 @@ mod tests {
 
     #[test]
     fn a_schema_with_no_declaration_has_no_references() {
-        assert!(references(&json!({"type": "object", "properties": {"a": {"type": "string"}}})).is_empty());
+        assert!(
+            references(&json!({"type": "object", "properties": {"a": {"type": "string"}}}))
+                .is_empty()
+        );
     }
 }

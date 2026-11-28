@@ -39,23 +39,29 @@
 
 mod constraints;
 mod cut;
+pub mod load;
 mod recovery;
 mod rules;
 mod run;
 mod suggest;
-pub mod load;
 pub mod version;
 
-pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
-pub use cut::{
-    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Composition, Cut, CutRun, DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces,
-    ReliefPoint, Roads, RunRef, RunSet,
+pub use constraints::{
+    required, Garage, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind,
+    CONSTRAINTS_VERSION,
 };
-pub use run::{judge, meets, timeline, Finding, Judged, Moment, Piece, PieceTrip, Places, Span};
-pub use constraints::{required, Garage, RecoveryRule, RoutePair, SchedulingConstraints, SchedulingConstraintsKind, CONSTRAINTS_VERSION};
+pub use cut::{
+    compose_refs, compose_runs, cut_pieces, cut_runs, judge_runs, Composition, Cut, CutRun,
+    DayBlocks, MixReport, NetworkPlaces, PieceRef, Pieces, ReliefPoint, Roads, RunRef, RunSet,
+};
+pub use recovery::{recovery, PatternRecovery, Recovery, RecoveryWait};
 pub use rules::{
-    Activity, Allowance, BreakFrom, BreakRule, Combine, Day, Event, GapBand, Guarantee, Limit, MixRule, Objective, Per, Premium, Quantity,
-    RuleKind, RuleSet, RunClass, ShareOf, Source, Strength, Timing, TravelAt, TravelRule, TriggerOn, Window, WorkRules, WorkRulesKind,
+    Activity, Allowance, BreakFrom, BreakRule, Combine, Day, Event, GapBand, Guarantee, Limit,
+    MixRule, Objective, Per, Premium, Quantity, RuleKind, RuleSet, RunClass, ShareOf, Source,
+    Strength, Timing, TravelAt, TravelRule, TriggerOn, Window, WorkRules, WorkRulesKind,
     SCHEMA_VERSION,
 };
-pub use suggest::{suggest_blocks, SuggestedBlock, SuggestedTrip, Suggestion, Unblocked, UnblockedReason, Wait};
+pub use run::{judge, meets, timeline, Finding, Judged, Moment, Piece, PieceTrip, Places, Span};
+pub use suggest::{
+    suggest_blocks, SuggestedBlock, SuggestedTrip, Suggestion, Unblocked, UnblockedReason, Wait,
+};

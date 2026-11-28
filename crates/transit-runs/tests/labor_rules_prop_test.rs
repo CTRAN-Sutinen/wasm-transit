@@ -47,7 +47,9 @@ fn reversed(mut w: WorkRules) -> WorkRules {
 fn names_measure(r: &RuleSet, m: &str) -> bool {
     let is = |x: &Option<String>| x.as_deref() == Some(m);
     r.limits.iter().any(|l| is(&l.measure))
-        || r.breaks.iter().any(|b| is(&b.measure) || is(&b.when_measure))
+        || r.breaks
+            .iter()
+            .any(|b| is(&b.measure) || is(&b.when_measure))
         || r.premiums.iter().any(|p| p.pays == m || is(&p.measure))
         || r.guarantees.iter().any(|g| g.counts == m)
 }
@@ -129,31 +131,99 @@ proptest! {
 fn each_refusal_names_what_is_wrong() {
     let refused = |w: serde_json::Value| -> String {
         let mut doc = serde_json::json!({"schema_version": SCHEMA_VERSION, "measures": {"worked": ["revenue"]}});
-        doc.as_object_mut().unwrap().extend(w.as_object().unwrap().clone());
-        serde_json::from_value::<WorkRules>(doc).unwrap().checked().unwrap_err()
+        doc.as_object_mut()
+            .unwrap()
+            .extend(w.as_object().unwrap().clone());
+        serde_json::from_value::<WorkRules>(doc)
+            .unwrap()
+            .checked()
+            .unwrap_err()
     };
     let cases = [
-        (serde_json::json!({"measures": {"worked": []}}), "holds no activity"),
-        (serde_json::json!({"gaps": [{"from_secs": 60, "paid_pct": 0}]}), "not 0"),
-        (serde_json::json!({"gaps": [{"from_secs": 0, "paid_pct": 101}]}), "at most 100"),
-        (serde_json::json!({"limits": [{"quantity": "spread"}]}), "neither min nor max"),
-        (serde_json::json!({"limits": [{"quantity": "spread", "min": 2, "max": 1}]}), "over max"),
-        (serde_json::json!({"limits": [{"quantity": "spread", "measure": "worked", "max": 1}]}), "only a measure limit"),
-        (serde_json::json!({"limits": [{"quantity": "rest", "min": 1}]}), "spans days"),
-        (serde_json::json!({"limits": [{"quantity": "gap", "max": 1, "over": "week"}]}), "over a run only"),
-        (serde_json::json!({"breaks": [{"min_secs": 600, "window_from_secs": 10, "window_to_secs": 10}]}), "ends at or before"),
-        (serde_json::json!({"breaks": [{"min_secs": 600, "window_from_secs": 0, "window_to_secs": 10, "when_over_secs": 5}]}), "half a trigger"),
-        (serde_json::json!({"premiums": [{"on": "spread", "pays": "worked", "pct": 150}]}), "lacks one it needs"),
-        (serde_json::json!({"premiums": [{"on": "spread", "after_secs": 1, "pays": "worked", "pct": 1001}]}), "at most 1000"),
-        (serde_json::json!({"guarantees": [{"per": "run", "min_secs": 0, "counts": "worked"}]}), "guarantees nothing"),
-        (serde_json::json!({"travel": [{"at": "day_end", "beyond_m": 1, "within_m": 1, "timed": "fixed"}]}), "other timing fields"),
-        (serde_json::json!({"classes": [{"id": "A"}, {"id": "A"}]}), "given twice"),
-        (serde_json::json!({"classes": [{"id": "A", "replaces": ["gaps"]}]}), "with none"),
-        (serde_json::json!({"mix": [{"classes": ["A"], "min_pct": 1}]}), "does not define"),
-        (serde_json::json!({"classes": [{"id": "A"}], "mix": [{"classes": ["A"], "min_pct": 50, "max_pct": 10}]}), "out of order"),
-        (serde_json::json!({"source": {"title": "t", "effective_from": "2025-01-01", "effective_to": "2024-01-01"}}), "ends before it starts"),
-        (serde_json::json!({"source": {"title": "t", "effective_from": "2025-1-1"}}), "invalid date"),
-        (serde_json::json!({"allowances": [{"event": "pull_out", "secs": 60, "activity": "report"}, {"event": "pull_out", "secs": 60, "activity": "report"}]}), "given twice"),
+        (
+            serde_json::json!({"measures": {"worked": []}}),
+            "holds no activity",
+        ),
+        (
+            serde_json::json!({"gaps": [{"from_secs": 60, "paid_pct": 0}]}),
+            "not 0",
+        ),
+        (
+            serde_json::json!({"gaps": [{"from_secs": 0, "paid_pct": 101}]}),
+            "at most 100",
+        ),
+        (
+            serde_json::json!({"limits": [{"quantity": "spread"}]}),
+            "neither min nor max",
+        ),
+        (
+            serde_json::json!({"limits": [{"quantity": "spread", "min": 2, "max": 1}]}),
+            "over max",
+        ),
+        (
+            serde_json::json!({"limits": [{"quantity": "spread", "measure": "worked", "max": 1}]}),
+            "only a measure limit",
+        ),
+        (
+            serde_json::json!({"limits": [{"quantity": "rest", "min": 1}]}),
+            "spans days",
+        ),
+        (
+            serde_json::json!({"limits": [{"quantity": "gap", "max": 1, "over": "week"}]}),
+            "over a run only",
+        ),
+        (
+            serde_json::json!({"breaks": [{"min_secs": 600, "window_from_secs": 10, "window_to_secs": 10}]}),
+            "ends at or before",
+        ),
+        (
+            serde_json::json!({"breaks": [{"min_secs": 600, "window_from_secs": 0, "window_to_secs": 10, "when_over_secs": 5}]}),
+            "half a trigger",
+        ),
+        (
+            serde_json::json!({"premiums": [{"on": "spread", "pays": "worked", "pct": 150}]}),
+            "lacks one it needs",
+        ),
+        (
+            serde_json::json!({"premiums": [{"on": "spread", "after_secs": 1, "pays": "worked", "pct": 1001}]}),
+            "at most 1000",
+        ),
+        (
+            serde_json::json!({"guarantees": [{"per": "run", "min_secs": 0, "counts": "worked"}]}),
+            "guarantees nothing",
+        ),
+        (
+            serde_json::json!({"travel": [{"at": "day_end", "beyond_m": 1, "within_m": 1, "timed": "fixed"}]}),
+            "other timing fields",
+        ),
+        (
+            serde_json::json!({"classes": [{"id": "A"}, {"id": "A"}]}),
+            "given twice",
+        ),
+        (
+            serde_json::json!({"classes": [{"id": "A", "replaces": ["gaps"]}]}),
+            "with none",
+        ),
+        (
+            serde_json::json!({"mix": [{"classes": ["A"], "min_pct": 1}]}),
+            "does not define",
+        ),
+        (
+            serde_json::json!({"classes": [{"id": "A"}], "mix": [{"classes": ["A"], "min_pct": 50, "max_pct": 10}]}),
+            "out of order",
+        ),
+        (
+            serde_json::json!({"source": {"title": "t", "effective_from": "2025-01-01", "effective_to": "2024-01-01"}}),
+            "ends before it starts",
+        ),
+        (
+            serde_json::json!({"source": {"title": "t", "effective_from": "2025-1-1"}}),
+            "invalid date",
+        ),
+        (
+            serde_json::json!({"allowances": [{"event": "pull_out", "secs": 60, "activity": "report"}, {"event": "pull_out", "secs": 60, "activity": "report"}]}),
+            "given twice",
+        ),
     ];
     for (doc, want) in cases {
         let err = refused(doc.clone());

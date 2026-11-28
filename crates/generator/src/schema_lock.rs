@@ -30,16 +30,31 @@ pub struct Kind {
     pub migrate: Option<Migrate>,
 }
 
-pub fn kind<T>(tag: &'static str, current: u32, example: Option<Value>, migrate: Option<Migrate>) -> Kind
+pub fn kind<T>(
+    tag: &'static str,
+    current: u32,
+    example: Option<Value>,
+    migrate: Option<Migrate>,
+) -> Kind
 where
     T: schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
 {
     let schema = serde_json::to_value(schemars::schema_for!(T)).expect("a schema serializes");
-    Kind { tag, current, schema, example, reparse: reparse::<T>, migrate }
+    Kind {
+        tag,
+        current,
+        schema,
+        example,
+        reparse: reparse::<T>,
+        migrate,
+    }
 }
 
-fn reparse<T: serde::Serialize + serde::de::DeserializeOwned>(doc: &Value) -> Result<(String, Vec<String>), String> {
-    let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<T>(doc.clone()));
+fn reparse<T: serde::Serialize + serde::de::DeserializeOwned>(
+    doc: &Value,
+) -> Result<(String, Vec<String>), String> {
+    let (read, unknown) =
+        transit_version::noting_unknown(|| serde_json::from_value::<T>(doc.clone()));
     let read = read.map_err(|e| e.to_string())?;
     Ok((cap_abi::canonical_bytes(&read)?, unknown))
 }
@@ -56,7 +71,12 @@ impl Locked {
     fn new(schema: Value, example: String) -> Self {
         let schema_hash = cap_abi::content_hash(schema_text(&schema).as_bytes());
         let example_hash = cap_abi::content_hash(example.as_bytes());
-        Locked { schema, example, schema_hash, example_hash }
+        Locked {
+            schema,
+            example,
+            schema_hash,
+            example_hash,
+        }
     }
 }
 
@@ -68,31 +88,75 @@ pub struct Lock {
 
 impl Lock {
     pub fn empty(tag: &str) -> Self {
-        Lock { tag: tag.into(), versions: BTreeMap::new() }
+        Lock {
+            tag: tag.into(),
+            versions: BTreeMap::new(),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Drift {
-    Unlocked { tag: String, version: u32 },
+    Unlocked {
+        tag: String,
+        version: u32,
+    },
     /// The generated schema differs from the frozen one. It is additive
     /// when the frozen example still reads, knows every field, and
     /// writes the same bytes.
-    SchemaChanged { tag: String, version: u32, additive: bool },
-    Unreadable { tag: String, version: u32, error: String },
+    SchemaChanged {
+        tag: String,
+        version: u32,
+        additive: bool,
+    },
+    Unreadable {
+        tag: String,
+        version: u32,
+        error: String,
+    },
     /// A field was removed or renamed.
-    UnknownFields { tag: String, version: u32, names: Vec<String> },
+    UnknownFields {
+        tag: String,
+        version: u32,
+        names: Vec<String>,
+    },
     /// The frozen example writes other bytes, so every document of the
     /// kind changes its identity.
-    HashMoved { tag: String, version: u32, was: String, now: String },
-    Edited { tag: String, version: u32, file: String },
-    MigrationBroken { tag: String, from: u32, error: String },
-    LockAhead { tag: String, version: u32, current: u32 },
-    NoExample { tag: String, version: u32 },
+    HashMoved {
+        tag: String,
+        version: u32,
+        was: String,
+        now: String,
+    },
+    Edited {
+        tag: String,
+        version: u32,
+        file: String,
+    },
+    MigrationBroken {
+        tag: String,
+        from: u32,
+        error: String,
+    },
+    LockAhead {
+        tag: String,
+        version: u32,
+        current: u32,
+    },
+    NoExample {
+        tag: String,
+        version: u32,
+    },
     /// A field's declared target changed, or its declaration is gone
     /// (D-232). A changed target changes what the field means, even when
     /// no byte changes. An added declaration is additive.
-    ReferenceChanged { tag: String, version: u32, path: String, was: String, now: Option<String> },
+    ReferenceChanged {
+        tag: String,
+        version: u32,
+        path: String,
+        was: String,
+        now: Option<String>,
+    },
 }
 
 const BUMP: &str = "Bump the version and add its migration step, then run `just schema-lock`.";
@@ -153,35 +217,71 @@ pub fn check(kind: &Kind, lock: &Lock) -> Vec<Drift> {
     for (&version, locked) in &lock.versions {
         drifts.extend(edited(&tag, version, locked));
         if version > kind.current {
-            drifts.push(Drift::LockAhead { tag: tag.clone(), version, current: kind.current });
+            drifts.push(Drift::LockAhead {
+                tag: tag.clone(),
+                version,
+                current: kind.current,
+            });
         } else if version < kind.current {
             if let Err(error) = migrates(kind, version, locked) {
-                drifts.push(Drift::MigrationBroken { tag: tag.clone(), from: version, error });
+                drifts.push(Drift::MigrationBroken {
+                    tag: tag.clone(),
+                    from: version,
+                    error,
+                });
             }
         }
     }
     let Some(locked) = lock.versions.get(&kind.current) else {
-        drifts.push(Drift::Unlocked { tag, version: kind.current });
+        drifts.push(Drift::Unlocked {
+            tag,
+            version: kind.current,
+        });
         return drifts;
     };
     let version = kind.current;
     let mut same_bytes = false;
-    match serde_json::from_str::<Value>(&locked.example).map_err(|e| e.to_string()).and_then(|doc| (kind.reparse)(&doc)) {
-        Err(error) => drifts.push(Drift::Unreadable { tag: tag.clone(), version, error }),
+    match serde_json::from_str::<Value>(&locked.example)
+        .map_err(|e| e.to_string())
+        .and_then(|doc| (kind.reparse)(&doc))
+    {
+        Err(error) => drifts.push(Drift::Unreadable {
+            tag: tag.clone(),
+            version,
+            error,
+        }),
         Ok((bytes, unknown)) => {
             let now = cap_abi::content_hash(bytes.as_bytes());
             same_bytes = now == locked.example_hash && unknown.is_empty();
             if !unknown.is_empty() {
-                drifts.push(Drift::UnknownFields { tag: tag.clone(), version, names: unknown });
+                drifts.push(Drift::UnknownFields {
+                    tag: tag.clone(),
+                    version,
+                    names: unknown,
+                });
             }
             if now != locked.example_hash {
-                drifts.push(Drift::HashMoved { tag: tag.clone(), version, was: locked.example_hash.clone(), now });
+                drifts.push(Drift::HashMoved {
+                    tag: tag.clone(),
+                    version,
+                    was: locked.example_hash.clone(),
+                    now,
+                });
             }
         }
     }
-    drifts.extend(references_changed(&tag, version, &locked.schema, &kind.schema));
+    drifts.extend(references_changed(
+        &tag,
+        version,
+        &locked.schema,
+        &kind.schema,
+    ));
     if kind.schema != locked.schema {
-        drifts.push(Drift::SchemaChanged { tag, version, additive: same_bytes });
+        drifts.push(Drift::SchemaChanged {
+            tag,
+            version,
+            additive: same_bytes,
+        });
     }
     drifts
 }
@@ -191,7 +291,10 @@ fn references_changed(tag: &str, version: u32, locked: &Value, build: &Value) ->
     transit_version::references(locked)
         .into_iter()
         .filter_map(|was| {
-            let target = now.iter().find(|r| r.path == was.path).map(|r| r.target.clone());
+            let target = now
+                .iter()
+                .find(|r| r.path == was.path)
+                .map(|r| r.target.clone());
             (target.as_deref() != Some(was.target.as_str())).then(|| Drift::ReferenceChanged {
                 tag: tag.into(),
                 version,
@@ -209,7 +312,12 @@ pub fn freeze(kind: &Kind, lock: &Lock) -> Result<Lock, Vec<Drift>> {
     let drifts = check(kind, lock);
     let refused: Vec<Drift> = drifts
         .iter()
-        .filter(|d| !matches!(d, Drift::Unlocked { .. } | Drift::SchemaChanged { additive: true, .. }))
+        .filter(|d| {
+            !matches!(
+                d,
+                Drift::Unlocked { .. } | Drift::SchemaChanged { additive: true, .. }
+            )
+        })
         .cloned()
         .collect();
     if !refused.is_empty() {
@@ -227,36 +335,57 @@ pub fn freeze(kind: &Kind, lock: &Lock) -> Result<Lock, Vec<Drift>> {
     };
     match (kind.reparse)(example) {
         Ok((bytes, unknown)) if unknown.is_empty() => {
-            next.versions.insert(version, Locked::new(kind.schema.clone(), bytes));
+            next.versions
+                .insert(version, Locked::new(kind.schema.clone(), bytes));
             Ok(next)
         }
-        Ok((_, names)) => Err(vec![Drift::UnknownFields { tag, version, names }]),
-        Err(error) => Err(vec![Drift::Unreadable { tag, version, error }]),
+        Ok((_, names)) => Err(vec![Drift::UnknownFields {
+            tag,
+            version,
+            names,
+        }]),
+        Err(error) => Err(vec![Drift::Unreadable {
+            tag,
+            version,
+            error,
+        }]),
     }
 }
 
 fn migrates(kind: &Kind, from: u32, locked: &Locked) -> Result<(), String> {
-    let migrate = kind.migrate.ok_or_else(|| format!("the kind has no migration from v{from}"))?;
+    let migrate = kind
+        .migrate
+        .ok_or_else(|| format!("the kind has no migration from v{from}"))?;
     let doc = serde_json::from_str::<Value>(&locked.example).map_err(|e| e.to_string())?;
     let (_, unknown) = (kind.reparse)(&migrate(doc, from)?)?;
     if unknown.is_empty() {
         Ok(())
     } else {
-        Err(format!("the migrated document has fields the current type does not know: {unknown:?}"))
+        Err(format!(
+            "the migrated document has fields the current type does not know: {unknown:?}"
+        ))
     }
 }
 
 fn edited(tag: &str, version: u32, locked: &Locked) -> Vec<Drift> {
     let mut out = Vec::new();
     if cap_abi::content_hash(schema_text(&locked.schema).as_bytes()) != locked.schema_hash {
-        out.push(Drift::Edited { tag: tag.into(), version, file: schema_file(tag, version) });
+        out.push(Drift::Edited {
+            tag: tag.into(),
+            version,
+            file: schema_file(tag, version),
+        });
     }
     let canonical = serde_json::from_str::<Value>(&locked.example)
         .ok()
         .and_then(|doc| cap_abi::canonical_bytes(&doc).ok())
         .is_some_and(|bytes| bytes == locked.example);
     if !canonical || cap_abi::content_hash(locked.example.as_bytes()) != locked.example_hash {
-        out.push(Drift::Edited { tag: tag.into(), version, file: example_file(tag, version) });
+        out.push(Drift::Edited {
+            tag: tag.into(),
+            version,
+            file: example_file(tag, version),
+        });
     }
     out
 }
@@ -284,16 +413,34 @@ pub fn read_lock(dir: &Path, tag: &str) -> Result<Lock, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(lock),
         Err(e) => return Err(format!("{}: {e}", dir.join(index_file(tag)).display())),
     };
-    let index: Value = serde_json::from_str(&index).map_err(|e| format!("{}: {e}", index_file(tag)))?;
-    let versions = index["versions"].as_object().ok_or_else(|| format!("{}: no versions", index_file(tag)))?;
+    let index: Value =
+        serde_json::from_str(&index).map_err(|e| format!("{}: {e}", index_file(tag)))?;
+    let versions = index["versions"]
+        .as_object()
+        .ok_or_else(|| format!("{}: no versions", index_file(tag)))?;
     for (version, hashes) in versions {
-        let version: u32 = version.parse().map_err(|_| format!("{}: version {version:?}", index_file(tag)))?;
-        let read = |file: String| std::fs::read_to_string(dir.join(&file)).map_err(|e| format!("{file}: {e}"));
-        let schema = serde_json::from_str(&read(schema_file(tag, version))?).map_err(|e| format!("{}: {e}", schema_file(tag, version)))?;
-        let hash = |name: &str| hashes[name].as_str().map(str::to_string).ok_or_else(|| format!("{}: v{version} has no {name}", index_file(tag)));
+        let version: u32 = version
+            .parse()
+            .map_err(|_| format!("{}: version {version:?}", index_file(tag)))?;
+        let read = |file: String| {
+            std::fs::read_to_string(dir.join(&file)).map_err(|e| format!("{file}: {e}"))
+        };
+        let schema = serde_json::from_str(&read(schema_file(tag, version))?)
+            .map_err(|e| format!("{}: {e}", schema_file(tag, version)))?;
+        let hash = |name: &str| {
+            hashes[name]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("{}: v{version} has no {name}", index_file(tag)))
+        };
         lock.versions.insert(
             version,
-            Locked { schema, example: read(example_file(tag, version))?, schema_hash: hash("schema_hash")?, example_hash: hash("example_hash")? },
+            Locked {
+                schema,
+                example: read(example_file(tag, version))?,
+                schema_hash: hash("schema_hash")?,
+                example_hash: hash("example_hash")?,
+            },
         );
     }
     Ok(lock)
@@ -302,13 +449,24 @@ pub fn read_lock(dir: &Path, tag: &str) -> Result<Lock, String> {
 /// Writes the index last.
 pub fn write_lock(dir: &Path, lock: &Lock) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let write = |file: String, text: &str| std::fs::write(dir.join(&file), text).map_err(|e| format!("{file}: {e}"));
+    let write = |file: String, text: &str| {
+        std::fs::write(dir.join(&file), text).map_err(|e| format!("{file}: {e}"))
+    };
     let mut versions = serde_json::Map::new();
     for (&version, locked) in &lock.versions {
-        write(schema_file(&lock.tag, version), &schema_text(&locked.schema))?;
+        write(
+            schema_file(&lock.tag, version),
+            &schema_text(&locked.schema),
+        )?;
         write(example_file(&lock.tag, version), &locked.example)?;
-        versions.insert(version.to_string(), json!({ "schema_hash": locked.schema_hash, "example_hash": locked.example_hash }));
+        versions.insert(
+            version.to_string(),
+            json!({ "schema_hash": locked.schema_hash, "example_hash": locked.example_hash }),
+        );
     }
     let index = json!({ "tag": lock.tag, "versions": versions });
-    write(index_file(&lock.tag), &(serde_json::to_string_pretty(&index).expect("an index serializes") + "\n"))
+    write(
+        index_file(&lock.tag),
+        &(serde_json::to_string_pretty(&index).expect("an index serializes") + "\n"),
+    )
 }

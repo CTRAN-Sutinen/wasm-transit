@@ -24,7 +24,10 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>()
+        .register(derived_network())
+        .unwrap()
+        .0
 }
 
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
@@ -52,11 +55,21 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0
+    cap_abi::kernel::kind::<transit_sync::EditDocument>()
+        .register(transit_sync::EditDocument::new(records))
+        .unwrap()
+        .0
 }
 
-fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {
-    match dispatch(Request::StopBoard { previous: None,
+fn stop_board(
+    network_hash: &str,
+    edits_hash: Option<String>,
+    stop_id: &str,
+    from_secs: u32,
+    live_hash: Option<String>,
+) -> transit_dispatch::StopBoard {
+    match dispatch(Request::StopBoard {
+        previous: None,
         network_hash: network_hash.into(),
         edits_hash,
         stop_id: stop_id.into(),
@@ -72,8 +85,16 @@ fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, fro
     }
 }
 
-fn departures(network_hash: &str, edits_hash: Option<String>, stop_id: &str) -> Vec<transit_dispatch::BoardDeparture> {
-    stop_board(network_hash, edits_hash, stop_id, 0, None).rows.into_iter().map(|r| r.departure).collect()
+fn departures(
+    network_hash: &str,
+    edits_hash: Option<String>,
+    stop_id: &str,
+) -> Vec<transit_dispatch::BoardDeparture> {
+    stop_board(network_hash, edits_hash, stop_id, 0, None)
+        .rows
+        .into_iter()
+        .map(|r| r.departure)
+        .collect()
 }
 
 #[test]
@@ -94,8 +115,11 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
         .pattern_trips
         .iter()
         .find(|(_, s)| {
-            net.patterns.get(&s.pattern).is_some_and(|p| p.route == "10")
-                && net.service_types
+            net.patterns
+                .get(&s.pattern)
+                .is_some_and(|p| p.route == "10")
+                && net
+                    .service_types
                     .get(&s.service_type)
                     .is_some_and(|st| st.rule.runs_on(date))
         })
@@ -107,11 +131,20 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
         .expect("route 10 has a schedule running on the fixture Friday");
 
     let rows = departures(&network_hash, None, "A");
-    let first = rows.iter().find(|r| r.trip == trip_id).expect("route 10 serves A");
-    assert_eq!(first.start_secs, start, "the row carries the trip instance's (trip, start) identity");
+    let first = rows
+        .iter()
+        .find(|r| r.trip == trip_id)
+        .expect("route 10 serves A");
+    assert_eq!(
+        first.start_secs, start,
+        "the row carries the trip instance's (trip, start) identity"
+    );
     assert_eq!(first.route, "10");
     assert_eq!(first.stop, "A", "the concrete stop the row leaves from");
-    assert!(!first.destination.is_empty(), "the row says where the bus goes");
+    assert!(
+        !first.destination.is_empty(),
+        "the row says where the bus goes"
+    );
 
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
 
@@ -121,7 +154,10 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
     );
     assert!(departures(&network_hash, None, "B").is_empty());
 
-    assert!(departures(&network_hash, None, "C").len() >= 1, "schedule-only, C is served");
+    assert!(
+        departures(&network_hash, None, "C").len() >= 1,
+        "schedule-only, C is served"
+    );
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     assert!(
         departures(&network_hash, Some(edits_hash), "C").is_empty(),
@@ -145,7 +181,8 @@ fn the_station_board_pools_the_walking_group() {
 #[test]
 fn the_grouped_board_is_the_board_by_route_and_destination() {
     let network_hash = load_network();
-    let grouped = |stop: &str, per_group: Option<u32>| match dispatch(Request::GroupedBoard { previous: None,
+    let grouped = |stop: &str, per_group: Option<u32>| match dispatch(Request::GroupedBoard {
+        previous: None,
         network_hash: network_hash.clone(),
         edits_hash: None,
         stop_id: stop.into(),
@@ -162,17 +199,33 @@ fn the_grouped_board_is_the_board_by_route_and_destination() {
     let pin = grouped("STN", None);
     assert!(pin.pooled);
     assert!(pin.groups.iter().all(|g| g.departures.len() <= 3));
-    let mut rows: Vec<_> = grouped("STN", Some(1_000)).groups.into_iter().flat_map(|g| g.departures).collect();
+    let mut rows: Vec<_> = grouped("STN", Some(1_000))
+        .groups
+        .into_iter()
+        .flat_map(|g| g.departures)
+        .collect();
     rows.sort_by_key(|r| (r.departure.departure_secs, r.departure.trip.clone()));
     assert_eq!(rows, stop_board(&network_hash, None, "STN", 0, None).rows);
 }
 
-fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_dispatch::BoardDeparture) {
+fn late_at_a(
+    network_hash: &str,
+) -> (
+    String,
+    transit_live::LiveDay,
+    transit_dispatch::BoardDeparture,
+) {
     use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
-    let row = departures(network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
-    let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
+    let row = departures(network_hash, None, "A")
+        .into_iter()
+        .find(|d| d.route == "10")
+        .unwrap();
+    let live = LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip { date: None,
+        trips: vec![LiveTrip {
+            date: None,
             trip: row.trip.clone(),
             start_secs: row.start_secs,
             route: Some("10".into()),
@@ -194,7 +247,10 @@ fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_disp
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>().register(live.clone()).unwrap().0;
+    let live_hash = cap_abi::kernel::kind::<transit_live::LiveDay>()
+        .register(live.clone())
+        .unwrap()
+        .0;
     (live_hash, live, row)
 }
 
@@ -204,16 +260,30 @@ fn the_board_reads_a_live_document() {
     let network_hash = load_network();
     let (live_hash, live, row) = late_at_a(&network_hash);
     let canonical = cap_abi::canonical_bytes(&live).unwrap();
-    assert_eq!(live_hash, format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes())));
+    assert_eq!(
+        live_hash,
+        format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()))
+    );
 
-    let board = stop_board(&network_hash, None, "A", row.departure_secs + 60, Some(live_hash));
+    let board = stop_board(
+        &network_hash,
+        None,
+        "A",
+        row.departure_secs + 60,
+        Some(live_hash),
+    );
     assert!(board.live);
-    let late = board.rows.iter().find(|r| r.departure.trip == row.trip).expect("the late bus is still to come");
+    let late = board
+        .rows
+        .iter()
+        .find(|r| r.departure.trip == row.trip)
+        .expect("the late bus is still to come");
     assert_eq!(late.expected_secs, Some(row.departure_secs + 120));
     assert_eq!(late.delay_secs, Some(120));
     assert_eq!(late.status, LiveStatus::Late);
 
-    let err = dispatch(Request::StopBoard { previous: None,
+    let err = dispatch(Request::StopBoard {
+        previous: None,
         network_hash,
         edits_hash: None,
         stop_id: "A".into(),
@@ -241,9 +311,12 @@ fn an_invalid_edit_record_moves_nothing() {
     );
 }
 
-
 fn watchlist() -> Watchlist {
-    let stop = |id: &str, label: &str| cap_board::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
+    let stop = |id: &str, label: &str| cap_board::WatchStop {
+        id: id.into(),
+        label: label.into(),
+        extra: Default::default(),
+    };
     Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
@@ -255,11 +328,18 @@ fn load_watchlist_json(document: &serde_json::Value) -> serde_json::Value {
 fn load_watchlist(document: &Watchlist) -> (String, u32) {
     let outcome = load_watchlist_json(&serde_json::to_value(document).unwrap());
     let ok = &outcome["ok"];
-    (ok["watchlist_hash"].as_str().expect("watchlist_hash").to_string(), ok["version"].as_u64().expect("version") as u32)
+    (
+        ok["watchlist_hash"]
+            .as_str()
+            .expect("watchlist_hash")
+            .to_string(),
+        ok["version"].as_u64().expect("version") as u32,
+    )
 }
 
 fn watchlist_board(watchlist_hash: &str, network_hash: &str) -> Vec<cap_board::WatchBoardStop> {
-    match dispatch(Request::WatchlistBoard { previous: None,
+    match dispatch(Request::WatchlistBoard {
+        previous: None,
         watchlist_hash: watchlist_hash.into(),
         network_hash: network_hash.into(),
         edits_hash: None,
@@ -282,14 +362,23 @@ fn the_watchlist_board_answers_each_saved_stop_in_order() {
     assert_eq!(version, 2);
     let board = watchlist_board(&hash, &network_hash);
     assert_eq!(board.len(), 2, "every watched stop answers, in saved order");
-    assert_eq!((board[0].id.as_str(), board[0].label.as_str()), ("A", "home"));
+    assert_eq!(
+        (board[0].id.as_str(), board[0].label.as_str()),
+        ("A", "home")
+    );
     assert_eq!(board[1].label, "work");
-    assert!(board.iter().all(|s| s.board.rows.iter().all(|r| !r.departure.trip.is_empty())), "model-native rows");
+    assert!(
+        board
+            .iter()
+            .all(|s| s.board.rows.iter().all(|r| !r.departure.trip.is_empty())),
+        "model-native rows"
+    );
 
     assert_eq!(load_watchlist(&watchlist()).0, hash);
 
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
-    let patched = match dispatch(Request::WatchlistBoard { previous: None,
+    let patched = match dispatch(Request::WatchlistBoard {
+        previous: None,
         watchlist_hash: hash,
         network_hash,
         edits_hash: Some(edits_hash),
@@ -303,23 +392,47 @@ fn the_watchlist_board_answers_each_saved_stop_in_order() {
         Response::WatchlistBoard { stops } => stops,
         _ => panic!("watchlist_board"),
     };
-    assert_eq!(patched.len(), 2, "the personal board patches with the edits in force");
+    assert_eq!(
+        patched.len(),
+        2,
+        "the personal board patches with the edits in force"
+    );
 }
 
 #[test]
 fn a_watchlist_from_before_the_tags_loads_as_its_version_or_is_refused() {
     let (tagged, _) = load_watchlist(&watchlist());
-    let legacy = load_watchlist_json(&serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}));
-    assert_eq!(legacy["ok"]["watchlist_hash"].as_str(), Some(tagged.as_str()), "{legacy}");
+    let legacy = load_watchlist_json(
+        &serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}),
+    );
+    assert_eq!(
+        legacy["ok"]["watchlist_hash"].as_str(),
+        Some(tagged.as_str()),
+        "{legacy}"
+    );
     assert_eq!(legacy["ok"]["version"], 2);
 
-    let v1 = load_watchlist_json(&serde_json::json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "blue"}]}));
-    let refused = v1["error"]["message"].as_str().unwrap_or_else(|| panic!("{v1}"));
-    assert!(refused.contains("watchlist v1") && refused.contains("migrate"), "{refused}");
+    let v1 = load_watchlist_json(
+        &serde_json::json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "blue"}]}),
+    );
+    let refused = v1["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{v1}"));
+    assert!(
+        refused.contains("watchlist v1") && refused.contains("migrate"),
+        "{refused}"
+    );
 
-    let v3 = load_watchlist_json(&serde_json::json!({"kind": "watchlist", "schema_version": 3, "stops": []}));
-    let refused = v3["error"]["message"].as_str().unwrap_or_else(|| panic!("{v3}"));
-    assert!(refused.contains("v3") && refused.contains("reads v2"), "{refused}");
+    let v3 = load_watchlist_json(
+        &serde_json::json!({"kind": "watchlist", "schema_version": 3, "stops": []}),
+    );
+    let refused = v3["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{v3}"));
+    assert!(
+        refused.contains("v3") && refused.contains("reads v2"),
+        "{refused}"
+    );
 }
 
 #[test]
@@ -330,12 +443,17 @@ fn the_watchlist_board_is_the_stop_board() {
     let watched = Watchlist::new(
         ["A", "STN", "C"]
             .into_iter()
-            .map(|id| cap_board::WatchStop { id: id.into(), label: id.to_lowercase(), extra: Default::default() })
+            .map(|id| cap_board::WatchStop {
+                id: id.into(),
+                label: id.to_lowercase(),
+                extra: Default::default(),
+            })
             .collect(),
     );
     let (watchlist_hash, _) = load_watchlist(&watched);
     let from_secs = row.departure_secs + 60;
-    let stops = match dispatch(Request::WatchlistBoard { previous: None,
+    let stops = match dispatch(Request::WatchlistBoard {
+        previous: None,
         watchlist_hash,
         network_hash: network_hash.clone(),
         edits_hash: Some(edits_hash.clone()),
@@ -349,19 +467,39 @@ fn the_watchlist_board_is_the_stop_board() {
         Response::WatchlistBoard { stops } => stops,
         _ => panic!("watchlist_board"),
     };
-    assert_eq!(stops.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["A", "STN", "C"]);
+    assert_eq!(
+        stops.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        ["A", "STN", "C"]
+    );
     for s in &stops {
-        let expected = stop_board(&network_hash, Some(edits_hash.clone()), &s.id, from_secs, Some(live_hash.clone()));
+        let expected = stop_board(
+            &network_hash,
+            Some(edits_hash.clone()),
+            &s.id,
+            from_secs,
+            Some(live_hash.clone()),
+        );
         assert_eq!(s.board, expected, "{}: the stop board", s.id);
     }
-    assert!(stops[0].board.live && stops[0].board.rows.iter().any(|r| r.departure.trip == row.trip && r.delay_secs == Some(120)));
-    assert!(stops[1].board.pooled && !stops[1].board.rows.is_empty(), "a watched station pools its bays");
+    assert!(
+        stops[0].board.live
+            && stops[0]
+                .board
+                .rows
+                .iter()
+                .any(|r| r.departure.trip == row.trip && r.delay_secs == Some(120))
+    );
+    assert!(
+        stops[1].board.pooled && !stops[1].board.rows.is_empty(),
+        "a watched station pools its bays"
+    );
 }
 
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let network_hash = load_network();
-    let err = dispatch(Request::StopBoard { previous: None,
+    let err = dispatch(Request::StopBoard {
+        previous: None,
         network_hash,
         edits_hash: Some("sha256:missing".into()),
         stop_id: "A".into(),
@@ -373,7 +511,8 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     .unwrap_err();
     assert!(err.message.contains("unknown edits"), "{err}");
 
-    let err = dispatch(Request::WatchlistBoard { previous: None,
+    let err = dispatch(Request::WatchlistBoard {
+        previous: None,
         watchlist_hash: "sha256:missing".into(),
         network_hash: load_network(),
         edits_hash: None,
@@ -387,24 +526,48 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
-    let bad = dispatch_json(r#"{"op":"stop_board","network_hash":"sha256:x","stop_id":"A","date":"2026-13-99","from_secs":0,"limit":5}"#);
+    let bad = dispatch_json(
+        r#"{"op":"stop_board","network_hash":"sha256:x","stop_id":"A","date":"2026-13-99","from_secs":0,"limit":5}"#,
+    );
     assert!(bad.contains("invalid date"), "{bad}");
-    let bad = dispatch_json(&serde_json::json!({"op": "load_watchlist", "document": {"version": "v3", "stops": []}}).to_string());
-    assert!(bad.contains("invalid request"), "an unknown document version is a request error: {bad}");
+    let bad = dispatch_json(
+        &serde_json::json!({"op": "load_watchlist", "document": {"version": "v3", "stops": []}})
+            .to_string(),
+    );
+    assert!(
+        bad.contains("invalid request"),
+        "an unknown document version is a request error: {bad}"
+    );
     let bad = dispatch_bytes(0, b"whatever");
-    assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
+    assert!(
+        bad.contains("unknown bulk op"),
+        "the module takes JSON documents: {bad}"
+    );
 }
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let doc = include_str!("../../../testdata/network.json");
-    let via_json: serde_json::Value =
-        serde_json::from_str(&cap_board::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
-    let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_board::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
-    assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
+    let via_json: serde_json::Value = serde_json::from_str(&cap_board::invoke(&format!(
+        r#"{{"op":"load_network","network":{doc}}}"#
+    )))
+    .unwrap();
+    let via_bytes: serde_json::Value = serde_json::from_str(&cap_board::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        doc.as_bytes(),
+    ))
+    .unwrap();
+    assert!(
+        via_json["ok"]["network_hash"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("sha256:")),
+        "{via_json}"
+    );
     assert_eq!(via_bytes, via_json);
-    let bad = cap_board::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
+    let bad = cap_board::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        b"{not a network",
+    );
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -441,10 +604,21 @@ fn a_skipped_stop_answers_its_diversion() {
     let network_hash = load_network();
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 120)]);
     let board = stop_board(&network_hash, Some(edits_hash), "C", 0, None);
-    assert!(board.rows.iter().all(|r| r.departure.route != "10"), "route 10 skips C");
-    assert!(!board.skipped.is_empty(), "the board says what was taken away");
-    assert!(board.skipped.iter().all(|s| s.departure.route == "10" && s.diversion.as_deref() == Some("d1")));
-    assert!(stop_board(&network_hash, None, "C", 0, None).skipped.is_empty());
+    assert!(
+        board.rows.iter().all(|r| r.departure.route != "10"),
+        "route 10 skips C"
+    );
+    assert!(
+        !board.skipped.is_empty(),
+        "the board says what was taken away"
+    );
+    assert!(board
+        .skipped
+        .iter()
+        .all(|s| s.departure.route == "10" && s.diversion.as_deref() == Some("d1")));
+    assert!(stop_board(&network_hash, None, "C", 0, None)
+        .skipped
+        .is_empty());
 }
 
 #[test]
@@ -454,7 +628,8 @@ fn an_alert_reaches_each_entitys_departures_as_published() {
         "status": "published", "header": [{ "text": "x" }],
         "informed": [{ "route": "10", "stop": "A" }, { "stop": "STN" }, { "route": "10", "direction": "nope" }]
     }});
-    let out: serde_json::Value = serde_json::from_str(&cap_board::dispatch_json(&req.to_string())).unwrap();
+    let out: serde_json::Value =
+        serde_json::from_str(&cap_board::dispatch_json(&req.to_string())).unwrap();
     let e = &out["ok"]["entities"];
     assert_eq!(e[0]["published"]["route_id"], "10");
     assert_eq!(e[0]["published"]["stop_id"], "A");

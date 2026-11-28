@@ -3,18 +3,20 @@
 //! [`TimingProfile`]s of a pattern only produce times for new trips, because
 //! planners adjust individual trips to observed running times.
 
+use std::collections::BTreeMap;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use std::collections::BTreeMap;
 
-use transit_date::{Date, Weekday};
 use serde::{Deserialize, Serialize};
+use transit_date::{Date, Weekday};
 
 use crate::demand::DemandResponsive;
 use crate::error::NetworkError;
 use crate::fares::{FareNetworkId, Fares};
 use crate::operators::{Attribution, Operator, OperatorId, Publisher, Translation};
-use crate::places::{Level, LevelId, Pathway, PathwayId, StationPart, StopInfo, StopKind, TransferRule};
+use crate::places::{
+    Level, LevelId, Pathway, PathwayId, StationPart, StopInfo, StopKind, TransferRule,
+};
 
 pub type StopId = String;
 pub type RouteId = String;
@@ -151,7 +153,10 @@ pub struct Route {
     /// A pattern belongs to at most one. Empty for a route with no
     /// directions.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>")
+    )]
     pub directions: BTreeMap<DirectionId, Direction>,
     #[serde(flatten)]
     #[cfg_attr(feature = "bindings", ts(skip))]
@@ -439,13 +444,7 @@ impl WeekdaySet {
     }
 
     pub fn is_empty(&self) -> bool {
-        !self.mon
-            && !self.tue
-            && !self.wed
-            && !self.thu
-            && !self.fri
-            && !self.sat
-            && !self.sun
+        !self.mon && !self.tue && !self.wed && !self.thu && !self.fri && !self.sat && !self.sun
     }
 }
 
@@ -454,11 +453,16 @@ impl WeekdaySet {
 #[cfg_attr(feature = "bindings", ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Departs {
-    At { start_secs: u32 },
+    At {
+        start_secs: u32,
+    },
     /// One instance at `start_secs + k * headway_secs` while the start is
     /// `< end_secs`, for each band. All instances share the id and times of
     /// the trip. Without `exact`, riders get the headway, not the minutes.
-    Every { bands: Vec<HeadwayBand>, exact: bool },
+    Every {
+        bands: Vec<HeadwayBand>,
+        exact: bool,
+    },
 }
 
 impl Default for Departs {
@@ -554,7 +558,9 @@ pub struct Trip {
 
 impl Trip {
     pub fn run_secs(&self) -> Option<u32> {
-        self.times.last().and_then(|o| o.arrival_secs.or(o.departure_secs))
+        self.times
+            .last()
+            .and_then(|o| o.arrival_secs.or(o.departure_secs))
     }
 }
 
@@ -658,7 +664,10 @@ pub struct Network {
     pub pattern_trips: BTreeMap<PatternTripsId, PatternTrips>,
     pub blocks: BTreeMap<BlockId, Block>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<OperatorId, Operator>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<OperatorId, Operator>>")
+    )]
     pub operators: BTreeMap<OperatorId, Operator>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "bindings", ts(optional))]
@@ -671,13 +680,22 @@ pub struct Network {
     pub translations: Vec<Translation>,
     /// Ids are unique across these and the stops.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<StopId, StationPart>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<StopId, StationPart>>")
+    )]
     pub station_parts: BTreeMap<StopId, StationPart>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<LevelId, Level>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<LevelId, Level>>")
+    )]
     pub levels: BTreeMap<LevelId, Level>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<PathwayId, Pathway>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<PathwayId, Pathway>>")
+    )]
     pub pathways: BTreeMap<PathwayId, Pathway>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<TransferRule>>"))]

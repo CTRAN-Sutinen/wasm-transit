@@ -9,12 +9,17 @@ impl transit_version::Load for crate::WorkRules {
     const NAME: &'static str = "work rules";
     const LOAD_OP: &'static str = "load_work_rules";
     const CODE: u32 = 269;
-    const FORM: transit_version::Form = transit_version::Form::Json { field: "work_rules" };
+    const FORM: transit_version::Form = transit_version::Form::Json {
+        field: "work_rules",
+    };
     type Answer = WorkRulesLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::WorkRules = transit_version::parse_versioned(bytes).map_err(|e| e.context("work rules"))?;
-        document.checked().map_err(|e| format!("work rules: {e}").into())
+        let document: crate::WorkRules =
+            transit_version::parse_versioned(bytes).map_err(|e| e.context("work rules"))?;
+        document
+            .checked()
+            .map_err(|e| format!("work rules: {e}").into())
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {
@@ -22,7 +27,10 @@ impl transit_version::Load for crate::WorkRules {
     }
 
     fn answer(&self, hash: String) -> WorkRulesLoaded {
-        WorkRulesLoaded { work_rules_hash: hash, version: self.schema_version.0 }
+        WorkRulesLoaded {
+            work_rules_hash: hash,
+            version: self.schema_version.0,
+        }
     }
 }
 
@@ -37,13 +45,17 @@ impl transit_version::Load for crate::SchedulingConstraints {
     const NAME: &'static str = "scheduling constraints";
     const LOAD_OP: &'static str = "load_scheduling_constraints";
     const CODE: u32 = 275;
-    const FORM: transit_version::Form = transit_version::Form::Json { field: "scheduling_constraints" };
+    const FORM: transit_version::Form = transit_version::Form::Json {
+        field: "scheduling_constraints",
+    };
     type Answer = SchedulingConstraintsLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::SchedulingConstraints =
-            transit_version::parse_versioned(bytes).map_err(|e| e.context("scheduling constraints"))?;
-        document.checked().map_err(|e| format!("scheduling constraints: {e}").into())
+        let document: crate::SchedulingConstraints = transit_version::parse_versioned(bytes)
+            .map_err(|e| e.context("scheduling constraints"))?;
+        document
+            .checked()
+            .map_err(|e| format!("scheduling constraints: {e}").into())
     }
 
     fn canonical(&self) -> Option<Result<String, String>> {
@@ -51,6 +63,9 @@ impl transit_version::Load for crate::SchedulingConstraints {
     }
 
     fn answer(&self, hash: String) -> SchedulingConstraintsLoaded {
-        SchedulingConstraintsLoaded { scheduling_constraints_hash: hash, version: self.schema_version.0 }
+        SchedulingConstraintsLoaded {
+            scheduling_constraints_hash: hash,
+            version: self.schema_version.0,
+        }
     }
 }

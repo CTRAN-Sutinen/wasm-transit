@@ -4,11 +4,15 @@
 //! crates/cap-runcut/OPS.md "blocks").
 
 use transit_date::Date;
-use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
+use transit_dispatch::{
+    block_chain, board, effective_day, layover_health, patch_day, report_against_network,
+    station_board, stop_board, LayoverHealth, TIGHT_LAYOVER_SECS,
+};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
-    Block, CalendarRule, DateRange, Departs, Layover, MaterializedTrip, Network, Pattern, PatternTrips, PatternStop,
-    Route, ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
+    Block, CalendarRule, DateRange, Departs, Layover, MaterializedTrip, Network, Pattern,
+    PatternStop, PatternTrips, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef,
+    WeekdaySet,
 };
 use transit_sync::{Diversion, EditRecord, EditStatus};
 
@@ -30,7 +34,12 @@ fn stop(id: &str, name: &str, parent: Option<&str>) -> Stop {
 }
 
 fn timepoint(id: &str, distance_m: f64) -> PatternStop {
-    PatternStop { stop: id.into(), timepoint: true, distance_m, ..Default::default() }
+    PatternStop {
+        stop: id.into(),
+        timepoint: true,
+        distance_m,
+        ..Default::default()
+    }
 }
 
 fn pattern(route: &str, stops: Vec<PatternStop>, at_timepoints: Vec<u32>) -> Pattern {
@@ -40,7 +49,12 @@ fn pattern(route: &str, stops: Vec<PatternStop>, at_timepoints: Vec<u32>) -> Pat
         name: format!("route {route}"),
         alignment: None,
         stops,
-        timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints, extra: Default::default() }],
+        timing: vec![TimingProfile {
+            start_secs: 0,
+            end_secs: 172_800,
+            at_timepoints,
+            extra: Default::default(),
+        }],
         extra: Default::default(),
     }
 }
@@ -51,14 +65,23 @@ fn trips(key: &str, times: &[u32], starts: &[u32]) -> Vec<Trip> {
         .map(|&s| Trip {
             id: format!("{key}@{s}"),
             departs: Departs::At { start_secs: s },
-            times: times.iter().map(|&t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).collect(),
+            times: times
+                .iter()
+                .map(|&t| StopOffset {
+                    arrival_secs: Some(t),
+                    departure_secs: Some(t),
+                })
+                .collect(),
             ..Default::default()
         })
         .collect()
 }
 
 fn trip_ref(id: &str) -> TripRef {
-    TripRef { trip: id.into(), extra: Default::default() }
+    TripRef {
+        trip: id.into(),
+        extra: Default::default(),
+    }
 }
 
 fn network() -> Network {
@@ -71,22 +94,69 @@ fn network() -> Network {
     stops.insert("SB".to_string(), stop("SB", "Bay B", Some("STN")));
 
     let mut routes = std::collections::BTreeMap::new();
-    routes.insert("10".to_string(), Route { name: "10".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default(), ..Default::default() });
-    routes.insert("20".to_string(), Route { name: "20".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default(), ..Default::default() });
-    routes.insert("40".to_string(), Route { name: "Circulator".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default(), ..Default::default() });
+    routes.insert(
+        "10".to_string(),
+        Route {
+            name: "10".into(),
+            mode: transit_network::Mode::Bus,
+            color: None,
+            directions: Default::default(),
+            ..Default::default()
+        },
+    );
+    routes.insert(
+        "20".to_string(),
+        Route {
+            name: "20".into(),
+            mode: transit_network::Mode::Bus,
+            color: None,
+            directions: Default::default(),
+            ..Default::default()
+        },
+    );
+    routes.insert(
+        "40".to_string(),
+        Route {
+            name: "Circulator".into(),
+            mode: transit_network::Mode::Bus,
+            color: None,
+            directions: Default::default(),
+            ..Default::default()
+        },
+    );
 
     let mut patterns = std::collections::BTreeMap::new();
     patterns.insert(
         "p10".to_string(),
-        pattern("10", vec![timepoint("A", 0.0), timepoint("C", 1000.0), timepoint("B", 2000.0)], vec![0, 600, 1200]),
+        pattern(
+            "10",
+            vec![
+                timepoint("A", 0.0),
+                timepoint("C", 1000.0),
+                timepoint("B", 2000.0),
+            ],
+            vec![0, 600, 1200],
+        ),
     );
     patterns.insert(
         "p20".to_string(),
-        pattern("20", vec![timepoint("C", 0.0), timepoint("B", 1000.0), timepoint("A", 2000.0)], vec![0, 600, 1200]),
+        pattern(
+            "20",
+            vec![
+                timepoint("C", 0.0),
+                timepoint("B", 1000.0),
+                timepoint("A", 2000.0),
+            ],
+            vec![0, 600, 1200],
+        ),
     );
     patterns.insert(
         "p40".to_string(),
-        pattern("40", vec![timepoint("SA", 0.0), timepoint("SB", 500.0)], vec![0, 300]),
+        pattern(
+            "40",
+            vec![timepoint("SA", 0.0), timepoint("SB", 500.0)],
+            vec![0, 300],
+        ),
     );
 
     let mut service_types = std::collections::BTreeMap::new();
@@ -111,7 +181,12 @@ fn network() -> Network {
         "SUN".to_string(),
         ServiceType {
             name: "Sunday".into(),
-            rule: CalendarRule { days: WeekdaySet::none(), ranges: vec![], exceptions: vec![], extra: Default::default() },
+            rule: CalendarRule {
+                days: WeekdaySet::none(),
+                ranges: vec![],
+                exceptions: vec![],
+                extra: Default::default(),
+            },
             extra: Default::default(),
         },
     );
@@ -119,19 +194,39 @@ fn network() -> Network {
     let mut pattern_trips = std::collections::BTreeMap::new();
     pattern_trips.insert(
         "s10".to_string(),
-        PatternTrips { pattern: "p10".into(), service_type: "WK".into(), trips: trips("s10", &[0, 600, 1200], &[28_800]), extra: Default::default() },
+        PatternTrips {
+            pattern: "p10".into(),
+            service_type: "WK".into(),
+            trips: trips("s10", &[0, 600, 1200], &[28_800]),
+            extra: Default::default(),
+        },
     );
     pattern_trips.insert(
         "s20".to_string(),
-        PatternTrips { pattern: "p20".into(), service_type: "WK".into(), trips: trips("s20", &[0, 600, 1200], &[30_600]), extra: Default::default() },
+        PatternTrips {
+            pattern: "p20".into(),
+            service_type: "WK".into(),
+            trips: trips("s20", &[0, 600, 1200], &[30_600]),
+            extra: Default::default(),
+        },
     );
     pattern_trips.insert(
         "s20sun".to_string(),
-        PatternTrips { pattern: "p20".into(), service_type: "SUN".into(), trips: trips("s20sun", &[0, 600, 1200], &[30_600]), extra: Default::default() },
+        PatternTrips {
+            pattern: "p20".into(),
+            service_type: "SUN".into(),
+            trips: trips("s20sun", &[0, 600, 1200], &[30_600]),
+            extra: Default::default(),
+        },
     );
     pattern_trips.insert(
         "s40".to_string(),
-        PatternTrips { pattern: "p40".into(), service_type: "WK".into(), trips: trips("s40", &[0, 300], &[29_700, 30_600]), extra: Default::default() },
+        PatternTrips {
+            pattern: "p40".into(),
+            service_type: "WK".into(),
+            trips: trips("s40", &[0, 300], &[29_700, 30_600]),
+            extra: Default::default(),
+        },
     );
 
     let mut blocks = std::collections::BTreeMap::new();
@@ -139,7 +234,12 @@ fn network() -> Network {
         "B1".to_string(),
         Block {
             trips: vec![trip_ref("s10@28800"), trip_ref("s20@30600")],
-            layovers: vec![Layover { after_trip: 0, secs: 600, at: Some("C".into()), extra: Default::default() }],
+            layovers: vec![Layover {
+                after_trip: 0,
+                secs: 600,
+                at: Some("C".into()),
+                extra: Default::default(),
+            }],
             extra: Default::default(),
         },
     );
@@ -147,7 +247,12 @@ fn network() -> Network {
         "B2".to_string(),
         Block {
             trips: vec![trip_ref("s10@28800"), trip_ref("s20sun@30600")],
-            layovers: vec![Layover { after_trip: 0, secs: 600, at: None, extra: Default::default() }],
+            layovers: vec![Layover {
+                after_trip: 0,
+                secs: 600,
+                at: None,
+                extra: Default::default(),
+            }],
             extra: Default::default(),
         },
     );
@@ -184,11 +289,21 @@ fn diversion(added_secs: u32) -> Diversion {
 }
 
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
-    EditRecord { id: "e1".into(), diversion: Some(diversion(added_secs)), cancel: None, status, rev: 1, updated_at: 1, extra: Default::default() }
+    EditRecord {
+        id: "e1".into(),
+        diversion: Some(diversion(added_secs)),
+        cancel: None,
+        status,
+        rev: 1,
+        updated_at: 1,
+        extra: Default::default(),
+    }
 }
 
 fn find_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str) -> &'a MaterializedTrip {
-    day.iter().find(|t| t.pattern_trips == pattern_trips).unwrap()
+    day.iter()
+        .find(|t| t.pattern_trips == pattern_trips)
+        .unwrap()
 }
 
 #[test]
@@ -204,8 +319,15 @@ fn edits_patch_the_day_skip_shift_and_only_the_match() {
     assert_eq!(stops, vec!["A", "B"], "the skipped stop loses service");
     let a = t10.stop_times.iter().find(|st| st.stop == "A").unwrap();
     let b = t10.stop_times.iter().find(|st| st.stop == "B").unwrap();
-    assert_eq!(a.departure_secs, 28_800, "before the last anchor: untouched");
-    assert_eq!(b.arrival_secs, 28_800 + 1200 + 300, "the detour running time lands on the last anchor onward");
+    assert_eq!(
+        a.departure_secs, 28_800,
+        "before the last anchor: untouched"
+    );
+    assert_eq!(
+        b.arrival_secs,
+        28_800 + 1200 + 300,
+        "the detour running time lands on the last anchor onward"
+    );
 
     let t20 = find_trip(&patched, "s20");
     assert_eq!(t20.stop_times.len(), 3, "route 20 keeps its whole pattern");
@@ -228,7 +350,10 @@ fn the_day_is_never_mutated() {
     let base = transit_network::materialize(&net, date()).unwrap();
     let before = base.clone();
     let _ = patch_day(&base, &[diversion(300)]);
-    assert_eq!(base, before, "the base day is immutable (before/after comparison stays trivial)");
+    assert_eq!(
+        base, before,
+        "the base day is immutable (before/after comparison stays trivial)"
+    );
 }
 
 #[test]
@@ -238,20 +363,42 @@ fn boards_read_the_patched_day() {
     let day = effective_day(&net, date(), &records).unwrap();
 
     let rows = board(&net, &day, "B", 0, 10);
-    let by_route: std::collections::BTreeMap<&str, u32> =
-        rows.iter().map(|r| (r.route.as_str(), r.departure_secs)).collect();
-    assert_eq!(by_route.get("10"), None, "a trip terminating at B does not depart B");
-    assert_eq!(by_route.get("20"), Some(&(30_600 + 600)), "route 20 on time");
+    let by_route: std::collections::BTreeMap<&str, u32> = rows
+        .iter()
+        .map(|r| (r.route.as_str(), r.departure_secs))
+        .collect();
+    assert_eq!(
+        by_route.get("10"),
+        None,
+        "a trip terminating at B does not depart B"
+    );
+    assert_eq!(
+        by_route.get("20"),
+        Some(&(30_600 + 600)),
+        "route 20 on time"
+    );
     assert_eq!(by_route.get("40"), None, "the shuttle never serves B");
 
     let delay = EditRecord {
-        diversion: Some(Diversion { last_kept_stop: "C".into(), skipped_stops: vec![], ..diversion(300) }), cancel: None,
+        diversion: Some(Diversion {
+            last_kept_stop: "C".into(),
+            skipped_stops: vec![],
+            ..diversion(300)
+        }),
+        cancel: None,
         ..record(EditStatus::Accepted, 300)
     };
     let late_day = effective_day(&net, date(), &[delay]).unwrap();
     let at_c_late = board(&net, &late_day, "C", 0, 10);
-    let r10 = at_c_late.iter().find(|r| r.route == "10").expect("route 10 departs C");
-    assert_eq!(r10.departure_secs, 28_800 + 600 + 300, "the board reads the patched day");
+    let r10 = at_c_late
+        .iter()
+        .find(|r| r.route == "10")
+        .expect("route 10 departs C");
+    assert_eq!(
+        r10.departure_secs,
+        28_800 + 600 + 300,
+        "the board reads the patched day"
+    );
 
     let at_c = board(&net, &day, "C", 0, 10);
     assert!(
@@ -276,7 +423,10 @@ fn a_terminating_visit_is_not_a_departure() {
     let day = transit_network::materialize(&net, date()).unwrap();
     for stop in net.stops.keys() {
         for row in board(&net, &day, stop, 0, 100) {
-            let trip = day.iter().find(|t| t.trip == row.trip && t.start_secs == row.start_secs).unwrap();
+            let trip = day
+                .iter()
+                .find(|t| t.trip == row.trip && t.start_secs == row.start_secs)
+                .unwrap();
             let last = trip.stop_times.last().unwrap();
             assert!(
                 !(last.stop == row.stop && last.departure_secs == row.departure_secs),
@@ -288,15 +438,35 @@ fn a_terminating_visit_is_not_a_departure() {
     let mut looped = net.clone();
     looped.patterns.insert(
         "p50".to_string(),
-        pattern("10", vec![timepoint("A", 0.0), timepoint("C", 800.0), timepoint("A", 1600.0)], vec![0, 400, 800]),
+        pattern(
+            "10",
+            vec![
+                timepoint("A", 0.0),
+                timepoint("C", 800.0),
+                timepoint("A", 1600.0),
+            ],
+            vec![0, 400, 800],
+        ),
     );
     looped.pattern_trips.insert(
         "s50".to_string(),
-        PatternTrips { pattern: "p50".into(), service_type: "WK".into(), trips: trips("s50", &[0, 400, 800], &[36_000]), extra: Default::default() },
+        PatternTrips {
+            pattern: "p50".into(),
+            service_type: "WK".into(),
+            trips: trips("s50", &[0, 400, 800], &[36_000]),
+            extra: Default::default(),
+        },
     );
     let day = transit_network::materialize(&looped, date()).unwrap();
-    let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100).into_iter().filter(|r| r.trip == "s50@36000").collect();
-    assert_eq!(loop_rows.len(), 1, "the loop departs its terminal once: {loop_rows:?}");
+    let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100)
+        .into_iter()
+        .filter(|r| r.trip == "s50@36000")
+        .collect();
+    assert_eq!(
+        loop_rows.len(),
+        1,
+        "the loop departs its terminal once: {loop_rows:?}"
+    );
     assert_eq!(loop_rows[0].departure_secs, 36_000);
 }
 
@@ -307,9 +477,19 @@ fn the_station_board_pools_the_walking_group() {
 
     let from_pin = station_board(&net, &day, "STN", 0, 10);
     let from_bay = station_board(&net, &day, "SA", 0, 10);
-    assert_eq!(from_pin, from_bay, "every member of the group answers the same board");
-    assert_eq!(from_pin.len(), 2, "two shuttle trips, each departing bay A (bay B is where they end)");
-    assert!(from_pin.iter().all(|r| r.stop == "SA"), "rows name their bay: {from_pin:?}");
+    assert_eq!(
+        from_pin, from_bay,
+        "every member of the group answers the same board"
+    );
+    assert_eq!(
+        from_pin.len(),
+        2,
+        "two shuttle trips, each departing bay A (bay B is where they end)"
+    );
+    assert!(
+        from_pin.iter().all(|r| r.stop == "SA"),
+        "rows name their bay: {from_pin:?}"
+    );
     let times: Vec<u32> = from_pin.iter().map(|r| r.departure_secs).collect();
     let mut sorted = times.clone();
     sorted.sort();
@@ -317,9 +497,12 @@ fn the_station_board_pools_the_walking_group() {
 }
 
 fn live_at(trip: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -> LiveDay {
-    LiveDay { kind: Default::default(), schema_version: Default::default(),
+    LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip { date: None,
+        trips: vec![LiveTrip {
+            date: None,
             trip: trip.into(),
             start_secs: start,
             route: None,
@@ -350,18 +533,41 @@ fn the_board_is_realtime_first() {
 
     let plain = stop_board(&net, &day, "A", 0, 10, None, None);
     assert!(!plain.live && !plain.pooled);
-    assert_eq!(plain.rows.iter().map(|r| r.departure.clone()).collect::<Vec<_>>(), board(&net, &day, "A", 0, 10));
-    assert!(plain.rows.iter().all(|r| r.status == LiveStatus::NoPrediction && r.expected_secs.is_none()));
+    assert_eq!(
+        plain
+            .rows
+            .iter()
+            .map(|r| r.departure.clone())
+            .collect::<Vec<_>>(),
+        board(&net, &day, "A", 0, 10)
+    );
+    assert!(plain
+        .rows
+        .iter()
+        .all(|r| r.status == LiveStatus::NoPrediction && r.expected_secs.is_none()));
 
     let live = live_at("s10@28800", 28_800, "A", 28_800, 240);
     let late = stop_board(&net, &day, "A", 28_860, 10, Some(&live), None);
-    let r = late.rows.iter().find(|r| r.departure.trip == "s10@28800").expect("the late bus is still to come");
-    assert_eq!((r.expected_secs, r.delay_secs, r.status), (Some(29_040), Some(240), LiveStatus::Late));
+    let r = late
+        .rows
+        .iter()
+        .find(|r| r.departure.trip == "s10@28800")
+        .expect("the late bus is still to come");
+    assert_eq!(
+        (r.expected_secs, r.delay_secs, r.status),
+        (Some(29_040), Some(240), LiveStatus::Late)
+    );
     assert!(late.live);
-    assert!(stop_board(&net, &day, "A", 29_100, 10, Some(&live), None).rows.iter().all(|r| r.departure.trip != "s10@28800"));
+    assert!(stop_board(&net, &day, "A", 29_100, 10, Some(&live), None)
+        .rows
+        .iter()
+        .all(|r| r.departure.trip != "s10@28800"));
 
     let early = live_at("s10@28800", 28_800, "A", 28_800, -120);
-    assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early), None).rows.iter().all(|r| r.departure.trip != "s10@28800"));
+    assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early), None)
+        .rows
+        .iter()
+        .all(|r| r.departure.trip != "s10@28800"));
 
     let very_late = live_at("s10@28800", 28_800, "A", 28_800, 3_600);
     let order: Vec<_> = stop_board(&net, &day, "A", 0, 10, Some(&very_late), None)
@@ -369,15 +575,35 @@ fn the_board_is_realtime_first() {
         .iter()
         .map(|r| r.departure.trip.split('@').next().unwrap().to_string())
         .collect();
-    assert_eq!(order, vec!["s10"], "route 20 ends at A — only s10 departs A");
-    let at_c: Vec<_> = stop_board(&net, &day, "C", 0, 10, Some(&live_at("s10@28800", 28_800, "C", 29_400, 3_600)), None)
-        .rows
-        .iter()
-        .map(|r| (r.departure.trip.split('@').next().unwrap().to_string(), r.status))
-        .collect();
+    assert_eq!(
+        order,
+        vec!["s10"],
+        "route 20 ends at A — only s10 departs A"
+    );
+    let at_c: Vec<_> = stop_board(
+        &net,
+        &day,
+        "C",
+        0,
+        10,
+        Some(&live_at("s10@28800", 28_800, "C", 29_400, 3_600)),
+        None,
+    )
+    .rows
+    .iter()
+    .map(|r| {
+        (
+            r.departure.trip.split('@').next().unwrap().to_string(),
+            r.status,
+        )
+    })
+    .collect();
     assert_eq!(
         at_c,
-        vec![("s20".to_string(), LiveStatus::NoPrediction), ("s10".to_string(), LiveStatus::VeryLate)],
+        vec![
+            ("s20".to_string(), LiveStatus::NoPrediction),
+            ("s10".to_string(), LiveStatus::VeryLate)
+        ],
         "a bus an hour late sorts after the on-time one"
     );
 }
@@ -402,27 +628,64 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, None);
     assert_eq!(chain.len(), 2, "the authored chain, in order");
     assert_eq!(chain[0].pattern_trips, "s10");
-    assert_eq!(chain[0].layover_after_secs, Some(600), "the authored layover");
-    assert_eq!(chain[0].layover_remaining_secs, Some(600), "no edits: the layover stands");
+    assert_eq!(
+        chain[0].layover_after_secs,
+        Some(600),
+        "the authored layover"
+    );
+    assert_eq!(
+        chain[0].layover_remaining_secs,
+        Some(600),
+        "no edits: the layover stands"
+    );
     assert_eq!(chain[0].layover_health, Some(LayoverHealth::Ok));
-    assert_eq!(chain[1].layover_health, None, "no layover after the last trip, no health");
+    assert_eq!(
+        chain[1].layover_health, None,
+        "no layover after the last trip, no health"
+    );
     assert_eq!(chain[1].start_secs, 30_600);
-    assert!(chain.iter().all(|t| t.runs), "everything runs on the fixture Friday");
+    assert!(
+        chain.iter().all(|t| t.runs),
+        "everything runs on the fixture Friday"
+    );
 
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
     let ripped = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, None);
-    assert_eq!(ripped[0].end_secs, Some(28_800 + 1200 + 300), "the effective end");
-    assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
-    assert_eq!(ripped[0].layover_health, Some(LayoverHealth::Ok), "300 s left is not under the 300 s threshold");
-    assert_eq!(block_chain(&net, &day, "B1", 301, None)[0].layover_health, Some(LayoverHealth::Tight));
+    assert_eq!(
+        ripped[0].end_secs,
+        Some(28_800 + 1200 + 300),
+        "the effective end"
+    );
+    assert_eq!(
+        ripped[0].layover_remaining_secs,
+        Some(300),
+        "the diverted end eats the layover (600 - 300)"
+    );
+    assert_eq!(
+        ripped[0].layover_health,
+        Some(LayoverHealth::Ok),
+        "300 s left is not under the 300 s threshold"
+    );
+    assert_eq!(
+        block_chain(&net, &day, "B1", 301, None)[0].layover_health,
+        Some(LayoverHealth::Tight)
+    );
 
     let eaten = vec![record(EditStatus::Accepted, 900)];
     let day = effective_day(&net, date(), &eaten).unwrap();
     let chain = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, None);
-    assert_eq!(chain[0].layover_remaining_secs, Some(-300), "an eaten connection is negative");
+    assert_eq!(
+        chain[0].layover_remaining_secs,
+        Some(-300),
+        "an eaten connection is negative"
+    );
     assert_eq!(chain[0].layover_health, Some(LayoverHealth::Overlap));
-    assert_eq!(layover_health(0, 300), LayoverHealth::Tight, "zero left is tight, not overlap");
+    assert_eq!(
+        layover_health(0, 300),
+        LayoverHealth::Tight,
+        "zero left is tight, not overlap"
+    );
 
     assert!(block_chain(&net, &day, "nope", TIGHT_LAYOVER_SECS, None).is_empty());
 
@@ -445,22 +708,50 @@ fn the_ripple_reads_the_live_delay() {
     let late = live_at(&first.trip, first.start_secs, &first.last_stop, end, 370);
 
     let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&late));
-    assert_eq!(chain[0].live_end_delay_secs, Some(370), "the live delay at its last stop");
-    assert_eq!(chain[0].layover_remaining_secs, Some(600 - 370), "the late end eats the layover");
-    assert_eq!(chain[0].layover_health, Some(LayoverHealth::Tight), "230 s left is under the 300 s threshold");
-    assert_eq!(chain[1].live_end_delay_secs, None, "the next trip has no prediction of its own");
+    assert_eq!(
+        chain[0].live_end_delay_secs,
+        Some(370),
+        "the live delay at its last stop"
+    );
+    assert_eq!(
+        chain[0].layover_remaining_secs,
+        Some(600 - 370),
+        "the late end eats the layover"
+    );
+    assert_eq!(
+        chain[0].layover_health,
+        Some(LayoverHealth::Tight),
+        "230 s left is under the 300 s threshold"
+    );
+    assert_eq!(
+        chain[1].live_end_delay_secs, None,
+        "the next trip has no prediction of its own"
+    );
 
     let day = effective_day(&net, date(), &[record(EditStatus::Accepted, 300)]).unwrap();
     let both = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, Some(&late));
-    assert_eq!(both[0].layover_remaining_secs, Some(600 - 370), "a stated delay is against the published time");
+    assert_eq!(
+        both[0].layover_remaining_secs,
+        Some(600 - 370),
+        "a stated delay is against the published time"
+    );
 
     let very = live_at(&first.trip, first.start_secs, &first.last_stop, end, 900);
     let eaten = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&very));
     assert_eq!(eaten[0].layover_remaining_secs, Some(-300));
     assert_eq!(eaten[0].layover_health, Some(LayoverHealth::Overlap));
 
-    let other = live_at(&first.trip, first.start_secs + 1, &first.last_stop, end, 370);
-    assert_eq!(block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&other)), plain);
+    let other = live_at(
+        &first.trip,
+        first.start_secs + 1,
+        &first.last_stop,
+        end,
+        370,
+    );
+    assert_eq!(
+        block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&other)),
+        plain
+    );
 }
 
 #[test]
@@ -470,7 +761,10 @@ fn validation_reports_against_the_network() {
     let reports = report_against_network(&net, &[record(EditStatus::Accepted, 300)]);
     assert_eq!(reports.len(), 1);
     assert!(reports[0].valid, "valid against the model: {:?}", reports);
-    assert_eq!(reports[0].affected_trips, 1, "one s10 trip carries both anchors");
+    assert_eq!(
+        reports[0].affected_trips, 1,
+        "one s10 trip carries both anchors"
+    );
 
     let mut unknown_route = record(EditStatus::Accepted, 300);
     unknown_record(&mut unknown_route, |d| d.route_id = "ghost".into());
@@ -480,11 +774,20 @@ fn validation_reports_against_the_network() {
     unknown_record(&mut anchor_skip, |d| d.skipped_stops = vec!["A".into()]);
     let reports = report_against_network(
         &net,
-        &[unknown_route, unknown_stop, anchor_skip, record(EditStatus::Accepted, 60)],
+        &[
+            unknown_route,
+            unknown_stop,
+            anchor_skip,
+            record(EditStatus::Accepted, 60),
+        ],
     );
     assert_eq!(reports.len(), 4);
     assert!(!reports[0].valid, "unknown route");
-    assert!(reports[0].error.as_deref().unwrap().contains("unknown route"));
+    assert!(reports[0]
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("unknown route"));
     assert!(!reports[1].valid, "unknown anchor");
     assert!(!reports[2].valid, "a skipped stop must not be an anchor");
     assert!(reports[3].valid, "the good record among the bad");
@@ -512,36 +815,71 @@ fn retired_never_patches_but_a_draft_previews() {
     assert_eq!(t10.stop_times.len(), 3, "the edit does not cover the 30th");
 }
 
-
 #[test]
 fn a_row_names_its_route_and_its_bay() {
     let mut net = network();
     net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
     let day = transit_network::materialize(&net, date()).unwrap();
     let a = &stop_board(&net, &day, "A", 0, 10, None, None).rows[0].departure;
-    assert_eq!((a.route_name.as_str(), a.route_long_name.as_deref()), ("10", Some("Lincoln")));
+    assert_eq!(
+        (a.route_name.as_str(), a.route_long_name.as_deref()),
+        ("10", Some("Lincoln"))
+    );
     assert_eq!(a.stop_name, "Main & 1st");
     let pooled = stop_board(&net, &day, "STN", 0, 10, None, None);
-    assert!(pooled.rows.iter().all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
-    assert_eq!(pooled.rows[0].departure.route_long_name, None, "a route without a long name has none");
+    assert!(pooled
+        .rows
+        .iter()
+        .all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
+    assert_eq!(
+        pooled.rows[0].departure.route_long_name, None,
+        "a route without a long name has none"
+    );
     assert_eq!(a.platform, None);
     net.stops.get_mut("SA").unwrap().info.platform = Some("A".into());
     let day = transit_network::materialize(&net, date()).unwrap();
     let pooled = stop_board(&net, &day, "STN", 0, 10, None, None);
-    assert!(pooled.rows.iter().all(|r| r.departure.platform.as_deref() == Some("A")));
+    assert!(pooled
+        .rows
+        .iter()
+        .all(|r| r.departure.platform.as_deref() == Some("A")));
 }
 
 #[test]
 fn a_row_is_going_where_its_sign_says() {
     let mut net = network();
     let day = transit_network::materialize(&net, date()).unwrap();
-    assert_eq!(stop_board(&net, &day, "A", 0, 10, None, None).rows[0].departure.destination, "Main & 2nd");
-    assert_eq!(stop_board(&net, &day, "SA", 0, 10, None, None).rows[0].departure.destination, "Main Station");
+    assert_eq!(
+        stop_board(&net, &day, "A", 0, 10, None, None).rows[0]
+            .departure
+            .destination,
+        "Main & 2nd"
+    );
+    assert_eq!(
+        stop_board(&net, &day, "SA", 0, 10, None, None).rows[0]
+            .departure
+            .destination,
+        "Main Station"
+    );
     net.pattern_trips.get_mut("s10").unwrap().trips[0].headsign = Some("Downtown".into());
     net.patterns.get_mut("p10").unwrap().stops[1].headsign = Some("Downtown via 2nd".into());
     let day = transit_network::materialize(&net, date()).unwrap();
-    assert_eq!(stop_board(&net, &day, "A", 0, 10, None, None).rows[0].departure.destination, "Downtown");
-    assert_eq!(stop_board(&net, &day, "C", 0, 10, None, None).rows.iter().find(|r| r.departure.route == "10").unwrap().departure.destination, "Downtown via 2nd");
+    assert_eq!(
+        stop_board(&net, &day, "A", 0, 10, None, None).rows[0]
+            .departure
+            .destination,
+        "Downtown"
+    );
+    assert_eq!(
+        stop_board(&net, &day, "C", 0, 10, None, None)
+            .rows
+            .iter()
+            .find(|r| r.departure.route == "10")
+            .unwrap()
+            .departure
+            .destination,
+        "Downtown via 2nd"
+    );
 }
 
 #[test]
@@ -552,25 +890,49 @@ fn a_diverted_away_stop_says_what_skips_it() {
     let edits = held.edits.clone().expect("an edit is in force");
     let day = held.trips;
     let c = stop_board(&net, &day, "C", 0, 10, None, Some(&edits));
-    assert!(c.rows.iter().all(|r| r.departure.route != "10"), "the 10 no longer leaves C");
+    assert!(
+        c.rows.iter().all(|r| r.departure.route != "10"),
+        "the 10 no longer leaves C"
+    );
     assert_eq!(c.skipped.len(), 1);
     let s = &c.skipped[0];
-    assert_eq!((s.departure.trip.as_str(), s.departure.departure_secs), ("s10@28800", 29_400));
+    assert_eq!(
+        (s.departure.trip.as_str(), s.departure.departure_secs),
+        ("s10@28800", 29_400)
+    );
     assert_eq!(s.diversion.as_deref(), Some("d1"));
     assert!(!c.pooled);
-    assert!(stop_board(&net, &day, "C", 29_401, 10, None, Some(&edits)).skipped.is_empty());
-    assert!(stop_board(&net, &day, "A", 0, 10, None, Some(&edits)).skipped.is_empty());
-    assert!(transit_dispatch::day(&net, date(), &[]).unwrap().edits.is_none());
+    assert!(stop_board(&net, &day, "C", 29_401, 10, None, Some(&edits))
+        .skipped
+        .is_empty());
+    assert!(stop_board(&net, &day, "A", 0, 10, None, Some(&edits))
+        .skipped
+        .is_empty());
+    assert!(transit_dispatch::day(&net, date(), &[])
+        .unwrap()
+        .edits
+        .is_none());
     let plain = transit_network::materialize(&net, date()).unwrap();
-    assert!(stop_board(&net, &plain, "C", 0, 10, None, None).skipped.is_empty());
+    assert!(stop_board(&net, &plain, "C", 0, 10, None, None)
+        .skipped
+        .is_empty());
 }
 
 fn alert(id: &str, scopes: Vec<transit_live::AlertScope>) -> transit_live::LiveAlert {
-    transit_live::LiveAlert { id: id.into(), header: id.into(), scopes, ..Default::default() }
+    transit_live::LiveAlert {
+        id: id.into(),
+        header: id.into(),
+        scopes,
+        ..Default::default()
+    }
 }
 
 fn scope(route: Option<&str>, stop: Option<&str>) -> transit_live::AlertScope {
-    transit_live::AlertScope { route: route.map(Into::into), stop: stop.map(Into::into), ..Default::default() }
+    transit_live::AlertScope {
+        route: route.map(Into::into),
+        stop: stop.map(Into::into),
+        ..Default::default()
+    }
 }
 
 #[test]
@@ -587,12 +949,24 @@ fn the_board_carries_the_alerts_about_it() {
     ];
     let a = stop_board(&net, &day, "A", 0, 10, Some(&live), None);
     let ids: Vec<_> = a.alerts.iter().map(|x| x.id.as_str()).collect();
-    assert_eq!(ids, ["route-10", "stop-a", "agency"], "route 20 only ends at A; the 10 at B is elsewhere");
+    assert_eq!(
+        ids,
+        ["route-10", "stop-a", "agency"],
+        "route 20 only ends at A; the 10 at B is elsewhere"
+    );
     assert_eq!(a.rows[0].alerts, ["route-10", "stop-a", "agency"]);
     let late = stop_board(&net, &day, "A", 80_000, 10, Some(&live), None);
     assert!(late.rows.is_empty());
-    assert_eq!(late.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["stop-a", "agency"]);
-    assert!(stop_board(&net, &day, "A", 0, 10, None, None).alerts.is_empty());
+    assert_eq!(
+        late.alerts
+            .iter()
+            .map(|x| x.id.as_str())
+            .collect::<Vec<_>>(),
+        ["stop-a", "agency"]
+    );
+    assert!(stop_board(&net, &day, "A", 0, 10, None, None)
+        .alerts
+        .is_empty());
 }
 
 #[test]
@@ -600,15 +974,24 @@ fn a_direction_alert_reaches_only_its_direction_on_the_board() {
     let mut net = network();
     net.patterns.get_mut("p10").unwrap().direction = Some("0".into());
     let day = transit_network::materialize(&net, date()).unwrap();
-    let dir = |d: &str| transit_live::AlertScope { route: Some("10".into()), direction: Some(d.into()), ..Default::default() };
+    let dir = |d: &str| transit_live::AlertScope {
+        route: Some("10".into()),
+        direction: Some(d.into()),
+        ..Default::default()
+    };
     let mut live = live_at("s10@28800", 28_800, "A", 28_800, 0);
-    live.alerts = vec![alert("10-dir-0", vec![dir("0")]), alert("10-dir-1", vec![dir("1")])];
+    live.alerts = vec![
+        alert("10-dir-0", vec![dir("0")]),
+        alert("10-dir-1", vec![dir("1")]),
+    ];
     let a = stop_board(&net, &day, "A", 0, 10, Some(&live), None);
     assert_eq!(a.rows[0].departure.route, "10");
     assert_eq!(a.rows[0].alerts, ["10-dir-0"]);
-    assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["10-dir-0"]);
+    assert_eq!(
+        a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
+        ["10-dir-0"]
+    );
 }
-
 
 #[test]
 fn the_grouped_board_pools_skips_and_alerts() {
@@ -619,19 +1002,31 @@ fn the_grouped_board_pools_skips_and_alerts() {
 
     let pin = grouped_board(&net, &day, "STN", 0, 3, None, None);
     assert!(pin.pooled);
-    assert_eq!(pin.groups.iter().map(key).collect::<Vec<_>>(), [("40".to_string(), "Main Station".to_string())]);
+    assert_eq!(
+        pin.groups.iter().map(key).collect::<Vec<_>>(),
+        [("40".to_string(), "Main Station".to_string())]
+    );
     assert_eq!(pin.groups[0].route_name, "Circulator");
-    assert!(pin.groups[0].departures.iter().all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
+    assert!(pin.groups[0]
+        .departures
+        .iter()
+        .all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
     let empty = grouped_board(&net, &day, "B", 40_000, 3, None, None);
     assert!(!empty.pooled);
 
     let records = vec![record(EditStatus::Accepted, 300)];
-    let edits = transit_dispatch::day(&net, date(), &records).unwrap().edits.expect("an edit is in force");
+    let edits = transit_dispatch::day(&net, date(), &records)
+        .unwrap()
+        .edits
+        .expect("an edit is in force");
     let patched = effective_day(&net, date(), &records).unwrap();
     let c = grouped_board(&net, &patched, "C", 0, 3, None, Some(&edits));
     assert_eq!(
         c.groups.iter().map(key).collect::<Vec<_>>(),
-        [("10".to_string(), "Main & 2nd".to_string()), ("20".to_string(), "Main & 1st".to_string())]
+        [
+            ("10".to_string(), "Main & 2nd".to_string()),
+            ("20".to_string(), "Main & 1st".to_string())
+        ]
     );
     assert!(c.groups[0].departures.is_empty());
     assert_eq!(c.groups[0].skipped.len(), 1);
@@ -640,9 +1035,16 @@ fn the_grouped_board_pools_skips_and_alerts() {
     assert!(c.groups[1].skipped.is_empty());
 
     let mut live = live_at("s10@28800", 28_800, "A", 28_800, 0);
-    live.alerts = vec![alert("stop-a", vec![scope(None, Some("A"))]), alert("route-20", vec![scope(Some("20"), None)])];
+    live.alerts = vec![
+        alert("stop-a", vec![scope(None, Some("A"))]),
+        alert("route-20", vec![scope(Some("20"), None)]),
+    ];
     let a = grouped_board(&net, &day, "A", 0, 3, Some(&live), None);
-    assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["stop-a"], "route 20 only ends at A");
+    assert_eq!(
+        a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
+        ["stop-a"],
+        "route 20 only ends at A"
+    );
     assert_eq!(a.groups[0].departures[0].alerts, ["stop-a"]);
 }
 
@@ -662,7 +1064,10 @@ fn the_held_day_is_the_effective_day_and_its_edits() {
                 None => assert!(diversions.is_empty()),
                 Some(edits) => {
                     assert_eq!(edits.diversions, diversions);
-                    assert_eq!(edits.base, transit_network::materialize(&net, when).unwrap());
+                    assert_eq!(
+                        edits.base,
+                        transit_network::materialize(&net, when).unwrap()
+                    );
                 }
             }
         }
@@ -674,5 +1079,8 @@ fn the_held_day_is_the_effective_day_and_its_edits() {
         transit_dispatch::day_key("n1", Some("e1"), "2026-10-23"),
         transit_dispatch::day_key("n1", None, "2026-10-24"),
     ];
-    assert_eq!(keys.iter().collect::<std::collections::BTreeSet<_>>().len(), keys.len());
+    assert_eq!(
+        keys.iter().collect::<std::collections::BTreeSet<_>>().len(),
+        keys.len()
+    );
 }

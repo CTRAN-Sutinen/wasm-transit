@@ -13,12 +13,12 @@
 //!    unknown stop.
 //! 6. The direct walk wins its ties.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_router::{
-    earliest_arrival, earliest_arrival_between, latest_departure, latest_departure_between, End, Leg, Place,
-    PlaceWalk, RouterError, RouterNetwork,
+    earliest_arrival, earliest_arrival_between, latest_departure, latest_departure_between, End,
+    Leg, Place, PlaceWalk, RouterError, RouterNetwork,
 };
 
 #[path = "prop_support.rs"]
@@ -79,7 +79,14 @@ fn as_end(e: &GenEnd, id: &str) -> End {
         GenEnd::Place(walks) => End::Place(Place {
             id: id.into(),
             name: format!("Place {id}"),
-            walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: format!("s{s}"), walk_secs: *w, path: vec![] }).collect(),
+            walks: walks
+                .iter()
+                .map(|(s, w)| PlaceWalk {
+                    stop_id: format!("s{s}"),
+                    walk_secs: *w,
+                    path: vec![],
+                })
+                .collect(),
         }),
     }
 }
@@ -92,7 +99,13 @@ fn sides(net: &RouterNetwork, e: &GenEnd) -> Vec<(usize, u32)> {
     }
 }
 
-fn oracle(net: &RouterNetwork, from: &GenEnd, to: &GenEnd, direct: Option<u32>, depart: u32) -> u32 {
+fn oracle(
+    net: &RouterNetwork,
+    from: &GenEnd,
+    to: &GenEnd,
+    direct: Option<u32>,
+    depart: u32,
+) -> u32 {
     let mut best = direct.map_or(INF, |w| depart + w);
     for (a, wa) in sides(net, from) {
         for &(e, we) in &sides(net, to) {
@@ -206,14 +219,29 @@ proptest! {
 }
 
 fn line() -> RouterNetwork {
-    network(3, 0.003, &[TripSpec { stops: vec![0, 2], start: 28_800, step: 600 }])
+    network(
+        3,
+        0.003,
+        &[TripSpec {
+            stops: vec![0, 2],
+            start: 28_800,
+            step: 600,
+        }],
+    )
 }
 
 fn place(id: &str, walks: &[(&str, u32)]) -> End {
     End::Place(Place {
         id: id.into(),
         name: format!("Place {id}"),
-        walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: (*s).into(), walk_secs: *w, path: vec![] }).collect(),
+        walks: walks
+            .iter()
+            .map(|(s, w)| PlaceWalk {
+                stop_id: (*s).into(),
+                walk_secs: *w,
+                path: vec![],
+            })
+            .collect(),
     })
 }
 
@@ -224,25 +252,68 @@ fn a_place_is_not_a_stop_and_walks_only_to_stops() {
     let net = line();
     let stop = End::Stop("s2".into());
     let r = earliest_arrival_between(&net, &place("s0", &[("s0", 60)]), &stop, None, 28_000, 3);
-    assert!(matches!(&r, Err(RouterError::PlaceIsStop(id)) if id == "s0"), "{r:?}");
-    let r = earliest_arrival_between(&net, &place("here", &[("nowhere", 60)]), &stop, None, 28_000, 3);
-    assert!(matches!(&r, Err(RouterError::UnknownStop(id)) if id == "nowhere"), "{r:?}");
+    assert!(
+        matches!(&r, Err(RouterError::PlaceIsStop(id)) if id == "s0"),
+        "{r:?}"
+    );
+    let r = earliest_arrival_between(
+        &net,
+        &place("here", &[("nowhere", 60)]),
+        &stop,
+        None,
+        28_000,
+        3,
+    );
+    assert!(
+        matches!(&r, Err(RouterError::UnknownStop(id)) if id == "nowhere"),
+        "{r:?}"
+    );
 }
 
 #[test]
 fn the_walks_are_the_first_and_last_legs() {
     let net = line();
     let it = earliest_arrival_between(
-        &net, &place("here", &[("s0", 240)]), &place("there", &[("s2", 90)]), None, 28_000, 3,
-    ).unwrap().expect("walk, ride, walk");
+        &net,
+        &place("here", &[("s0", 240)]),
+        &place("there", &[("s2", 90)]),
+        None,
+        28_000,
+        3,
+    )
+    .unwrap()
+    .expect("walk, ride, walk");
     assert_eq!(it.arrival_secs, 28_800 + 600 + 90);
     match &it.legs[..] {
-        [Leg::Walk { from_stop_id: a, from_stop_name, to_stop_id: b, walk_secs: 240, .. },
-         Leg::Transit { board_stop_id, alight_stop_id, .. },
-         Leg::Walk { from_stop_id: c, to_stop_id: d, to_stop_name, walk_secs: 90, .. }] => {
-            assert_eq!((a.as_str(), b.as_str(), c.as_str(), d.as_str()), ("here", "s0", "s2", "there"));
-            assert_eq!((from_stop_name.as_str(), to_stop_name.as_str()), ("Place here", "Place there"));
-            assert_eq!((board_stop_id.as_str(), alight_stop_id.as_str()), ("s0", "s2"));
+        [Leg::Walk {
+            from_stop_id: a,
+            from_stop_name,
+            to_stop_id: b,
+            walk_secs: 240,
+            ..
+        }, Leg::Transit {
+            board_stop_id,
+            alight_stop_id,
+            ..
+        }, Leg::Walk {
+            from_stop_id: c,
+            to_stop_id: d,
+            to_stop_name,
+            walk_secs: 90,
+            ..
+        }] => {
+            assert_eq!(
+                (a.as_str(), b.as_str(), c.as_str(), d.as_str()),
+                ("here", "s0", "s2", "there")
+            );
+            assert_eq!(
+                (from_stop_name.as_str(), to_stop_name.as_str()),
+                ("Place here", "Place there")
+            );
+            assert_eq!(
+                (board_stop_id.as_str(), alight_stop_id.as_str()),
+                ("s0", "s2")
+            );
         }
         legs => panic!("{legs:?}"),
     }
@@ -254,23 +325,40 @@ fn the_walks_are_the_first_and_last_legs() {
 fn the_direct_walk_wins_its_ties() {
     let net = line();
     let (here, there) = (place("here", &[("s0", 0)]), place("there", &[("s2", 0)]));
-    let it = earliest_arrival_between(&net, &here, &there, Some(1_400), 28_000, 3).unwrap().unwrap();
+    let it = earliest_arrival_between(&net, &here, &there, Some(1_400), 28_000, 3)
+        .unwrap()
+        .unwrap();
     assert_eq!(it.arrival_secs, 29_400);
     assert!(
         matches!(&it.legs[..], [Leg::Walk { from_stop_id, to_stop_id, walk_secs: 1_400, via_stop_ids, .. }]
             if from_stop_id == "here" && to_stop_id == "there" && via_stop_ids.is_empty()),
-        "{:?}", it.legs
+        "{:?}",
+        it.legs
     );
-    let it = earliest_arrival_between(&net, &here, &there, Some(1_401), 28_000, 3).unwrap().unwrap();
-    assert!(it.legs.iter().any(|l| matches!(l, Leg::Transit { .. })), "{:?}", it.legs);
+    let it = earliest_arrival_between(&net, &here, &there, Some(1_401), 28_000, 3)
+        .unwrap()
+        .unwrap();
+    assert!(
+        it.legs.iter().any(|l| matches!(l, Leg::Transit { .. })),
+        "{:?}",
+        it.legs
+    );
 }
 
 #[test]
 fn a_place_with_no_walks_is_unreachable() {
     let net = line();
     let lost = place("lost", &[]);
-    assert!(earliest_arrival_between(&net, &lost, &End::Stop("s2".into()), None, 28_000, 3).unwrap().is_none());
-    assert!(earliest_arrival_between(&net, &End::Stop("s0".into()), &lost, None, 28_000, 3).unwrap().is_none());
+    assert!(
+        earliest_arrival_between(&net, &lost, &End::Stop("s2".into()), None, 28_000, 3)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        earliest_arrival_between(&net, &End::Stop("s0".into()), &lost, None, 28_000, 3)
+            .unwrap()
+            .is_none()
+    );
     let by = latest_departure_between(&net, &End::Stop("s0".into()), &lost, None, None, 3).unwrap();
     assert!(by.itinerary.is_none());
 }

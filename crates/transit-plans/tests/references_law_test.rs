@@ -5,7 +5,8 @@ use transit_version::{references, Reference};
 
 #[test]
 fn every_reference_field_is_declared() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_plans::PublishedPlans)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_plans::PublishedPlans)).unwrap();
     assert_eq!(
         references(&schema),
         vec![
@@ -17,9 +18,13 @@ fn every_reference_field_is_declared() {
 
 #[test]
 fn every_frozen_version_reference_is_declared() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_plans::FrozenVersions)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_plans::FrozenVersions)).unwrap();
     assert_eq!(
         references(&schema),
-        vec![Reference::new("/versions/*/from_network_hash", "network"), Reference::new("/versions/*/network_hash", "network")]
+        vec![
+            Reference::new("/versions/*/from_network_hash", "network"),
+            Reference::new("/versions/*/network_hash", "network")
+        ]
     );
 }

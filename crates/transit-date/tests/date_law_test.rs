@@ -11,7 +11,9 @@ fn oracle(d: Date) -> NaiveDate {
 
 fn any_date() -> impl Strategy<Value = Date> {
     let lo = NaiveDate::from_ymd_opt(0, 1, 1).unwrap().num_days_from_ce();
-    let hi = NaiveDate::from_ymd_opt(9999, 12, 31).unwrap().num_days_from_ce();
+    let hi = NaiveDate::from_ymd_opt(9999, 12, 31)
+        .unwrap()
+        .num_days_from_ce();
     (lo..=hi).prop_map(|n| {
         let c = NaiveDate::from_num_days_from_ce_opt(n).unwrap();
         Date::from_ymd_opt(c.year(), c.month(), c.day()).unwrap()
@@ -85,15 +87,40 @@ proptest! {
 
 #[test]
 fn parse_refuses_what_is_not_a_date() {
-    for bad in ["", "2026-1-05", "2026-01-5", " 2026-01-05", "2026-01-05 ", "2026/01/05", "20260105", "+2026-01-05", "２０２６-01-05", "2026-01-05T00:00"] {
+    for bad in [
+        "",
+        "2026-1-05",
+        "2026-01-5",
+        " 2026-01-05",
+        "2026-01-05 ",
+        "2026/01/05",
+        "20260105",
+        "+2026-01-05",
+        "２０２６-01-05",
+        "2026-01-05T00:00",
+    ] {
         assert_eq!(Date::parse(bad), Err(DateError::Shape), "{bad:?}");
     }
-    for bad in ["2026-02-29", "2026-13-01", "2026-00-10", "2026-04-31", "2026-01-00"] {
+    for bad in [
+        "2026-02-29",
+        "2026-13-01",
+        "2026-00-10",
+        "2026-04-31",
+        "2026-01-00",
+    ] {
         assert_eq!(Date::parse(bad), Err(DateError::NoSuchDay), "{bad:?}");
     }
-    assert_eq!(Date::parse("2024-02-29").map(|d| d.weekday()), Ok(Weekday::Thu));
-    let err = serde_json::from_str::<Date>("\"2026-1-5\"").unwrap_err().to_string();
-    assert!(err.contains("invalid date \"2026-1-5\": not a YYYY-MM-DD date"), "{err}");
+    assert_eq!(
+        Date::parse("2024-02-29").map(|d| d.weekday()),
+        Ok(Weekday::Thu)
+    );
+    let err = serde_json::from_str::<Date>("\"2026-1-5\"")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("invalid date \"2026-1-5\": not a YYYY-MM-DD date"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -102,5 +129,8 @@ fn the_ends_are_the_four_digit_years() {
     assert_eq!(Date::MAX.to_string(), "9999-12-31");
     assert_eq!(Date::MAX.succ_opt(), None);
     assert_eq!(Date::MIN.pred_opt(), None);
-    assert_eq!(format!("{:>12}|{:?}", Date::MIN, Date::MAX), "  0000-01-01|9999-12-31");
+    assert_eq!(
+        format!("{:>12}|{:?}", Date::MIN, Date::MAX),
+        "  0000-01-01|9999-12-31"
+    );
 }

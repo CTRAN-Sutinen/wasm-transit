@@ -7,11 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 
 const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
-
 
 #[derive(Clone, Debug)]
 struct GenTrip {
@@ -41,7 +40,14 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
             if seq.len() < 2 {
                 seq = vec![0, 1];
             }
-            GenTrip { route, service, block, start_slot, stops: seq, leg_min }
+            GenTrip {
+                route,
+                service,
+                block,
+                start_slot,
+                stops: seq,
+                leg_min,
+            }
         })
 }
 
@@ -65,7 +71,11 @@ fn gen_feed_stations(trips: &[GenTrip], parented: &[bool]) -> Vec<u8> {
         "agency.txt",
         "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
     );
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n",
+    );
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
     if station {
         stops.push_str(",location_type,parent_station\nst,Station,45.505,-73.505,1,");
@@ -73,7 +83,11 @@ fn gen_feed_stations(trips: &[GenTrip], parented: &[bool]) -> Vec<u8> {
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));
         if station {
-            let parent = if parented.get(i as usize).copied().unwrap_or(false) { "st" } else { "" };
+            let parent = if parented.get(i as usize).copied().unwrap_or(false) {
+                "st"
+            } else {
+                ""
+            };
             stops.push_str(&format!(",0,{parent}"));
         }
     }
@@ -110,18 +124,33 @@ fn gen_feed_stations(trips: &[GenTrip], parented: &[bool]) -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-
 #[derive(Clone, Debug)]
 enum PopSpec {
-    Near { stop: u8, jit_lat: f64, jit_lon: f64, pop: u32 },
-    Far { pop: u32 },
+    Near {
+        stop: u8,
+        jit_lat: f64,
+        jit_lon: f64,
+        pop: u32,
+    },
+    Far {
+        pop: u32,
+    },
 }
 
 fn pop_point(net: &transit_network::Network, p: &PopSpec) -> (f64, f64, f64) {
     match p {
-        PopSpec::Near { stop, jit_lat, jit_lon, pop } => {
+        PopSpec::Near {
+            stop,
+            jit_lat,
+            jit_lon,
+            pop,
+        } => {
             let s = &net.stops[&format!("s{stop}")];
-            (s.lat + jit_lat * 0.001, s.lon + jit_lon * 0.001, *pop as f64)
+            (
+                s.lat + jit_lat * 0.001,
+                s.lon + jit_lon * 0.001,
+                *pop as f64,
+            )
         }
         PopSpec::Far { pop } => (46.0, -74.0, *pop as f64),
     }
@@ -135,7 +164,11 @@ fn build_layer(net: &transit_network::Network, points: &[PopSpec]) -> Vec<u8> {
             "{{\"type\":\"Feature\",\"properties\":{{\"pop\":{pop}}},\"geometry\":{{\"type\":\"Point\",\"coordinates\":[{lon},{lat}]}}}}"
         ));
     }
-    format!("{{\"type\":\"FeatureCollection\",\"features\":[{}]}}", features.join(",")).into_bytes()
+    format!(
+        "{{\"type\":\"FeatureCollection\",\"features\":[{}]}}",
+        features.join(",")
+    )
+    .into_bytes()
 }
 
 fn pop_spec() -> impl Strategy<Value = PopSpec> {
@@ -159,7 +192,6 @@ fn spec_and_layer() -> impl Strategy<Value = (transit_network::Network, Vec<PopS
         })
     })
 }
-
 
 struct StopOracle {
     departures: u32,
@@ -1420,14 +1452,38 @@ proptest! {
 /// headway. Trips at :00, :10, :30 and 1:00 leave 10, 20, and 30 minutes.
 #[test]
 fn an_hours_gaps_are_the_trips_own() {
-    let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
-    let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&[trip(0), trip(1), trip(3), trip(6)])).expect("parse");
+    let trip = |start_slot| GenTrip {
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot,
+        stops: vec![0, 1],
+        leg_min: 5,
+    };
+    let feed =
+        transit_codec::Feed::from_zip_bytes(&gen_feed(&[trip(0), trip(1), trip(3), trip(6)]))
+            .expect("parse");
     let net = transit_codec::import(&feed).network;
-    let answer = transit_analysis::route_frequency(&net, &["0".to_string()]).expect("a weekday combination");
+    let answer =
+        transit_analysis::route_frequency(&net, &["0".to_string()]).expect("a weekday combination");
     let hours: Vec<_> = answer.routes[0]
         .hours
         .iter()
-        .map(|h| (h.hour, h.departures, h.shortest_gap_secs, h.longest_gap_secs, h.median_gap_secs))
+        .map(|h| {
+            (
+                h.hour,
+                h.departures,
+                h.shortest_gap_secs,
+                h.longest_gap_secs,
+                h.median_gap_secs,
+            )
+        })
         .collect();
-    assert_eq!(hours, [(0, 3, Some(600), Some(1800), None), (1, 1, None, None, None)]);
+    assert_eq!(
+        hours,
+        [
+            (0, 3, Some(600), Some(1800), None),
+            (1, 1, None, None, None)
+        ]
+    );
 }

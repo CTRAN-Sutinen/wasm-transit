@@ -164,16 +164,22 @@ pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
         .service_types
         .iter()
         .map(|(id, st)| {
-            let mut routes: std::collections::BTreeMap<&str, (Vec<String>, u32)> = Default::default();
+            let mut routes: std::collections::BTreeMap<&str, (Vec<String>, u32)> =
+                Default::default();
             for (pid, pt) in &network.pattern_trips {
                 if pt.service_type != *id {
                     continue;
                 }
-                let n = materialize_service(network, pid).map(|t| t.len() as u32).unwrap_or(0);
+                let n = materialize_service(network, pid)
+                    .map(|t| t.len() as u32)
+                    .unwrap_or(0);
                 if n == 0 {
                     continue;
                 }
-                let Some(route) = network.patterns.get(&pt.pattern).map(|p| p.route.as_str()) else { continue };
+                let Some(route) = network.patterns.get(&pt.pattern).map(|p| p.route.as_str())
+                else {
+                    continue;
+                };
                 let e = routes.entry(route).or_default();
                 e.0.push(pid.clone());
                 e.1 += n;
@@ -182,7 +188,11 @@ pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
                 .into_iter()
                 .map(|(r, (pattern_trips, trips))| ServiceKeyRoute {
                     route_id: r.to_string(),
-                    name: network.routes.get(r).map(|x| x.name.clone()).unwrap_or_default(),
+                    name: network
+                        .routes
+                        .get(r)
+                        .map(|x| x.name.clone())
+                        .unwrap_or_default(),
                     pattern_trips,
                     trips,
                 })
@@ -241,19 +251,32 @@ pub struct Neighbour {
 }
 
 fn row(id: &str, name: &str) -> EntityRow {
-    EntityRow { id: id.to_string(), name: name.to_string(), context: None, transfer: false, trips: None, long_name: None }
+    EntityRow {
+        id: id.to_string(),
+        name: name.to_string(),
+        context: None,
+        transfer: false,
+        trips: None,
+        long_name: None,
+    }
 }
 
 fn route_row(network: &Network, id: &str) -> EntityRow {
     match network.routes.get(id) {
-        Some(r) => EntityRow { long_name: r.long_name.clone(), ..row(id, r.label()) },
+        Some(r) => EntityRow {
+            long_name: r.long_name.clone(),
+            ..row(id, r.label())
+        },
         None => row(id, id),
     }
 }
 
 fn stop_row(network: &Network, id: &str) -> EntityRow {
     match network.stops.get(id) {
-        Some(s) => EntityRow { transfer: s.transfer, ..row(id, &s.name) },
+        Some(s) => EntityRow {
+            transfer: s.transfer,
+            ..row(id, &s.name)
+        },
         None => row(id, id),
     }
 }
@@ -261,7 +284,12 @@ fn stop_row(network: &Network, id: &str) -> EntityRow {
 fn pattern_row(network: &Network, id: &str) -> EntityRow {
     match network.patterns.get(id) {
         Some(p) => EntityRow {
-            context: Some(network.routes.get(&p.route).map_or(p.route.clone(), |r| r.label().to_string())),
+            context: Some(
+                network
+                    .routes
+                    .get(&p.route)
+                    .map_or(p.route.clone(), |r| r.label().to_string()),
+            ),
             ..row(id, &p.name)
         },
         None => row(id, id),
@@ -271,14 +299,22 @@ fn pattern_row(network: &Network, id: &str) -> EntityRow {
 fn schedule_row(network: &Network, id: &str) -> EntityRow {
     match network.pattern_trips.get(id) {
         Some(s) => {
-            let pattern = network.patterns.get(&s.pattern).map_or(s.pattern.as_str(), |p| p.name.as_str());
+            let pattern = network
+                .patterns
+                .get(&s.pattern)
+                .map_or(s.pattern.as_str(), |p| p.name.as_str());
             let service = network
                 .service_types
                 .get(&s.service_type)
                 .map_or(s.service_type.as_str(), |t| t.name.as_str());
             EntityRow {
                 context: Some(format!("{pattern} · {service}")),
-                trips: Some(s.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>() as u32),
+                trips: Some(
+                    s.trips
+                        .iter()
+                        .map(|t| t.departs.instances().len())
+                        .sum::<usize>() as u32,
+                ),
                 ..row(id, id)
             }
         }
@@ -288,21 +324,50 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
 
 pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<EntityRow> {
     let rows: Vec<EntityRow> = match kind {
-        EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
-        EntityKind::Route => network.routes.keys().map(|id| route_row(network, id)).collect(),
-        EntityKind::Pattern => network.patterns.keys().map(|id| pattern_row(network, id)).collect(),
-        EntityKind::PatternTrips => network.pattern_trips.keys().map(|id| schedule_row(network, id)).collect(),
-        EntityKind::ServiceType => network.service_types.iter().map(|(id, t)| row(id, &t.name)).collect(),
+        EntityKind::Stop => network
+            .stops
+            .keys()
+            .map(|id| stop_row(network, id))
+            .collect(),
+        EntityKind::Route => network
+            .routes
+            .keys()
+            .map(|id| route_row(network, id))
+            .collect(),
+        EntityKind::Pattern => network
+            .patterns
+            .keys()
+            .map(|id| pattern_row(network, id))
+            .collect(),
+        EntityKind::PatternTrips => network
+            .pattern_trips
+            .keys()
+            .map(|id| schedule_row(network, id))
+            .collect(),
+        EntityKind::ServiceType => network
+            .service_types
+            .iter()
+            .map(|(id, t)| row(id, &t.name))
+            .collect(),
         EntityKind::Block => network
             .blocks
             .iter()
-            .map(|(id, b)| EntityRow { trips: Some(b.trips.len() as u32), ..row(id, id) })
+            .map(|(id, b)| EntityRow {
+                trips: Some(b.trips.len() as u32),
+                ..row(id, id)
+            })
             .collect(),
     };
     let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     rows.into_iter()
         .filter(|r| {
-            let haystack = format!("{} {} {}", r.id, r.name, r.long_name.as_deref().unwrap_or("")).to_lowercase();
+            let haystack = format!(
+                "{} {} {}",
+                r.id,
+                r.name,
+                r.long_name.as_deref().unwrap_or("")
+            )
+            .to_lowercase();
             terms.iter().all(|t| haystack.contains(t.as_str()))
         })
         .collect()
@@ -310,8 +375,12 @@ pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<Enti
 
 pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     network.routes.get(route)?;
-    let pattern_ids: Vec<&String> =
-        network.patterns.iter().filter(|(_, p)| p.route == route).map(|(id, _)| id).collect();
+    let pattern_ids: Vec<&String> = network
+        .patterns
+        .iter()
+        .filter(|(_, p)| p.route == route)
+        .map(|(id, _)| id)
+        .collect();
     let mut seen = std::collections::BTreeSet::new();
     let stops = pattern_ids
         .iter()
@@ -322,24 +391,37 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     let mut groups: std::collections::BTreeMap<&str, Vec<EntityRow>> = Default::default();
     for (id, s) in &network.pattern_trips {
         if pattern_ids.contains(&&s.pattern) {
-            groups.entry(s.service_type.as_str()).or_default().push(schedule_row(network, id));
+            groups
+                .entry(s.service_type.as_str())
+                .or_default()
+                .push(schedule_row(network, id));
         }
     }
     let pattern_trips_by_type = groups
         .into_iter()
         .map(|(tid, pattern_trips)| PatternTripsGroup {
             service_type: tid.to_string(),
-            name: network.service_types.get(tid).map_or(tid.to_string(), |t| t.name.clone()),
+            name: network
+                .service_types
+                .get(tid)
+                .map_or(tid.to_string(), |t| t.name.clone()),
             pattern_trips,
         })
         .collect();
-    let named = network.routes[route].directions.iter().map(|(id, d)| (Some(id.clone()), d.name.clone()));
+    let named = network.routes[route]
+        .directions
+        .iter()
+        .map(|(id, d)| (Some(id.clone()), d.name.clone()));
     let directions = named
         .chain(std::iter::once((None, "No direction".to_string())))
         .filter_map(|(direction, name)| {
-            let ids: Vec<&String> =
-                pattern_ids.iter().copied().filter(|pid| network.patterns[*pid].direction == direction).collect();
-            let patterns: Vec<EntityRow> = ids.iter().map(|pid| pattern_row(network, pid)).collect();
+            let ids: Vec<&String> = pattern_ids
+                .iter()
+                .copied()
+                .filter(|pid| network.patterns[*pid].direction == direction)
+                .collect();
+            let patterns: Vec<EntityRow> =
+                ids.iter().map(|pid| pattern_row(network, pid)).collect();
             (direction.is_some() || !patterns.is_empty()).then(|| DirectionGroup {
                 direction,
                 name,
@@ -349,7 +431,10 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
         })
         .collect();
     Some(RouteDetail {
-        patterns: pattern_ids.iter().map(|pid| pattern_row(network, pid)).collect(),
+        patterns: pattern_ids
+            .iter()
+            .map(|pid| pattern_row(network, pid))
+            .collect(),
         stops,
         pattern_trips_by_type,
         directions,
@@ -364,10 +449,19 @@ fn place_of<'a>(network: &'a Network, stop: &'a str) -> &'a str {
 }
 
 fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
-    let name_of = |id: &str| network.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
+    let name_of = |id: &str| {
+        network
+            .stops
+            .get(id)
+            .map_or(id.to_string(), |s| s.name.clone())
+    };
     let mut groups: std::collections::BTreeMap<Vec<&str>, Vec<&String>> = Default::default();
     for pid in pattern_ids {
-        let places = network.patterns[*pid].stops.iter().map(|ps| place_of(network, &ps.stop)).collect();
+        let places = network.patterns[*pid]
+            .stops
+            .iter()
+            .map(|ps| place_of(network, &ps.stop))
+            .collect();
         groups.entry(places).or_default().push(pid);
     }
     let trips_of = |pid: &str| -> u32 {
@@ -393,7 +487,11 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
                             used.push(stop.clone());
                         }
                     }
-                    VariantStop { place: place.to_string(), name: name_of(place), stops: used }
+                    VariantStop {
+                        place: place.to_string(),
+                        name: name_of(place),
+                        stops: used,
+                    }
                 })
                 .collect();
             let name = match (places.first(), places.last()) {
@@ -410,11 +508,17 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
             (places, variant)
         })
         .collect();
-    out.sort_by(|a, b| b.1.trips.cmp(&a.1.trips).then_with(|| a.1.patterns.cmp(&b.1.patterns)));
+    out.sort_by(|a, b| {
+        b.1.trips
+            .cmp(&a.1.trips)
+            .then_with(|| a.1.patterns.cmp(&b.1.patterns))
+    });
 
     let bases: Vec<String> = out.iter().map(|(_, v)| v.name.clone()).collect();
     for i in 0..out.len() {
-        let Some(main) = (0..i).find(|&j| bases[j] == bases[i]) else { continue };
+        let Some(main) = (0..i).find(|&j| bases[j] == bases[i]) else {
+            continue;
+        };
         let (main_places, places) = (out[main].0.clone(), &out[i].0);
         let suffix = if let Some(only) = places.iter().find(|p| !main_places.contains(p)) {
             format!(" via {}", name_of(only))
@@ -431,14 +535,24 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
 /// A pattern whose trips cannot
 /// materialize, as in a document in the middle of an edit, contributes no
 /// trips, and validation names it.
-pub fn timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
+pub fn timetable(
+    network: &Network,
+    route: &str,
+    direction: Option<&str>,
+    members: &[String],
+) -> Option<Timetable> {
     let combination = crate::service_combination(network, members)?;
     pooled_timetable(network, route, direction, &combination.members)
 }
 
 /// Unlike [`timetable`], this does not check that the members run together,
 /// so a baseline that the combination is new to runs what its members run.
-fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
+fn pooled_timetable(
+    network: &Network,
+    route: &str,
+    direction: Option<&str>,
+    members: &[String],
+) -> Option<Timetable> {
     let r = network.routes.get(route)?;
     let direction_name = match direction {
         Some(d) => r.directions.get(d)?.name.clone(),
@@ -449,20 +563,38 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
     members.dedup();
 
     let family: std::collections::BTreeSet<&str> = members.iter().map(String::as_str).collect();
-    let mut by_pattern: std::collections::BTreeMap<&str, (Vec<String>, Vec<crate::MaterializedTrip>, bool)> =
-        Default::default();
+    let mut by_pattern: std::collections::BTreeMap<
+        &str,
+        (Vec<String>, Vec<crate::MaterializedTrip>, bool),
+    > = Default::default();
     for (id, pt) in &network.pattern_trips {
-        let Some(p) = network.patterns.get(&pt.pattern) else { continue };
-        if !family.contains(pt.service_type.as_str()) || p.route != route || p.direction.as_deref() != direction {
+        let Some(p) = network.patterns.get(&pt.pattern) else {
+            continue;
+        };
+        if !family.contains(pt.service_type.as_str())
+            || p.route != route
+            || p.direction.as_deref() != direction
+        {
             continue;
         }
         let entry = by_pattern.entry(pt.pattern.as_str()).or_default();
         entry.0.push(id.clone());
-        entry.1.extend(materialize_service(network, id).unwrap_or_default());
-        entry.2 |= pt.trips.iter().any(|t| matches!(t.departs, Departs::Every { .. }));
+        entry
+            .1
+            .extend(materialize_service(network, id).unwrap_or_default());
+        entry.2 |= pt
+            .trips
+            .iter()
+            .any(|t| matches!(t.departs, Departs::Every { .. }));
     }
     let mut order: Vec<&str> = by_pattern.keys().copied().collect();
-    order.sort_by(|a, b| by_pattern[b].1.len().cmp(&by_pattern[a].1.len()).then(a.cmp(b)));
+    order.sort_by(|a, b| {
+        by_pattern[b]
+            .1
+            .len()
+            .cmp(&by_pattern[a].1.len())
+            .then(a.cmp(b))
+    });
 
     // The columns are the stops of the busiest pattern, then the stops of each
     // other pattern slotted in after the last stop that it shares. This greedy
@@ -487,7 +619,11 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
             .stops
             .iter()
             .map(|ps| {
-                let i = next + columns[next..].iter().position(|c| *c == ps.stop).expect("columns embed every pattern");
+                let i = next
+                    + columns[next..]
+                        .iter()
+                        .position(|c| *c == ps.stop)
+                        .expect("columns embed every pattern");
                 next = i + 1;
                 i
             })
@@ -511,10 +647,17 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
                 block: block_of.get(trip.trip.as_str()).map(|b| b.to_string()),
                 trip: trip.trip.clone(),
                 pattern_trips: trip.pattern_trips.clone(),
-                service_type: network.pattern_trips.get(&trip.pattern_trips).map(|pt| pt.service_type.clone()).unwrap_or_default(),
+                service_type: network
+                    .pattern_trips
+                    .get(&trip.pattern_trips)
+                    .map(|pt| pt.service_type.clone())
+                    .unwrap_or_default(),
                 start_secs: trip.start_secs,
                 pattern: trip.pattern.clone(),
-                run_secs: trip.stop_times.last().map_or(0, |st| st.arrival_secs.saturating_sub(trip.start_secs)),
+                run_secs: trip
+                    .stop_times
+                    .last()
+                    .map_or(0, |st| st.arrival_secs.saturating_sub(trip.start_secs)),
                 times,
                 added: false,
                 retimed_from_secs: None,
@@ -532,10 +675,16 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
         .iter()
         .map(|stop| TimetableStop {
             stop: stop.to_string(),
-            name: network.stops.get(*stop).map_or(stop.to_string(), |s| s.name.clone()),
-            timepoint: order
-                .iter()
-                .any(|pid| network.patterns[*pid].stops.iter().any(|ps| ps.stop == *stop && ps.timepoint)),
+            name: network
+                .stops
+                .get(*stop)
+                .map_or(stop.to_string(), |s| s.name.clone()),
+            timepoint: order.iter().any(|pid| {
+                network.patterns[*pid]
+                    .stops
+                    .iter()
+                    .any(|ps| ps.stop == *stop && ps.timepoint)
+            }),
         })
         .collect();
     let patterns = order
@@ -575,14 +724,20 @@ pub fn timetable_against(
 ) -> Option<Timetable> {
     use std::collections::{BTreeMap, BTreeSet};
     let mut t = timetable(network, route, direction, members)?;
-    let before = pooled_timetable(base, route, direction, &t.members).map(|b| b.trips).unwrap_or_default();
+    let before = pooled_timetable(base, route, direction, &t.members)
+        .map(|b| b.trips)
+        .unwrap_or_default();
     // A trip id with exactly one instance is a one-start trip.
     let singles = |trips: &[TimetableTrip]| -> BTreeMap<String, u32> {
         let mut seen: BTreeMap<String, Option<u32>> = BTreeMap::new();
         for x in trips {
-            seen.entry(x.trip.clone()).and_modify(|s| *s = None).or_insert(Some(x.start_secs));
+            seen.entry(x.trip.clone())
+                .and_modify(|s| *s = None)
+                .or_insert(Some(x.start_secs));
         }
-        seen.into_iter().filter_map(|(id, s)| Some((id, s?))).collect()
+        seen.into_iter()
+            .filter_map(|(id, s)| Some((id, s?)))
+            .collect()
     };
     let (was_single, now_single) = (singles(&before), singles(&t.trips));
     let kept = |id: &str| was_single.contains_key(id) && now_single.contains_key(id);
@@ -600,21 +755,37 @@ pub fn timetable_against(
     t.removed = before
         .into_iter()
         .filter(|x| !kept(&x.trip) && !now.contains(&key(&x.trip, x.start_secs)))
-        .map(|x| RemovedTrip { trip: x.trip, pattern_trips: x.pattern_trips, start_secs: x.start_secs, pattern: x.pattern })
+        .map(|x| RemovedTrip {
+            trip: x.trip,
+            pattern_trips: x.pattern_trips,
+            start_secs: x.start_secs,
+            pattern: x.pattern,
+        })
         .collect();
     Some(t)
 }
 
-fn neighbour(network: &Network, here: &crate::model::PatternStop, there: &crate::model::PatternStop) -> Neighbour {
+fn neighbour(
+    network: &Network,
+    here: &crate::model::PatternStop,
+    there: &crate::model::PatternStop,
+) -> Neighbour {
     Neighbour {
         stop: there.stop.clone(),
-        name: network.stops.get(&there.stop).map_or_else(|| there.stop.clone(), |s| s.name.clone()),
+        name: network
+            .stops
+            .get(&there.stop)
+            .map_or_else(|| there.stop.clone(), |s| s.name.clone()),
         metres: (there.distance_m - here.distance_m).abs(),
         published: there.distance_published && here.distance_published,
     }
 }
 
-pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) -> Option<StopDetail> {
+pub fn stop_detail(
+    network: &Network,
+    stop: &str,
+    members: Option<&[String]>,
+) -> Option<StopDetail> {
     let record = network.stops.get(stop)?.clone();
     let mut visits = Vec::new();
     for (pid, p) in &network.patterns {
@@ -622,7 +793,9 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
             network
                 .pattern_trips
                 .values()
-                .filter(|s| &s.pattern == pid && members.is_none_or(|m| m.contains(&s.service_type)))
+                .filter(|s| {
+                    &s.pattern == pid && members.is_none_or(|m| m.contains(&s.service_type))
+                })
                 .flat_map(|s| s.trips.iter())
                 .map(|t| t.departs.instances().len() as u32)
                 .sum()
@@ -633,17 +806,20 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
                 route: p.route.clone(),
                 route_name: route.map_or(p.route.clone(), |r| r.label().to_string()),
                 direction: p.direction.clone(),
-                direction_name: p
-                    .direction
-                    .as_ref()
-                    .and_then(|d| route.and_then(|r| r.directions.get(d)).map(|d| d.name.clone())),
+                direction_name: p.direction.as_ref().and_then(|d| {
+                    route
+                        .and_then(|r| r.directions.get(d))
+                        .map(|d| d.name.clone())
+                }),
                 pattern: pid.clone(),
                 pattern_name: p.name.clone(),
                 index: i as u32,
                 endpoint: i == 0 || i + 1 == p.stops.len(),
                 timepoint: ps.timepoint,
                 trips: trips(),
-                previous: i.checked_sub(1).map(|j| neighbour(network, ps, &p.stops[j])),
+                previous: i
+                    .checked_sub(1)
+                    .map(|j| neighbour(network, ps, &p.stops[j])),
                 next: p.stops.get(i + 1).map(|n| neighbour(network, ps, n)),
             });
         }
@@ -658,7 +834,11 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
         .into_iter()
         .map(|rid| route_row(network, &rid))
         .collect();
-    Some(StopDetail { routes, stop: record, visits })
+    Some(StopDetail {
+        routes,
+        stop: record,
+        visits,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -675,7 +855,13 @@ pub struct NearbyStop {
     pub walk_secs: Option<u32>,
 }
 
-pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>) -> Vec<NearbyStop> {
+pub fn stops_near(
+    network: &Network,
+    lat: f64,
+    lon: f64,
+    limit: usize,
+    radius_m: Option<f64>,
+) -> Vec<NearbyStop> {
     stops_near_walked(network, lat, lon, limit, radius_m, &[])
 }
 
@@ -708,8 +894,10 @@ pub fn stops_near_walked(
             e.1 = Some(e.1.map_or(*secs, |w| w.min(*secs)));
         }
     }
-    let mut rows: Vec<(&str, (f64, Option<u32>))> =
-        nearest.into_iter().filter(|(_, (d, _))| radius_m.is_none_or(|r| *d <= r)).collect();
+    let mut rows: Vec<(&str, (f64, Option<u32>))> = nearest
+        .into_iter()
+        .filter(|(_, (d, _))| radius_m.is_none_or(|r| *d <= r))
+        .collect();
     rows.sort_by(|(a_id, (a_d, a_w)), (b_id, (b_d, b_w))| {
         (a_w.is_none(), a_w.unwrap_or(0))
             .cmp(&(b_w.is_none(), b_w.unwrap_or(0)))
@@ -819,7 +1007,9 @@ fn edits(a: &[char], b: &[char]) -> usize {
     for i in 1..=n {
         for j in 1..=m {
             let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
             if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
                 d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
             }

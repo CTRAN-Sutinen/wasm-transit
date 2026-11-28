@@ -91,7 +91,11 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
         .patterns
         .iter()
         .filter(|(_, p)| p.route == draft.route_id)
-        .map(|(id, p)| DraftPattern { pattern: id.clone(), name: p.name.clone(), stop_count: p.stops.len() as u32 })
+        .map(|(id, p)| DraftPattern {
+            pattern: id.clone(),
+            name: p.name.clone(),
+            stop_count: p.stops.len() as u32,
+        })
         .collect();
     let pattern = draft
         .pattern
@@ -123,15 +127,23 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
     let first = draft.first_kept_stop.as_deref().filter(|s| !s.is_empty());
     let last = draft.last_kept_stop.as_deref().filter(|s| !s.is_empty());
     let p0 = first.and_then(|f| visits.iter().position(|s| *s == f));
-    let p1 = p0.zip(last).and_then(|(p0, l)| visits[p0 + 1..].iter().position(|s| *s == l).map(|i| i + p0 + 1));
+    let p1 = p0.zip(last).and_then(|(p0, l)| {
+        visits[p0 + 1..]
+            .iter()
+            .position(|s| *s == l)
+            .map(|i| i + p0 + 1)
+    });
     if pattern.is_some() {
         match (first, last) {
             (None, _) => problems.push("pick the first stop the diversion keeps".into()),
-            (Some(f), _) if p0.is_none() => problems.push(format!("{} is not on this pattern", stop_name(network, f))),
-            (Some(_), None) => problems.push("pick the last stop the diversion keeps".into()),
-            (Some(_), Some(l)) if p1.is_none() => {
-                problems.push(format!("{} is not after the first kept stop on this pattern", stop_name(network, l)))
+            (Some(f), _) if p0.is_none() => {
+                problems.push(format!("{} is not on this pattern", stop_name(network, f)))
             }
+            (Some(_), None) => problems.push("pick the last stop the diversion keeps".into()),
+            (Some(_), Some(l)) if p1.is_none() => problems.push(format!(
+                "{} is not after the first kept stop on this pattern",
+                stop_name(network, l)
+            )),
             _ => {}
         }
     }
@@ -149,23 +161,39 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
             } else {
                 DraftStopRole::Outside
             };
-            let skipped = role == DraftStopRole::Interior && !draft.served_stops.iter().any(|s| s == stop);
-            DraftStop { index: i as u32, stop_id: stop.to_string(), name: stop_name(network, stop), role, skipped }
+            let skipped =
+                role == DraftStopRole::Interior && !draft.served_stops.iter().any(|s| s == stop);
+            DraftStop {
+                index: i as u32,
+                stop_id: stop.to_string(),
+                name: stop_name(network, stop),
+                role,
+                skipped,
+            }
         })
         .collect();
     let mut skipped_stops: Vec<String> = Vec::new();
     for s in stops.iter().filter(|s| s.skipped) {
         // An anchor visited again inside the span is still an anchor.
         // The record must never skip it.
-        if !skipped_stops.contains(&s.stop_id) && Some(s.stop_id.as_str()) != first && Some(s.stop_id.as_str()) != last {
+        if !skipped_stops.contains(&s.stop_id)
+            && Some(s.stop_id.as_str()) != first
+            && Some(s.stop_id.as_str()) != last
+        {
             skipped_stops.push(s.stop_id.clone());
         }
     }
 
-    let alignment = pattern.as_ref().map(|id| transit_network::pattern_alignment(network, id)).unwrap_or_default();
+    let alignment = pattern
+        .as_ref()
+        .map(|id| transit_network::pattern_alignment(network, id))
+        .unwrap_or_default();
     let mut detour: Vec<DetourPoint> = Vec::new();
     for p in draft.slices.iter().flatten() {
-        if detour.last().is_some_and(|q| (q.lat - p.lat).abs() < 1e-12 && (q.lon - p.lon).abs() < 1e-12) {
+        if detour
+            .last()
+            .is_some_and(|q| (q.lat - p.lat).abs() < 1e-12 && (q.lon - p.lon).abs() < 1e-12)
+        {
             continue;
         }
         detour.push(*p);
@@ -175,18 +203,34 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
     if !(draft.added_mins.is_finite() && draft.added_mins >= 0.0) {
         problems.push("added time must be zero or more minutes".into());
     }
-    match (transit_date::Date::parse(&draft.start_date).ok(), transit_date::Date::parse(&draft.end_date).ok()) {
+    match (
+        transit_date::Date::parse(&draft.start_date).ok(),
+        transit_date::Date::parse(&draft.end_date).ok(),
+    ) {
         (Some(a), Some(b)) if a > b => problems.push("the start date is after the end date".into()),
         (Some(_), Some(_)) => {}
         _ => problems.push("both dates must be YYYY-MM-DD".into()),
     }
 
-    DraftView { patterns, pattern, stops, skipped_stops, alignment, detour, detour_length_m, problems }
+    DraftView {
+        patterns,
+        pattern,
+        stops,
+        skipped_stops,
+        alignment,
+        detour,
+        detour_length_m,
+        problems,
+    }
 }
 
 /// `id` is the domain id that the host creates. The record id belongs to the
 /// sync envelope.
-pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Result<Diversion, String> {
+pub fn diversion_of(
+    network: &Network,
+    draft: &DiversionDraft,
+    id: &str,
+) -> Result<Diversion, String> {
     let view = draft_view(network, draft);
     if !view.problems.is_empty() {
         return Err(view.problems.join("; "));
@@ -202,8 +246,12 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
         skipped_stops: view.skipped_stops,
         detour: (view.detour.len() >= 2).then_some(view.detour),
         added_secs: (draft.added_mins * 60.0).round() as u32,
-        start_date: transit_date::Date::parse(&draft.start_date).ok().expect("checked by the view"),
-        end_date: transit_date::Date::parse(&draft.end_date).ok().expect("checked by the view"),
+        start_date: transit_date::Date::parse(&draft.start_date)
+            .ok()
+            .expect("checked by the view"),
+        end_date: transit_date::Date::parse(&draft.end_date)
+            .ok()
+            .expect("checked by the view"),
         extra: Default::default(),
     })
 }
@@ -218,17 +266,28 @@ pub fn cancel_of(
     date: &str,
 ) -> Result<TripCancel, String> {
     let on = transit_date::Date::read(date)?;
-    let (_, pattern_trips, trip) = network.trip(trip_id).ok_or_else(|| format!("unknown trip {trip_id}"))?;
+    let (_, pattern_trips, trip) = network
+        .trip(trip_id)
+        .ok_or_else(|| format!("unknown trip {trip_id}"))?;
     if let Some(s) = start_secs {
         if !trip.departs.instances().contains(&s) {
             return Err(format!("trip {trip_id} has no instance starting at {s}"));
         }
     }
-    let runs = network.service_types.get(&pattern_trips.service_type).is_some_and(|t| t.rule.runs_on(on));
+    let runs = network
+        .service_types
+        .get(&pattern_trips.service_type)
+        .is_some_and(|t| t.rule.runs_on(on));
     if !runs {
         return Err(format!("trip {trip_id} does not run on {date}"));
     }
-    Ok(TripCancel { id: id.to_string(), trip_id: trip_id.to_string(), start_secs, date: on, extra: Default::default() })
+    Ok(TripCancel {
+        id: id.to_string(),
+        trip_id: trip_id.to_string(),
+        start_secs,
+        date: on,
+        extra: Default::default(),
+    })
 }
 
 /// An id that the network lacks shows as itself.
@@ -253,20 +312,26 @@ pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<Diversio
     records
         .iter()
         .filter_map(|r| Some((r, r.diversion.as_ref()?)))
-        .map(|(r, d)| {
-            DiversionRow {
-                record_id: r.id.clone(),
-                status: r.status,
-                in_force: r.status != EditStatus::Retired,
-                route_name: network.routes.get(&d.route_id).map(|x| x.label().to_string()).unwrap_or_else(|| d.route_id.clone()),
-                first_kept_name: stop_name(network, &d.first_kept_stop),
-                last_kept_name: stop_name(network, &d.last_kept_stop),
-                skipped_names: d.skipped_stops.iter().map(|s| stop_name(network, s)).collect(),
-                added_secs: d.added_secs,
-                detour_drawn: d.detour.as_ref().is_some_and(|p| !p.is_empty()),
-                start_date: d.start_date.to_string(),
-                end_date: d.end_date.to_string(),
-            }
+        .map(|(r, d)| DiversionRow {
+            record_id: r.id.clone(),
+            status: r.status,
+            in_force: r.status != EditStatus::Retired,
+            route_name: network
+                .routes
+                .get(&d.route_id)
+                .map(|x| x.label().to_string())
+                .unwrap_or_else(|| d.route_id.clone()),
+            first_kept_name: stop_name(network, &d.first_kept_stop),
+            last_kept_name: stop_name(network, &d.last_kept_stop),
+            skipped_names: d
+                .skipped_stops
+                .iter()
+                .map(|s| stop_name(network, s))
+                .collect(),
+            added_secs: d.added_secs,
+            detour_drawn: d.detour.as_ref().is_some_and(|p| !p.is_empty()),
+            start_date: d.start_date.to_string(),
+            end_date: d.end_date.to_string(),
         })
         .collect()
 }
@@ -296,11 +361,20 @@ pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> 
             let pattern = found.and_then(|(_, pt, _)| network.patterns.get(&pt.pattern));
             let end = |last: bool| {
                 pattern
-                    .and_then(|p| if last { p.stops.last() } else { p.stops.first() })
+                    .and_then(|p| {
+                        if last {
+                            p.stops.last()
+                        } else {
+                            p.stops.first()
+                        }
+                    })
                     .map(|ps| stop_name(network, &ps.stop))
                     .unwrap_or_default()
             };
-            let only_start = found.map(|(_, _, t)| t.departs.instances()).filter(|s| s.len() == 1).map(|s| s[0]);
+            let only_start = found
+                .map(|(_, _, t)| t.departs.instances())
+                .filter(|s| s.len() == 1)
+                .map(|s| s[0]);
             CancelRow {
                 record_id: r.id.clone(),
                 status: r.status,
@@ -308,7 +382,13 @@ pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> 
                 trip_id: c.trip_id.clone(),
                 start_secs: c.start_secs.or(only_start),
                 route_name: pattern
-                    .map(|p| network.routes.get(&p.route).map(|x| x.label().to_string()).unwrap_or_else(|| p.route.clone()))
+                    .map(|p| {
+                        network
+                            .routes
+                            .get(&p.route)
+                            .map(|x| x.label().to_string())
+                            .unwrap_or_else(|| p.route.clone())
+                    })
                     .unwrap_or_else(|| c.trip_id.clone()),
                 from_name: end(false),
                 to_name: end(true),
@@ -319,10 +399,17 @@ pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> 
 }
 
 fn stop_name(network: &Network, stop: &str) -> String {
-    network.stops.get(stop).map(|s| s.name.clone()).unwrap_or_else(|| stop.to_string())
+    network
+        .stops
+        .get(stop)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| stop.to_string())
 }
 
 /// Path length in meters.
 fn path_length_m(points: &[DetourPoint]) -> f64 {
-    points.windows(2).map(|w| transit_geo::distance_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon)).sum()
+    points
+        .windows(2)
+        .map(|w| transit_geo::distance_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon))
+        .sum()
 }

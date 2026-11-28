@@ -33,7 +33,13 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 }
 
 fn stop(name: &str, lat: f64, lon: f64, parent: Option<&str>) -> Stop {
-    Stop { name: name.into(), lat, lon, parent: parent.map(Into::into), ..Default::default() }
+    Stop {
+        name: name.into(),
+        lat,
+        lon,
+        parent: parent.map(Into::into),
+        ..Default::default()
+    }
 }
 
 fn place_of<'a>(net: &'a Network, id: &'a str) -> &'a str {
@@ -47,7 +53,9 @@ fn place_distances(net: &Network, lat: f64, lon: f64) -> std::collections::BTree
     let mut out: std::collections::BTreeMap<String, f64> = Default::default();
     for (id, s) in &net.stops {
         let d = haversine_m(lat, lon, s.lat, s.lon);
-        let e = out.entry(place_of(net, id).to_string()).or_insert(f64::INFINITY);
+        let e = out
+            .entry(place_of(net, id).to_string())
+            .or_insert(f64::INFINITY);
         *e = e.min(d);
     }
     out
@@ -55,13 +63,22 @@ fn place_distances(net: &Network, lat: f64, lon: f64) -> std::collections::BTree
 
 fn arb_network() -> impl Strategy<Value = Network> {
     prop::collection::vec(
-        (0.0f64..0.02, 0.0f64..0.02, 0u8..4, any::<prop::sample::Index>()),
+        (
+            0.0f64..0.02,
+            0.0f64..0.02,
+            0u8..4,
+            any::<prop::sample::Index>(),
+        ),
         1..30,
     )
     .prop_map(|raw| {
         let mut net = Network::default();
-        let stations: Vec<String> =
-            raw.iter().enumerate().filter(|(_, r)| r.2 == 0).map(|(i, _)| format!("S{i:02}")).collect();
+        let stations: Vec<String> = raw
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.2 == 0)
+            .map(|(i, _)| format!("S{i:02}"))
+            .collect();
         for (i, (dlat, dlon, kind, pick)) in raw.iter().enumerate() {
             let (lat, lon) = (45.6 + dlat, -122.6 + dlon);
             let (id, s) = match kind {
@@ -70,7 +87,10 @@ fn arb_network() -> impl Strategy<Value = Network> {
                     let parent = &stations[pick.index(stations.len())];
                     (format!("B{i:02}"), stop("Bay", lat, lon, Some(parent)))
                 }
-                2 => (format!("O{i:02}"), stop("Orphan bay", lat, lon, Some("GONE"))),
+                2 => (
+                    format!("O{i:02}"),
+                    stop("Orphan bay", lat, lon, Some("GONE")),
+                ),
                 _ => (format!("P{i:02}"), stop("Plain", lat, lon, None)),
             };
             net.stops.insert(id, s);
@@ -224,10 +244,25 @@ proptest! {
 #[test]
 fn a_station_answers_once_at_its_nearest_bay() {
     let mut net = Network::default();
-    net.stops.insert("STN".into(), stop("Fisher's Landing TC", 45.6100, -122.5000, None));
-    net.stops.insert("STN-A".into(), stop("Fisher's Landing TC Bay A", 45.6010, -122.5000, Some("STN")));
-    net.stops.insert("STN-B".into(), stop("Fisher's Landing TC Bay B", 45.6020, -122.5000, Some("STN")));
-    net.stops.insert("P".into(), Stop { transfer: true, ..stop("Mill Plain & 164th", 45.6050, -122.5000, None) });
+    net.stops.insert(
+        "STN".into(),
+        stop("Fisher's Landing TC", 45.6100, -122.5000, None),
+    );
+    net.stops.insert(
+        "STN-A".into(),
+        stop("Fisher's Landing TC Bay A", 45.6010, -122.5000, Some("STN")),
+    );
+    net.stops.insert(
+        "STN-B".into(),
+        stop("Fisher's Landing TC Bay B", 45.6020, -122.5000, Some("STN")),
+    );
+    net.stops.insert(
+        "P".into(),
+        Stop {
+            transfer: true,
+            ..stop("Mill Plain & 164th", 45.6050, -122.5000, None)
+        },
+    );
 
     let rows: Vec<NearbyStop> = stops_near(&net, 45.6000, -122.5000, 10, None);
     let ids: Vec<&str> = rows.iter().map(|r| r.stop_id.as_str()).collect();

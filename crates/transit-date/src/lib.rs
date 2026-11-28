@@ -50,8 +50,15 @@ pub enum Weekday {
 }
 
 impl Weekday {
-    const ALL: [Weekday; 7] =
-        [Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri, Weekday::Sat, Weekday::Sun];
+    const ALL: [Weekday; 7] = [
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+        Weekday::Sat,
+        Weekday::Sun,
+    ];
 
     /// Monday is 0.
     pub const fn num_days_from_monday(self) -> u32 {
@@ -140,7 +147,13 @@ impl Date {
 
     /// None for a day that does not exist or a year outside 0000-9999.
     pub const fn from_ymd_opt(year: i32, month: u32, day: u32) -> Option<Date> {
-        if year < 0 || year > 9999 || month < 1 || month > 12 || day < 1 || day > days_in_month(year, month) {
+        if year < 0
+            || year > 9999
+            || month < 1
+            || month > 12
+            || day < 1
+            || day > days_in_month(year, month)
+        {
             return None;
         }
         Some(Date(days_from_civil(year, month, day)))
@@ -150,7 +163,9 @@ impl Date {
     pub fn parse(text: &str) -> Result<Date, DateError> {
         let b = text.as_bytes();
         let digits = |r: std::ops::Range<usize>| -> Option<u32> {
-            b[r].iter().try_fold(0u32, |n, c| c.is_ascii_digit().then(|| n * 10 + (c - b'0') as u32))
+            b[r].iter().try_fold(0u32, |n, c| {
+                c.is_ascii_digit().then(|| n * 10 + (c - b'0') as u32)
+            })
         };
         if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
             return Err(DateError::Shape);
@@ -197,7 +212,9 @@ impl Date {
     /// None outside 0000-01-01 to 9999-12-31.
     pub fn checked_add_days(self, days: Days) -> Option<Date> {
         let n = self.0 as i64 + days.0;
-        (Date::MIN.0 as i64..=Date::MAX.0 as i64).contains(&n).then(|| Date(n as i32))
+        (Date::MIN.0 as i64..=Date::MAX.0 as i64)
+            .contains(&n)
+            .then(|| Date(n as i32))
     }
 
     pub fn checked_sub_days(self, days: Days) -> Option<Date> {
@@ -216,14 +233,16 @@ impl Date {
 impl Add<Days> for Date {
     type Output = Date;
     fn add(self, days: Days) -> Date {
-        self.checked_add_days(days).expect("a date between 0000-01-01 and 9999-12-31")
+        self.checked_add_days(days)
+            .expect("a date between 0000-01-01 and 9999-12-31")
     }
 }
 
 impl Sub<Days> for Date {
     type Output = Date;
     fn sub(self, days: Days) -> Date {
-        self.checked_sub_days(days).expect("a date between 0000-01-01 and 9999-12-31")
+        self.checked_sub_days(days)
+            .expect("a date between 0000-01-01 and 9999-12-31")
     }
 }
 

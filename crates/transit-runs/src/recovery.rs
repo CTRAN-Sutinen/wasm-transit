@@ -1,8 +1,9 @@
-
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use transit_network::{recovery_floors, required_recovery, MaterializedTrip, Network, RecoveryAt, RecoverySource};
+use transit_network::{
+    recovery_floors, required_recovery, MaterializedTrip, Network, RecoveryAt, RecoverySource,
+};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
@@ -66,12 +67,20 @@ fn pct(part: u64, whole: u64) -> u32 {
 }
 
 /// With no `constraints`, the terminals' floors judge.
-pub fn recovery(network: &Network, day: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>) -> Recovery {
+pub fn recovery(
+    network: &Network,
+    day: &[MaterializedTrip],
+    constraints: Option<&SchedulingConstraints>,
+) -> Recovery {
     let floors = recovery_floors(network);
     let mut waits = Vec::new();
     for (block_id, block) in &network.blocks {
-        let position: BTreeMap<&str, usize> =
-            block.trips.iter().enumerate().map(|(i, t)| (t.trip.as_str(), i)).collect();
+        let position: BTreeMap<&str, usize> = block
+            .trips
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.trip.as_str(), i))
+            .collect();
         let mut running: Vec<(u32, usize, &MaterializedTrip)> = day
             .iter()
             .filter_map(|t| position.get(t.trip.as_str()).map(|&i| (t.start_secs, i, t)))
@@ -89,14 +98,33 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], constraints: Option
             let gap = next_start - arrival;
             let authored = block.layovers.iter().find(|l| l.after_trip == pi);
             let pattern = network.patterns.get(&before.pattern);
-            let last = pattern.and_then(|p| p.stops.last()).map(|s| s.stop.as_str()).unwrap_or("");
+            let last = pattern
+                .and_then(|p| p.stops.last())
+                .map(|s| s.stop.as_str())
+                .unwrap_or("");
             let terminal = authored.and_then(|l| l.at.as_deref()).unwrap_or(last);
-            let service_type =
-                network.pattern_trips.get(&before.pattern_trips).map(|pt| pt.service_type.as_str()).unwrap_or("");
-            let model_run = network.trip(&before.trip).and_then(|(_, _, t)| t.run_secs()).unwrap_or(0);
+            let service_type = network
+                .pattern_trips
+                .get(&before.pattern_trips)
+                .map(|pt| pt.service_type.as_str())
+                .unwrap_or("");
+            let model_run = network
+                .trip(&before.trip)
+                .and_then(|(_, _, t)| t.run_secs())
+                .unwrap_or(0);
             let required = if pi + 1 == i {
-                let at = RecoveryAt { route: &before.route, service_type, run_secs: model_run, terminal };
-                required_recovery(&floors, constraints.and_then(|c| c.recovery_secs(&at)), authored.is_some(), terminal)
+                let at = RecoveryAt {
+                    route: &before.route,
+                    service_type,
+                    run_secs: model_run,
+                    terminal,
+                };
+                required_recovery(
+                    &floors,
+                    constraints.and_then(|c| c.recovery_secs(&at)),
+                    authored.is_some(),
+                    terminal,
+                )
             } else {
                 None
             };
@@ -120,16 +148,18 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], constraints: Option
     }
     let mut folded: BTreeMap<&str, PatternRecovery> = BTreeMap::new();
     for w in &waits {
-        let p = folded.entry(w.pattern.as_str()).or_insert_with(|| PatternRecovery {
-            pattern: w.pattern.clone(),
-            route: w.route.clone(),
-            waits: 0,
-            run_secs: 0,
-            gap_secs: 0,
-            recovery_pct: 0,
-            short: 0,
-            min_slack_secs: None,
-        });
+        let p = folded
+            .entry(w.pattern.as_str())
+            .or_insert_with(|| PatternRecovery {
+                pattern: w.pattern.clone(),
+                route: w.route.clone(),
+                waits: 0,
+                run_secs: 0,
+                gap_secs: 0,
+                recovery_pct: 0,
+                short: 0,
+                min_slack_secs: None,
+            });
         p.waits += 1;
         p.run_secs += w.run_secs as u64;
         p.gap_secs += w.gap_secs as u64;
@@ -152,5 +182,8 @@ pub fn recovery(network: &Network, day: &[MaterializedTrip], constraints: Option
 
 /// What validation judges a wait from.
 pub(crate) fn end(trip: &MaterializedTrip) -> u32 {
-    trip.stop_times.last().map(|st| st.arrival_secs).unwrap_or(trip.start_secs)
+    trip.stop_times
+        .last()
+        .map(|st| st.arrival_secs)
+        .unwrap_or(trip.start_secs)
 }

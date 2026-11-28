@@ -5,8 +5,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::{Days, Date};
 use serde::{Deserialize, Serialize};
+use transit_date::{Date, Days};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
@@ -49,7 +49,14 @@ pub fn date_spans(dates: &[Date]) -> Vec<DateSpan> {
         }
     }
     let iso = |d: Date| d.to_string();
-    spans.into_iter().map(|(start, end, days)| DateSpan { start: iso(start), end: iso(end), days }).collect()
+    spans
+        .into_iter()
+        .map(|(start, end, days)| DateSpan {
+            start: iso(start),
+            end: iso(end),
+            days,
+        })
+        .collect()
 }
 
 fn candidate_dates(network: &Network) -> BTreeSet<Date> {
@@ -62,7 +69,13 @@ fn candidate_dates(network: &Network) -> BTreeSet<Date> {
                 d += Days::new(1);
             }
         }
-        out.extend(st.rule.exceptions.iter().filter(|e| e.state == DayState::Added).map(|e| e.date));
+        out.extend(
+            st.rule
+                .exceptions
+                .iter()
+                .filter(|e| e.state == DayState::Added)
+                .map(|e| e.date),
+        );
     }
     out
 }
@@ -82,9 +95,19 @@ pub fn stamp_as_pick(network: &Network, name: &str, id: &str) -> Vec<crate::Netw
     if !network.plan.id.is_empty() {
         return Vec::new();
     }
-    let Some(first) = first_service_date(network) else { return Vec::new() };
-    let plan = crate::model::PlanMeta { id: id.into(), name: name.into(), effective_from: Some(first), ..Default::default() };
-    vec![crate::NetworkEdit::SetPlan { plan, through: None }]
+    let Some(first) = first_service_date(network) else {
+        return Vec::new();
+    };
+    let plan = crate::model::PlanMeta {
+        id: id.into(),
+        name: name.into(),
+        effective_from: Some(first),
+        ..Default::default()
+    };
+    vec![crate::NetworkEdit::SetPlan {
+        plan,
+        through: None,
+    }]
 }
 
 /// Only types with trips count (D-94). The order is days held (most first),
@@ -134,5 +157,7 @@ pub fn service_combination(network: &Network, members: &[String]) -> Option<Serv
     if wanted.is_empty() {
         return None;
     }
-    service_combinations(network).into_iter().find(|c| c.members == wanted)
+    service_combinations(network)
+        .into_iter()
+        .find(|c| c.members == wanted)
 }

@@ -3,8 +3,14 @@
 
 use transit_live::{AlertScope, LiveAlert, Visit};
 
-fn scope(route: Option<&str>, stop: Option<&str>, trip: Option<&str>, start: Option<u32>) -> AlertScope {
-    AlertScope { date: None,
+fn scope(
+    route: Option<&str>,
+    stop: Option<&str>,
+    trip: Option<&str>,
+    start: Option<u32>,
+) -> AlertScope {
+    AlertScope {
+        date: None,
         direction: None,
         route: route.map(Into::into),
         stop: stop.map(Into::into),
@@ -14,27 +20,66 @@ fn scope(route: Option<&str>, stop: Option<&str>, trip: Option<&str>, start: Opt
 }
 
 fn alert(scopes: Vec<AlertScope>) -> LiveAlert {
-    LiveAlert { id: "a1".into(), header: "Detour".into(), scopes, ..Default::default() }
+    LiveAlert {
+        id: "a1".into(),
+        header: "Detour".into(),
+        scopes,
+        ..Default::default()
+    }
 }
 
 fn visit<'a>(route: &'a str, stop: &'a str, trip: &'a str, start: u32) -> Visit<'a> {
-    Visit { route, direction: None, stop, trip, start_secs: start }
+    Visit {
+        route,
+        direction: None,
+        stop,
+        trip,
+        start_secs: start,
+    }
 }
 
 fn visit_in<'a>(route: &'a str, direction: Option<&'a str>, stop: &'a str) -> Visit<'a> {
-    Visit { route, direction, stop, trip: "t1", start_secs: 0 }
+    Visit {
+        route,
+        direction,
+        stop,
+        trip: "t1",
+        start_secs: 0,
+    }
 }
 
 #[test]
 fn a_direction_scope_touches_only_its_direction() {
-    let a = alert(vec![AlertScope { route: Some("12".into()), direction: Some("0".into()), ..Default::default() }]);
+    let a = alert(vec![AlertScope {
+        route: Some("12".into()),
+        direction: Some("0".into()),
+        ..Default::default()
+    }]);
     assert!(a.touches(&visit_in("12", Some("0"), "6277")));
-    assert!(!a.touches(&visit_in("12", Some("1"), "6277")), "the other direction");
-    assert!(!a.touches(&visit_in("12", None, "6277")), "a pattern placed in no direction");
-    assert!(!a.touches(&visit_in("34", Some("0"), "6277")), "another route's direction 0");
-    assert!(!a.touches_stop("6277"), "a direction scope is about a route, not the whole stop");
-    let both = alert(vec![AlertScope { route: Some("12".into()), ..Default::default() }]);
-    assert!(both.touches(&visit_in("12", Some("1"), "6277")), "no direction: every direction");
+    assert!(
+        !a.touches(&visit_in("12", Some("1"), "6277")),
+        "the other direction"
+    );
+    assert!(
+        !a.touches(&visit_in("12", None, "6277")),
+        "a pattern placed in no direction"
+    );
+    assert!(
+        !a.touches(&visit_in("34", Some("0"), "6277")),
+        "another route's direction 0"
+    );
+    assert!(
+        !a.touches_stop("6277"),
+        "a direction scope is about a route, not the whole stop"
+    );
+    let both = alert(vec![AlertScope {
+        route: Some("12".into()),
+        ..Default::default()
+    }]);
+    assert!(
+        both.touches(&visit_in("12", Some("1"), "6277")),
+        "no direction: every direction"
+    );
 }
 
 #[test]
@@ -48,13 +93,22 @@ fn an_agency_wide_alert_touches_every_visit() {
 fn the_fields_of_one_scope_are_anded() {
     let a = alert(vec![scope(Some("12"), Some("6277"), None, None)]);
     assert!(a.touches(&visit("12", "6277", "t1", 28800)));
-    assert!(!a.touches(&visit("12", "6130", "t1", 28800)), "route 12 elsewhere");
-    assert!(!a.touches(&visit("34", "6277", "t2", 28800)), "another route at the stop");
+    assert!(
+        !a.touches(&visit("12", "6130", "t1", 28800)),
+        "route 12 elsewhere"
+    );
+    assert!(
+        !a.touches(&visit("34", "6277", "t2", 28800)),
+        "another route at the stop"
+    );
 }
 
 #[test]
 fn the_scopes_of_one_alert_are_ored() {
-    let a = alert(vec![scope(Some("12"), None, None, None), scope(None, Some("106"), None, None)]);
+    let a = alert(vec![
+        scope(Some("12"), None, None, None),
+        scope(None, Some("106"), None, None),
+    ]);
     assert!(a.touches(&visit("12", "6130", "t1", 0)));
     assert!(a.touches(&visit("34", "106", "t2", 0)));
     assert!(!a.touches(&visit("34", "6130", "t2", 0)));
@@ -64,7 +118,10 @@ fn the_scopes_of_one_alert_are_ored() {
 fn a_trip_scope_names_one_instance_or_all_of_them() {
     let one = alert(vec![scope(None, None, Some("t1"), Some(28800))]);
     assert!(one.touches(&visit("12", "A", "t1", 28800)));
-    assert!(!one.touches(&visit("12", "A", "t1", 30600)), "another instance of a frequency trip");
+    assert!(
+        !one.touches(&visit("12", "A", "t1", 30600)),
+        "another instance of a frequency trip"
+    );
     let every = alert(vec![scope(None, None, Some("t1"), None)]);
     assert!(every.touches(&visit("12", "A", "t1", 30600)));
     assert!(!every.touches(&visit("12", "A", "t2", 30600)));

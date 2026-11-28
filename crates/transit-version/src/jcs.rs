@@ -55,7 +55,11 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0.as_deref().map_or("a key out of order", String::as_str))
+        f.write_str(
+            self.0
+                .as_deref()
+                .map_or("a key out of order", String::as_str),
+        )
     }
 }
 
@@ -75,7 +79,10 @@ thread_local! {
     static STAGED: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-pub fn write<T: Serialize + ?Sized, S: Sink + ?Sized>(value: &T, sink: &mut S) -> Result<(), Error> {
+pub fn write<T: Serialize + ?Sized, S: Sink + ?Sized>(
+    value: &T,
+    sink: &mut S,
+) -> Result<(), Error> {
     emit(value, &mut DynSink(sink), 0)
 }
 
@@ -135,9 +142,17 @@ impl Out for Vec<u8> {
     }
 }
 
-fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u32) -> Result<(), Error> {
+fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(
+    value: &T,
+    out: &mut O,
+    depth: u32,
+) -> Result<(), Error> {
     if let Some(mark) = out.mark() {
-        return match value.serialize(Writer { out: &mut *out, only: None, depth }) {
+        return match value.serialize(Writer {
+            out: &mut *out,
+            only: None,
+            depth,
+        }) {
             Err(e) if e.is_unsorted() => {
                 out.rewind(mark);
                 by_key(value, out, depth)
@@ -157,11 +172,19 @@ fn emit<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u
     }
     match Probe::shape(value)? {
         Shape::Unsorted => by_key(value, out, depth),
-        _ => value.serialize(Writer { out, only: None, depth }),
+        _ => value.serialize(Writer {
+            out,
+            only: None,
+            depth,
+        }),
     }
 }
 
-fn by_key<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth: u32) -> Result<(), Error> {
+fn by_key<T: Serialize + ?Sized, O: Out + ?Sized>(
+    value: &T,
+    out: &mut O,
+    depth: u32,
+) -> Result<(), Error> {
     let keys = Probe::keys(value)?;
     if keys.len() <= PASSES_UP_TO {
         let mut order: Vec<&Key> = keys.iter().collect();
@@ -172,13 +195,20 @@ fn by_key<T: Serialize + ?Sized, O: Out + ?Sized>(value: &T, out: &mut O, depth:
             if i > 0 {
                 out.put(b",");
             }
-            value.serialize(Writer { out: &mut *out, only: Some(key), depth })?;
+            value.serialize(Writer {
+                out: &mut *out,
+                only: Some(key),
+                depth,
+            })?;
         }
         out.put(b"}");
         return Ok(());
     }
     let mut entries: Vec<(String, Vec<u8>)> = Vec::with_capacity(keys.len());
-    value.serialize(Buffer { entries: &mut entries, depth })?;
+    value.serialize(Buffer {
+        entries: &mut entries,
+        depth,
+    })?;
     entries.sort_by(|a, b| key_order(&a.0, &b.0));
     out.put(b"{");
     for (i, (key, bytes)) in entries.iter().enumerate() {
@@ -220,7 +250,14 @@ fn string<O: Out + ?Sized>(s: &str, out: &mut O) {
             Some(e) => out.put(e),
             None => {
                 const HEX: &[u8; 16] = b"0123456789abcdef";
-                out.put(&[b'\\', b'u', b'0', b'0', HEX[(b >> 4) as usize], HEX[(b & 0xf) as usize]]);
+                out.put(&[
+                    b'\\',
+                    b'u',
+                    b'0',
+                    b'0',
+                    HEX[(b >> 4) as usize],
+                    HEX[(b & 0xf) as usize],
+                ]);
             }
         }
         start = i + 1;
@@ -273,7 +310,14 @@ struct Keys {
 
 impl Keys {
     fn new(collect: bool) -> Keys {
-        Keys { collect, keys: Vec::new(), last: String::new(), pending: String::new(), seen: false, sorted: true }
+        Keys {
+            collect,
+            keys: Vec::new(),
+            last: String::new(),
+            pending: String::new(),
+            seen: false,
+            sorted: true,
+        }
     }
 
     fn push(&mut self, key: &str, field: Option<&'static str>) {
@@ -368,13 +412,28 @@ impl ser::Serializer for Probe {
     fn serialize_unit_struct(self, _: &'static str) -> Result<Shape, ProbeError> {
         Ok(Shape::Other)
     }
-    fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Result<Shape, ProbeError> {
+    fn serialize_unit_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+    ) -> Result<Shape, ProbeError> {
         Ok(Shape::Other)
     }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<Shape, ProbeError> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<Shape, ProbeError> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<Shape, ProbeError> {
+    fn serialize_newtype_variant<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<Shape, ProbeError> {
         Ok(Shape::Other)
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, ProbeError> {
@@ -383,10 +442,20 @@ impl ser::Serializer for Probe {
     fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, ProbeError> {
         Err(ProbeError::Stop)
     }
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeTupleStruct, ProbeError> {
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct, ProbeError> {
         Err(ProbeError::Stop)
     }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeTupleVariant, ProbeError> {
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant, ProbeError> {
         Err(ProbeError::Stop)
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Keys, ProbeError> {
@@ -395,7 +464,13 @@ impl ser::Serializer for Probe {
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<Keys, ProbeError> {
         Ok(Keys::new(self.collect))
     }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, ProbeError> {
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant, ProbeError> {
         Err(ProbeError::Stop)
     }
 }
@@ -445,7 +520,11 @@ impl ser::SerializeMap for Keys {
 impl ser::SerializeStruct for Keys {
     type Ok = Shape;
     type Error = ProbeError;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, _: &T) -> Result<(), ProbeError> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        _: &T,
+    ) -> Result<(), ProbeError> {
         self.push(key, Some(key));
         Ok(())
     }
@@ -562,14 +641,29 @@ impl ser::Serializer for KeyInto<'_> {
     fn serialize_unit_struct(self, _: &'static str) -> Result<(), Error> {
         Err(not_a_string_key())
     }
-    fn serialize_unit_variant(self, _: &'static str, _: u32, variant: &'static str) -> Result<(), Error> {
+    fn serialize_unit_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+    ) -> Result<(), Error> {
         self.0.push_str(variant);
         Ok(())
     }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<(), Error> {
+    fn serialize_newtype_variant<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<(), Error> {
         Err(not_a_string_key())
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Error> {
@@ -578,10 +672,20 @@ impl ser::Serializer for KeyInto<'_> {
     fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, Error> {
         Err(not_a_string_key())
     }
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeTupleStruct, Error> {
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct, Error> {
         Err(not_a_string_key())
     }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeTupleVariant, Error> {
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant, Error> {
         Err(not_a_string_key())
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, Error> {
@@ -590,7 +694,13 @@ impl ser::Serializer for KeyInto<'_> {
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeStruct, Error> {
         Err(not_a_string_key())
     }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, Error> {
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant, Error> {
         Err(not_a_string_key())
     }
 }
@@ -662,13 +772,28 @@ impl ser::Serializer for KeyText {
     fn serialize_unit_struct(self, _: &'static str) -> Result<String, Error> {
         Err(Error::new("a map key must be a string"))
     }
-    fn serialize_unit_variant(self, _: &'static str, _: u32, variant: &'static str) -> Result<String, Error> {
+    fn serialize_unit_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+    ) -> Result<String, Error> {
         Ok(variant.to_string())
     }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<String, Error> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<String, Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<String, Error> {
+    fn serialize_newtype_variant<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<String, Error> {
         Err(Error::new("a map key must be a string"))
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Error> {
@@ -677,10 +802,20 @@ impl ser::Serializer for KeyText {
     fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, Error> {
         Err(Error::new("a map key must be a string"))
     }
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeTupleStruct, Error> {
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct, Error> {
         Err(Error::new("a map key must be a string"))
     }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeTupleVariant, Error> {
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant, Error> {
         Err(Error::new("a map key must be a string"))
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, Error> {
@@ -689,7 +824,13 @@ impl ser::Serializer for KeyText {
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeStruct, Error> {
         Err(Error::new("a map key must be a string"))
     }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, Error> {
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant, Error> {
         Err(Error::new("a map key must be a string"))
     }
 }
@@ -853,14 +994,29 @@ impl<'a, 'k, O: Out + ?Sized> ser::Serializer for Writer<'a, 'k, O> {
         self.out.put(b"null");
         Ok(())
     }
-    fn serialize_unit_variant(self, _: &'static str, _: u32, variant: &'static str) -> Result<(), Error> {
+    fn serialize_unit_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+    ) -> Result<(), Error> {
         string(variant, self.out);
         Ok(())
     }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, variant: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_newtype_variant<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         self.out.put(b"{");
         string(variant, self.out);
         self.out.put(b":");
@@ -870,7 +1026,12 @@ impl<'a, 'k, O: Out + ?Sized> ser::Serializer for Writer<'a, 'k, O> {
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Items<'a, O>, Error> {
         self.out.put(b"[");
-        Ok(Items { out: self.out, depth: self.depth, first: true, close: b"]" })
+        Ok(Items {
+            out: self.out,
+            depth: self.depth,
+            first: true,
+            close: b"]",
+        })
     }
     fn serialize_tuple(self, len: usize) -> Result<Items<'a, O>, Error> {
         self.serialize_seq(Some(len))
@@ -878,26 +1039,62 @@ impl<'a, 'k, O: Out + ?Sized> ser::Serializer for Writer<'a, 'k, O> {
     fn serialize_tuple_struct(self, _: &'static str, len: usize) -> Result<Items<'a, O>, Error> {
         self.serialize_seq(Some(len))
     }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, variant: &'static str, _: usize) -> Result<Items<'a, O>, Error> {
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+        _: usize,
+    ) -> Result<Items<'a, O>, Error> {
         self.out.put(b"{");
         string(variant, self.out);
         self.out.put(b":[");
-        Ok(Items { out: self.out, depth: self.depth, first: true, close: b"]}" })
+        Ok(Items {
+            out: self.out,
+            depth: self.depth,
+            first: true,
+            close: b"]}",
+        })
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Entries<'a, 'k, O>, Error> {
         if self.only.is_none() {
             self.out.put(b"{");
         }
-        Ok(Entries { out: self.out, only: self.only, depth: self.depth, first: true, last: String::new(), pending: String::new() })
+        Ok(Entries {
+            out: self.out,
+            only: self.only,
+            depth: self.depth,
+            first: true,
+            last: String::new(),
+            pending: String::new(),
+        })
     }
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<Entries<'a, 'k, O>, Error> {
         if self.only.is_none() {
             self.out.put(b"{");
         }
-        Ok(Entries { out: self.out, only: self.only, depth: self.depth, first: true, last: String::new(), pending: String::new() })
+        Ok(Entries {
+            out: self.out,
+            only: self.only,
+            depth: self.depth,
+            first: true,
+            last: String::new(),
+            pending: String::new(),
+        })
     }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, variant: &'static str, _: usize) -> Result<VariantFields<'a, O>, Error> {
-        Ok(VariantFields { out: self.out, depth: self.depth, variant, fields: Vec::new() })
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+        _: usize,
+    ) -> Result<VariantFields<'a, O>, Error> {
+        Ok(VariantFields {
+            out: self.out,
+            depth: self.depth,
+            variant,
+            fields: Vec::new(),
+        })
     }
 }
 
@@ -969,7 +1166,11 @@ impl<O: Out + ?Sized> ser::SerializeMap for Entries<'_, '_, O> {
 impl<O: Out + ?Sized> ser::SerializeStruct for Entries<'_, '_, O> {
     type Ok = ();
     type Error = Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         self.entry(key, value)
     }
     fn skip_field(&mut self, _: &'static str) -> Result<(), Error> {
@@ -983,7 +1184,11 @@ impl<O: Out + ?Sized> ser::SerializeStruct for Entries<'_, '_, O> {
 impl<O: Out + ?Sized> ser::SerializeStructVariant for VariantFields<'_, O> {
     type Ok = ();
     type Error = Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         let mut bytes = Vec::new();
         emit(value, &mut bytes, self.depth + 1)?;
         self.fields.push((key, bytes));
@@ -1033,15 +1238,27 @@ impl<'e> ser::Serializer for Buffer<'e> {
     type SerializeStructVariant = Impossible<(), Error>;
 
     fn serialize_map(self, _: Option<usize>) -> Result<BufferEntries<'e>, Error> {
-        Ok(BufferEntries { entries: self.entries, depth: self.depth, pending: None })
+        Ok(BufferEntries {
+            entries: self.entries,
+            depth: self.depth,
+            pending: None,
+        })
     }
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<BufferEntries<'e>, Error> {
-        Ok(BufferEntries { entries: self.entries, depth: self.depth, pending: None })
+        Ok(BufferEntries {
+            entries: self.entries,
+            depth: self.depth,
+            pending: None,
+        })
     }
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<(), Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         value.serialize(self)
     }
     // The probe has said that this value is an object.
@@ -1099,7 +1316,13 @@ impl<'e> ser::Serializer for Buffer<'e> {
     fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Result<(), Error> {
         Err(not_object())
     }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<(), Error> {
+    fn serialize_newtype_variant<T: Serialize + ?Sized>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<(), Error> {
         Err(not_object())
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Error> {
@@ -1108,13 +1331,29 @@ impl<'e> ser::Serializer for Buffer<'e> {
     fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, Error> {
         Err(not_object())
     }
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeTupleStruct, Error> {
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct, Error> {
         Err(not_object())
     }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeTupleVariant, Error> {
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant, Error> {
         Err(not_object())
     }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, Error> {
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant, Error> {
         Err(not_object())
     }
 }
@@ -1131,7 +1370,10 @@ impl ser::SerializeMap for BufferEntries<'_> {
         Ok(())
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let key = self.pending.take().ok_or_else(|| Error::new("a map value came before its key"))?;
+        let key = self
+            .pending
+            .take()
+            .ok_or_else(|| Error::new("a map value came before its key"))?;
         let mut bytes = Vec::new();
         emit(value, &mut bytes, self.depth + 1)?;
         self.entries.push((key, bytes));
@@ -1145,7 +1387,11 @@ impl ser::SerializeMap for BufferEntries<'_> {
 impl ser::SerializeStruct for BufferEntries<'_> {
     type Ok = ();
     type Error = Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Error> {
         let mut bytes = Vec::new();
         emit(value, &mut bytes, self.depth + 1)?;
         self.entries.push((key.to_string(), bytes));

@@ -5,9 +5,7 @@ use ts_rs::TS;
 
 pub const CONSTRAINTS_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    SchedulingConstraintsKind = "scheduling_constraints"
-);
+transit_version::kind_tag!(SchedulingConstraintsKind = "scheduling_constraints");
 
 impl transit_version::Versioned for SchedulingConstraints {
     const KIND: &'static str = "scheduling_constraints";
@@ -121,7 +119,10 @@ pub struct RoutePair {
 impl RecoveryRule {
     fn applies(&self, at: &RecoveryAt) -> bool {
         self.route.as_deref().is_none_or(|r| r == at.route)
-            && self.service_type.as_deref().is_none_or(|s| s == at.service_type)
+            && self
+                .service_type
+                .as_deref()
+                .is_none_or(|s| s == at.service_type)
     }
 
     fn specificity(&self) -> u8 {
@@ -129,7 +130,9 @@ impl RecoveryRule {
     }
 
     fn secs(&self, run_secs: u32) -> Option<u32> {
-        let share = self.pct_of_run.map(|p| ((run_secs as u64 * p as u64).div_ceil(100)) as u32);
+        let share = self
+            .pct_of_run
+            .map(|p| ((run_secs as u64 * p as u64).div_ceil(100)) as u32);
         self.min_secs.into_iter().chain(share).max()
     }
 }
@@ -152,19 +155,32 @@ impl SchedulingConstraints {
         }
         for r in &self.recovery {
             if r.min_secs.is_none() && r.pct_of_run.is_none() {
-                return Err(format!("recovery rule {} requires nothing (give min_secs and/or pct_of_run)", scope(r)));
+                return Err(format!(
+                    "recovery rule {} requires nothing (give min_secs and/or pct_of_run)",
+                    scope(r)
+                ));
             }
             if r.pct_of_run.is_some_and(|p| p > 1000) {
-                return Err(format!("recovery rule {}: pct_of_run is a percent of the run, at most 1000", scope(r)));
+                return Err(format!(
+                    "recovery rule {}: pct_of_run is a percent of the run, at most 1000",
+                    scope(r)
+                ));
             }
         }
         self.recovery.sort();
-        if let Some(w) = self.recovery.windows(2).find(|w| w[0].route == w[1].route && w[0].service_type == w[1].service_type) {
+        if let Some(w) = self
+            .recovery
+            .windows(2)
+            .find(|w| w[0].route == w[1].route && w[0].service_type == w[1].service_type)
+        {
             return Err(format!("recovery rule {} is given twice", scope(&w[0])));
         }
         for p in &mut self.interline {
             if p.a == p.b {
-                return Err(format!("an interline pair names two routes ({} twice)", p.a));
+                return Err(format!(
+                    "an interline pair names two routes ({} twice)",
+                    p.a
+                ));
             }
             if p.a > p.b {
                 std::mem::swap(&mut p.a, &mut p.b);
@@ -172,7 +188,10 @@ impl SchedulingConstraints {
         }
         self.interline.sort();
         if let Some(w) = self.interline.windows(2).find(|w| w[0] == w[1]) {
-            return Err(format!("interline pair {}–{} is given twice", w[0].a, w[0].b));
+            return Err(format!(
+                "interline pair {}–{} is given twice",
+                w[0].a, w[0].b
+            ));
         }
         self.relief_points.sort();
         if let Some(w) = self.relief_points.windows(2).find(|w| w[0] == w[1]) {
@@ -183,7 +202,10 @@ impl SchedulingConstraints {
                 return Err(format!("garage {} is given twice", g.id));
             }
             if !(-90.0..=90.0).contains(&g.lat) || !(-180.0..=180.0).contains(&g.lon) {
-                return Err(format!("garage {} is at {}, {}, which is not a position", g.id, g.lat, g.lon));
+                return Err(format!(
+                    "garage {} is at {}, {}, which is not a position",
+                    g.id, g.lat, g.lon
+                ));
             }
         }
         if self.deadhead_kph == Some(0) {
@@ -193,11 +215,19 @@ impl SchedulingConstraints {
     }
 
     pub fn recovery_secs(&self, at: &RecoveryAt) -> Option<u32> {
-        self.recovery.iter().filter(|r| r.applies(at)).max_by_key(|r| r.specificity()).and_then(|r| r.secs(at.run_secs))
+        self.recovery
+            .iter()
+            .filter(|r| r.applies(at))
+            .max_by_key(|r| r.specificity())
+            .and_then(|r| r.secs(at.run_secs))
     }
 
     pub fn interlines(&self, a: &str, b: &str) -> bool {
-        a == b || self.interline.iter().any(|p| (p.a == a && p.b == b) || (p.a == b && p.b == a))
+        a == b
+            || self
+                .interline
+                .iter()
+                .any(|p| (p.a == a && p.b == b) || (p.a == b && p.b == a))
     }
 }
 
@@ -212,6 +242,8 @@ fn scope(r: &RecoveryRule) -> String {
 
 /// The requirement that `validation_issues_under` takes: the constraints',
 /// else the terminal's floor judges.
-pub fn required(constraints: Option<&SchedulingConstraints>) -> impl Fn(&RecoveryAt) -> Option<u32> + '_ {
+pub fn required(
+    constraints: Option<&SchedulingConstraints>,
+) -> impl Fn(&RecoveryAt) -> Option<u32> + '_ {
     move |at| constraints.and_then(|c| c.recovery_secs(at))
 }

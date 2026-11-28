@@ -16,8 +16,15 @@ use crate::model::{Block, Departs, Network, PatternStop, PatternTrips, StopOffse
 type Row = (String, String, u32);
 
 /// `None` selects the patterns with no direction.
-pub(crate) fn direction_patterns(net: &Network, route: &str, direction: Option<&str>) -> Result<Vec<String>, String> {
-    let r = net.routes.get(route).ok_or_else(|| format!("unknown route {route}"))?;
+pub(crate) fn direction_patterns(
+    net: &Network,
+    route: &str,
+    direction: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let r = net
+        .routes
+        .get(route)
+        .ok_or_else(|| format!("unknown route {route}"))?;
     if let Some(d) = direction {
         if !r.directions.contains_key(d) {
             return Err(format!("route {route} has no direction {d}"));
@@ -30,7 +37,10 @@ pub(crate) fn direction_patterns(net: &Network, route: &str, direction: Option<&
         .map(|(id, _)| id.clone())
         .collect();
     if ids.is_empty() {
-        return Err(format!("route {route} runs no pattern in {}", direction.unwrap_or("no direction")));
+        return Err(format!(
+            "route {route} runs no pattern in {}",
+            direction.unwrap_or("no direction")
+        ));
     }
     Ok(ids)
 }
@@ -50,7 +60,11 @@ fn rows(net: &Network, patterns: &[String], service_type: &str) -> Result<Vec<Ro
             }
         }
     }
-    out.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+    out.sort_by(|a, b| {
+        a.2.cmp(&b.2)
+            .then_with(|| a.0.cmp(&b.0))
+            .then_with(|| a.1.cmp(&b.1))
+    });
     Ok(out)
 }
 
@@ -59,7 +73,9 @@ fn rows(net: &Network, patterns: &[String], service_type: &str) -> Result<Vec<Ro
 pub(crate) fn reindex_layovers(block: &mut Block, before: &[TripRef]) {
     let layovers = std::mem::take(&mut block.layovers);
     for mut l in layovers {
-        let (Some(a), Some(b)) = (before.get(l.after_trip), before.get(l.after_trip + 1)) else { continue };
+        let (Some(a), Some(b)) = (before.get(l.after_trip), before.get(l.after_trip + 1)) else {
+            continue;
+        };
         if let Some(i) = block.trips.iter().position(|t| t == a) {
             if block.trips.get(i + 1) == Some(b) {
                 l.after_trip = i;
@@ -77,7 +93,10 @@ pub(crate) fn fresh_trip_id(net: &Network, taken: &BTreeSet<String>, base: &str)
     if free(base) {
         return base.to_string();
     }
-    (2..).map(|n| format!("{base}-{n}")).find(|id| free(id)).expect("ids are unbounded")
+    (2..)
+        .map(|n| format!("{base}-{n}"))
+        .find(|id| free(id))
+        .expect("ids are unbounded")
 }
 
 pub(crate) fn remove_trips(net: &mut Network, ids: &BTreeSet<String>) {
@@ -98,8 +117,14 @@ pub(crate) fn remove_trips(net: &mut Network, ids: &BTreeSet<String>) {
     net.blocks.retain(|_, b| !b.trips.is_empty());
 }
 
-pub(crate) fn pattern_trips_mut<'a>(net: &'a mut Network, pattern: &'a str) -> impl Iterator<Item = &'a mut Trip> + 'a {
-    net.pattern_trips.values_mut().filter(move |pt| pt.pattern == pattern).flat_map(|pt| pt.trips.iter_mut())
+pub(crate) fn pattern_trips_mut<'a>(
+    net: &'a mut Network,
+    pattern: &'a str,
+) -> impl Iterator<Item = &'a mut Trip> + 'a {
+    net.pattern_trips
+        .values_mut()
+        .filter(move |pt| pt.pattern == pattern)
+        .flat_map(|pt| pt.trips.iter_mut())
 }
 
 /// `moves` pairs a trip id with its new start, and `added` pairs a pattern
@@ -155,9 +180,17 @@ fn rewrite(
                 }
                 net.pattern_trips.insert(
                     id.clone(),
-                    PatternTrips { pattern: pattern.clone(), service_type: service_type.to_string(), trips: Vec::new(), extra: Default::default() },
+                    PatternTrips {
+                        pattern: pattern.clone(),
+                        service_type: service_type.to_string(),
+                        trips: Vec::new(),
+                        extra: Default::default(),
+                    },
                 );
-                created.get_or_insert(CreatedEntity { kind: "pattern_trips".into(), id: id.clone() });
+                created.get_or_insert(CreatedEntity {
+                    kind: "pattern_trips".into(),
+                    id: id.clone(),
+                });
                 id
             }
         };
@@ -167,7 +200,12 @@ fn rewrite(
             .get_mut(&key)
             .expect("found or created")
             .trips
-            .push(Trip { id, departs: Departs::At { start_secs: start }, times, ..Default::default() });
+            .push(Trip {
+                id,
+                departs: Departs::At { start_secs: start },
+                times,
+                ..Default::default()
+            });
     }
     Ok(created)
 }
@@ -185,7 +223,8 @@ fn match_in_order(small: &[u32], large: &[u32]) -> Vec<usize> {
     for i in 1..=n {
         for j in i..=m {
             let skip = cost[i][j - 1];
-            let take = cost[i - 1][j - 1].saturating_add(small[i - 1].abs_diff(large[j - 1]) as u64);
+            let take =
+                cost[i - 1][j - 1].saturating_add(small[i - 1].abs_diff(large[j - 1]) as u64);
             cost[i][j] = skip.min(take);
         }
     }
@@ -205,8 +244,14 @@ fn match_in_order(small: &[u32], large: &[u32]) -> Vec<usize> {
 
 fn neighbour_pattern(net: &Network, kept: &[(Row, u32)], start: u32, fallback: &str) -> String {
     let pattern_of = |pt: &str| net.pattern_trips.get(pt).map(|t| t.pattern.clone());
-    let before = kept.iter().filter(|(_, s)| *s <= start).max_by_key(|(_, s)| *s);
-    let after = kept.iter().filter(|(_, s)| *s > start).min_by_key(|(_, s)| *s);
+    let before = kept
+        .iter()
+        .filter(|(_, s)| *s <= start)
+        .max_by_key(|(_, s)| *s);
+    let after = kept
+        .iter()
+        .filter(|(_, s)| *s > start)
+        .min_by_key(|(_, s)| *s);
     before
         .or(after)
         .and_then(|((pt, _, _), _)| pattern_of(pt))
@@ -240,18 +285,30 @@ pub(crate) fn set_headway(
     pattern: Option<&str>,
 ) -> Result<Option<CreatedEntity>, String> {
     if headway_secs == 0 || from_secs >= to_secs {
-        return Err("a headway needs a positive interval and a window that ends after it starts".into());
+        return Err(
+            "a headway needs a positive interval and a window that ends after it starts".into(),
+        );
     }
     let patterns = direction_patterns(net, route, direction)?;
     if let Some(p) = pattern {
         if !patterns.iter().any(|x| x == p) {
-            return Err(format!("pattern {p} is not in this direction of route {route}"));
+            return Err(format!(
+                "pattern {p} is not in this direction of route {route}"
+            ));
         }
     }
     let all = rows(net, &patterns, service_type)?;
-    let fallback = pattern.map(str::to_string).unwrap_or_else(|| busiest_pattern(net, &all, &patterns));
-    let window: Vec<Row> = all.iter().filter(|r| (from_secs..to_secs).contains(&r.2)).cloned().collect();
-    let slots: Vec<u32> = (from_secs..to_secs).step_by(headway_secs as usize).collect();
+    let fallback = pattern
+        .map(str::to_string)
+        .unwrap_or_else(|| busiest_pattern(net, &all, &patterns));
+    let window: Vec<Row> = all
+        .iter()
+        .filter(|r| (from_secs..to_secs).contains(&r.2))
+        .cloned()
+        .collect();
+    let slots: Vec<u32> = (from_secs..to_secs)
+        .step_by(headway_secs as usize)
+        .collect();
     let starts: Vec<u32> = window.iter().map(|r| r.2).collect();
 
     let (mut moves, mut removed, mut open) = (Vec::new(), Vec::new(), Vec::new());
@@ -260,7 +317,10 @@ pub(crate) fn set_headway(
         for (row, &j) in window.iter().zip(&taken) {
             moves.push((row.clone(), slots[j]));
         }
-        open = (0..slots.len()).filter(|j| !taken.contains(j)).map(|j| slots[j]).collect();
+        open = (0..slots.len())
+            .filter(|j| !taken.contains(j))
+            .map(|j| slots[j])
+            .collect();
     } else {
         let kept = match_in_order(&slots, &starts);
         for (i, row) in window.iter().enumerate() {
@@ -270,15 +330,28 @@ pub(crate) fn set_headway(
             }
         }
     }
-    let mut staying: Vec<(Row, u32)> =
-        all.iter().filter(|r| !(from_secs..to_secs).contains(&r.2)).map(|r| (r.clone(), r.2)).collect();
+    let mut staying: Vec<(Row, u32)> = all
+        .iter()
+        .filter(|r| !(from_secs..to_secs).contains(&r.2))
+        .map(|r| (r.clone(), r.2))
+        .collect();
     staying.extend(moves.iter().cloned());
     let added: Vec<(String, u32)> = open
         .iter()
-        .map(|&s| (pattern.map(str::to_string).unwrap_or_else(|| neighbour_pattern(net, &staying, s, &fallback)), s))
+        .map(|&s| {
+            (
+                pattern
+                    .map(str::to_string)
+                    .unwrap_or_else(|| neighbour_pattern(net, &staying, s, &fallback)),
+                s,
+            )
+        })
         .collect();
-    let moves: Vec<(String, u32)> =
-        moves.into_iter().filter(|((_, _, f), t)| f != t).map(|((_, id, _), t)| (id, t)).collect();
+    let moves: Vec<(String, u32)> = moves
+        .into_iter()
+        .filter(|((_, _, f), t)| f != t)
+        .map(|((_, id, _), t)| (id, t))
+        .collect();
     rewrite(net, service_type, &moves, &removed, &added)
 }
 
@@ -294,7 +367,9 @@ pub(crate) fn set_span(
     let patterns = direction_patterns(net, route, direction)?;
     let all = rows(net, &patterns, service_type)?;
     let (Some(first), Some(last)) = (all.first().cloned(), all.last().cloned()) else {
-        return Err(format!("route {route} runs no trip in this direction under {service_type} — add one first"));
+        return Err(format!(
+            "route {route} runs no trip in this direction under {service_type} — add one first"
+        ));
     };
     if let (Some(f), Some(l)) = (first_secs, last_secs) {
         if f > l {
@@ -303,11 +378,17 @@ pub(crate) fn set_span(
     }
     let edge_headway = |gaps: Vec<u32>| -> Result<u32, String> {
         if let Some(h) = headway_secs {
-            return if h == 0 { Err("a headway must be positive".into()) } else { Ok(h) };
+            return if h == 0 {
+                Err("a headway must be positive".into())
+            } else {
+                Ok(h)
+            };
         }
         let mut gaps: Vec<u32> = gaps.into_iter().filter(|g| *g > 0).collect();
         gaps.sort_unstable();
-        gaps.get(gaps.len().saturating_sub(1) / 2).copied().ok_or_else(|| "one trip has no headway to extend at — give headway_secs".into())
+        gaps.get(gaps.len().saturating_sub(1) / 2)
+            .copied()
+            .ok_or_else(|| "one trip has no headway to extend at — give headway_secs".into())
     };
     let starts: Vec<u32> = all.iter().map(|r| r.2).collect();
     let pattern_of = |pt: &str| net.pattern_trips[pt].pattern.clone();
@@ -319,7 +400,11 @@ pub(crate) fn set_span(
         } else {
             let tail = &starts[starts.len().saturating_sub(4)..];
             let h = edge_headway(tail.windows(2).map(|w| w[1] - w[0]).collect())?;
-            added.extend(steps(last.2, l, h).into_iter().map(|t| (pattern_of(&last.0), t)));
+            added.extend(
+                steps(last.2, l, h)
+                    .into_iter()
+                    .map(|t| (pattern_of(&last.0), t)),
+            );
         }
     }
     if let Some(f) = first_secs {
@@ -328,11 +413,17 @@ pub(crate) fn set_span(
         } else {
             let head = &starts[..starts.len().min(4)];
             let h = edge_headway(head.windows(2).map(|w| w[1] - w[0]).collect())?;
-            added.extend(steps(first.2, f, h).into_iter().map(|t| (pattern_of(&first.0), t)));
+            added.extend(
+                steps(first.2, f, h)
+                    .into_iter()
+                    .map(|t| (pattern_of(&first.0), t)),
+            );
         }
     }
     if removed.len() == all.len() {
-        return Err("the span leaves this direction no trip — remove its pattern trips instead".into());
+        return Err(
+            "the span leaves this direction no trip — remove its pattern trips instead".into(),
+        );
     }
     rewrite(net, service_type, &[], &removed, &added)
 }
@@ -346,7 +437,11 @@ fn steps(edge: u32, bound: u32, headway: u32) -> Vec<u32> {
     (1..=n)
         .map(|k| {
             let offset = (span as u64 * k as u64 / n as u64) as u32;
-            if bound >= edge { edge + offset } else { edge - offset }
+            if bound >= edge {
+                edge + offset
+            } else {
+                edge - offset
+            }
         })
         .collect()
 }
@@ -372,11 +467,17 @@ pub(crate) fn adjust_running_time(
             continue;
         }
         for trip in &mut pt.trips {
-            let Departs::At { start_secs } = trip.departs else { continue };
+            let Departs::At { start_secs } = trip.departs else {
+                continue;
+            };
             if !(from_secs..to_secs).contains(&start_secs) {
                 continue;
             }
-            let base = trip.times.first().and_then(|o| o.departure_secs).unwrap_or(0);
+            let base = trip
+                .times
+                .first()
+                .and_then(|o| o.departure_secs)
+                .unwrap_or(0);
             let end = trip.run_secs().unwrap_or(0);
             let total = end.saturating_sub(base);
             let next = total as i64 + delta_secs as i64;
@@ -386,7 +487,9 @@ pub(crate) fn adjust_running_time(
                     trip.id
                 ));
             }
-            let scale = |v: u32| base + ((v.saturating_sub(base) as i64 * next) as f64 / total as f64).round() as u32;
+            let scale = |v: u32| {
+                base + ((v.saturating_sub(base) as i64 * next) as f64 / total as f64).round() as u32
+            };
             for (i, o) in trip.times.iter_mut().enumerate() {
                 if i == 0 {
                     continue; // the start and the first dwell stand
@@ -433,12 +536,22 @@ pub(crate) fn insert_direction_stop(
         if p.stops.iter().any(|s| s.stop == stop) {
             continue;
         }
-        let Some(i) = p.stops.iter().position(|s| s.stop == after) else { continue };
+        let Some(i) = p.stops.iter().position(|s| s.stop == after) else {
+            continue;
+        };
         if i + 1 >= p.stops.len() {
             continue;
         }
         let distance_m = (p.stops[i].distance_m + p.stops[i + 1].distance_m) / 2.0;
-        p.stops.insert(i + 1, PatternStop { stop: stop.to_string(), timepoint: false, distance_m, ..Default::default() });
+        p.stops.insert(
+            i + 1,
+            PatternStop {
+                stop: stop.to_string(),
+                timepoint: false,
+                distance_m,
+                ..Default::default()
+            },
+        );
         placed.push((pid, i + 1));
     }
     if placed.is_empty() {
@@ -459,7 +572,9 @@ pub(crate) fn remove_direction_stop(
     let patterns = direction_patterns(net, route, direction)?;
     for pid in &patterns {
         let p = &net.patterns[pid];
-        if p.stops.first().is_some_and(|s| s.stop == stop) || p.stops.last().is_some_and(|s| s.stop == stop) {
+        if p.stops.first().is_some_and(|s| s.stop == stop)
+            || p.stops.last().is_some_and(|s| s.stop == stop)
+        {
             return Err(format!("stop {stop} ends pattern {pid} — endpoints stay"));
         }
     }
@@ -480,7 +595,9 @@ pub(crate) fn remove_direction_stop(
         }
     }
     if removed == 0 {
-        return Err(format!("no pattern of route {route} in this direction visits {stop}"));
+        return Err(format!(
+            "no pattern of route {route} in this direction visits {stop}"
+        ));
     }
     Ok(None)
 }

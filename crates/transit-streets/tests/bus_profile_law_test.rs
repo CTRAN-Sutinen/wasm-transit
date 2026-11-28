@@ -42,9 +42,18 @@ struct Spec {
 }
 
 fn spec() -> impl Strategy<Value = Spec> {
-    let way = (proptest::bool::weighted(0.85), 0..CLASSES.len(), proptest::option::of(0u8..3), proptest::bool::weighted(0.2));
+    let way = (
+        proptest::bool::weighted(0.85),
+        0..CLASSES.len(),
+        proptest::option::of(0u8..3),
+        proptest::bool::weighted(0.2),
+    );
     let at = (0.0f64..(N - 1) as f64, 0.0f64..(N - 1) as f64);
-    (proptest::collection::vec(way, (2 * N) as usize), at.clone(), at)
+    (
+        proptest::collection::vec(way, (2 * N) as usize),
+        at.clone(),
+        at,
+    )
         .prop_map(|(ways, from, to)| Spec { ways, from, to })
 }
 
@@ -56,8 +65,11 @@ fn streets(spec: &Spec, relabel: Option<StreetClass>) -> Streets {
             continue;
         }
         let i = i as i32;
-        let points: Vec<[i32; 2]> =
-            if i < N { (0..N).map(|c| p(i, c)).collect() } else { (0..N).map(|r| p(r, i - N)).collect() };
+        let points: Vec<[i32; 2]> = if i < N {
+            (0..N).map(|c| p(i, c)).collect()
+        } else {
+            (0..N).map(|r| p(r, i - N)).collect()
+        };
         ways.push(Way {
             points,
             oneway,
@@ -65,11 +77,18 @@ fn streets(spec: &Spec, relabel: Option<StreetClass>) -> Streets {
             name: name.map(|n| format!("Street {n}")),
         });
     }
-    Streets { kind: Default::default(), schema_version: Default::default(), ways }
+    Streets {
+        kind: Default::default(),
+        schema_version: Default::default(),
+        ways,
+    }
 }
 
 fn degrees((r, c): (f64, f64)) -> (f64, f64) {
-    ((LAT0 as f64 + r * STEP as f64) / 1e6, (LON0 as f64 + c * STEP as f64) / 1e6)
+    (
+        (LAT0 as f64 + r * STEP as f64) / 1e6,
+        (LON0 as f64 + c * STEP as f64) / 1e6,
+    )
 }
 
 proptest! {
@@ -111,16 +130,30 @@ proptest! {
 
 #[test]
 fn a_route_along_one_street_names_it_alone() {
-    let doc = Streets { kind: Default::default(), schema_version: Default::default(),
+    let doc = Streets {
+        kind: Default::default(),
+        schema_version: Default::default(),
         ways: vec![
-            Way { points: vec![p(0, 0), p(0, 1), p(0, 2), p(0, 3)], oneway: false, class: StreetClass::Path, name: Some("Trail".into()) },
-            Way { points: vec![p(1, 0), p(1, 3)], oneway: false, class: StreetClass::Primary, name: Some("Main".into()) },
+            Way {
+                points: vec![p(0, 0), p(0, 1), p(0, 2), p(0, 3)],
+                oneway: false,
+                class: StreetClass::Path,
+                name: Some("Trail".into()),
+            },
+            Way {
+                points: vec![p(1, 0), p(1, 3)],
+                oneway: false,
+                class: StreetClass::Primary,
+                name: Some("Main".into()),
+            },
         ],
     };
     let g = StreetNetwork::build(&doc);
     let from = g.snap(45.6, -122.5999).unwrap();
     let to = g.snap(45.6, -122.5972).unwrap();
-    let route = g.route_along(from, to).expect("a bus may be drawn down a path");
+    let route = g
+        .route_along(from, to)
+        .expect("a bus may be drawn down a path");
     assert_eq!(route.streets.len(), 1);
     assert_eq!(route.streets[0].class, StreetClass::Path);
     assert_eq!(route.streets[0].name.as_deref(), Some("Trail"));
@@ -130,7 +163,15 @@ fn a_route_along_one_street_names_it_alone() {
 #[test]
 fn the_bus_profile_asks_to_confirm_the_grey_classes() {
     let confirmed: Vec<StreetClass> = CLASSES.into_iter().filter(|c| bus::confirms(*c)).collect();
-    assert_eq!(confirmed, vec![StreetClass::Track, StreetClass::Path, StreetClass::Steps, StreetClass::Unknown]);
+    assert_eq!(
+        confirmed,
+        vec![
+            StreetClass::Track,
+            StreetClass::Path,
+            StreetClass::Steps,
+            StreetClass::Unknown
+        ]
+    );
     let mut listed = bus::CONFIRM.to_vec();
     listed.sort_by_key(|c| c.as_str());
     let mut expected = confirmed.clone();

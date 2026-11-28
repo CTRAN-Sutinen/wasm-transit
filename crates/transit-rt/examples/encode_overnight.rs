@@ -9,9 +9,15 @@ use transit_rt::gtfs_rt::trip_update::{StopTimeEvent, StopTimeUpdate};
 use transit_rt::gtfs_rt::{FeedEntity, FeedHeader, FeedMessage, TripDescriptor, TripUpdate};
 
 fn main() -> std::io::Result<()> {
-    let out_path = std::env::args().nth(1).unwrap_or_else(|| "overnight-rt.pb".into());
+    let out_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "overnight-rt.pb".into());
     let feed = FeedMessage {
-        header: FeedHeader { gtfs_realtime_version: "2.0".into(), timestamp: Some(1_792_816_200), ..Default::default() },
+        header: FeedHeader {
+            gtfs_realtime_version: "2.0".into(),
+            timestamp: Some(1_792_816_200),
+            ..Default::default()
+        },
         entity: vec![FeedEntity {
             id: "tu-n1".into(),
             trip_update: Some(TripUpdate {
@@ -24,7 +30,10 @@ fn main() -> std::io::Result<()> {
                 stop_time_update: vec![StopTimeUpdate {
                     stop_id: Some("A".into()),
                     stop_sequence: Some(1),
-                    departure: Some(StopTimeEvent { delay: Some(120), ..Default::default() }),
+                    departure: Some(StopTimeEvent {
+                        delay: Some(120),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }],
                 ..Default::default()

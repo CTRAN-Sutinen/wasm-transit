@@ -21,7 +21,13 @@ impl Places for Grid {
         Some((n(a)? - n(b)?).abs() as f64 * 1_000.0)
     }
 
-    fn next_trip_home(&self, _from: &str, after_secs: u32, _home: &str, _within_m: u32) -> Option<u32> {
+    fn next_trip_home(
+        &self,
+        _from: &str,
+        after_secs: u32,
+        _home: &str,
+        _within_m: u32,
+    ) -> Option<u32> {
         self.trips_home.then_some(after_secs + 900)
     }
 }
@@ -29,11 +35,19 @@ impl Places for Grid {
 fn pieces() -> impl Strategy<Value = Vec<Piece>> {
     let trip = (600u32..3_600, 0u32..1_800, 0usize..4);
     let drive = proptest::option::of(60u32..1_800);
-    let piece = (prop::collection::vec(trip, 1..4), 0u32..14_400, any::<bool>(), any::<bool>(), drive.clone(), drive);
+    let piece = (
+        prop::collection::vec(trip, 1..4),
+        0u32..14_400,
+        any::<bool>(),
+        any::<bool>(),
+        drive.clone(),
+        drive,
+    );
     (14_400u32..36_000, prop::collection::vec(piece, 1..4)).prop_map(|(mut at, list)| {
         let mut out = Vec::new();
         let mut stop = 0usize;
-        for (i, (trips, gap, pull_out, pull_in, out_secs, in_secs)) in list.into_iter().enumerate() {
+        for (i, (trips, gap, pull_out, pull_in, out_secs, in_secs)) in list.into_iter().enumerate()
+        {
             if i > 0 {
                 at += gap;
             }
@@ -71,7 +85,9 @@ fn day() -> impl Strategy<Value = Day> {
 }
 
 fn class_of(w: &WorkRules) -> impl Strategy<Value = Option<String>> {
-    let ids: Vec<Option<String>> = std::iter::once(None).chain(w.classes.iter().map(|c| Some(c.id.clone()))).collect();
+    let ids: Vec<Option<String>> = std::iter::once(None)
+        .chain(w.classes.iter().map(|c| Some(c.id.clone())))
+        .collect();
     proptest::sample::select(ids)
 }
 

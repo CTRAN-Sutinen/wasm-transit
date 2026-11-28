@@ -90,7 +90,10 @@ fn class(props: &serde_json::Map<String, Value>) -> Option<StreetClass> {
             _ => Unknown,
         });
     }
-    if ["railway", "waterway", "natural", "power", "boundary"].iter().any(|k| props.contains_key(*k)) {
+    if ["railway", "waterway", "natural", "power", "boundary"]
+        .iter()
+        .any(|k| props.contains_key(*k))
+    {
         return None;
     }
     Some(Unknown)
@@ -139,17 +142,30 @@ pub fn import(geojson: &[u8]) -> Result<Streets, StreetError> {
     let value: Value =
         serde_json::from_slice(geojson).map_err(|e| StreetError(format!("invalid JSON: {e}")))?;
     let features = match value.get("type").and_then(Value::as_str) {
-        Some("FeatureCollection") => value.get("features").and_then(Value::as_array).cloned().unwrap_or_default(),
+        Some("FeatureCollection") => value
+            .get("features")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
         Some("Feature") => vec![value],
-        _ => return Err(StreetError("expected a GeoJSON FeatureCollection or Feature".into())),
+        _ => {
+            return Err(StreetError(
+                "expected a GeoJSON FeatureCollection or Feature".into(),
+            ))
+        }
     };
 
     let empty = serde_json::Map::new();
     let mut ways = Vec::new();
     for feature in &features {
-        let props = feature.get("properties").and_then(Value::as_object).unwrap_or(&empty);
+        let props = feature
+            .get("properties")
+            .and_then(Value::as_object)
+            .unwrap_or(&empty);
         let Some(class) = class(props) else { continue };
-        let Some(geometry) = feature.get("geometry") else { continue };
+        let Some(geometry) = feature.get("geometry") else {
+            continue;
+        };
         let lines: Vec<&Value> = match geometry.get("type").and_then(Value::as_str) {
             Some("LineString") => geometry.get("coordinates").into_iter().collect(),
             Some("MultiLineString") => geometry
@@ -166,7 +182,12 @@ pub fn import(geojson: &[u8]) -> Result<Streets, StreetError> {
             if dir == Dir::Backward {
                 points.reverse();
             }
-            ways.push(Way { points, oneway: dir != Dir::Both, class, name: name.clone() });
+            ways.push(Way {
+                points,
+                oneway: dir != Dir::Both,
+                class,
+                name: name.clone(),
+            });
         }
     }
     if ways.is_empty() {

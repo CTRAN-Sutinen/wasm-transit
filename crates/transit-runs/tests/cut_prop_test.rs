@@ -16,12 +16,24 @@ use transit_network::{apply_edits, materialize};
 use transit_runs::*;
 
 fn trips() -> impl Strategy<Value = Vec<(&'static str, bool, u32)>> {
-    proptest::collection::vec((prop_oneof![Just("5"), Just("6")], any::<bool>(), (5 * 60u32..22 * 60).prop_map(|m| m * 60)), 0..30)
+    proptest::collection::vec(
+        (
+            prop_oneof![Just("5"), Just("6")],
+            any::<bool>(),
+            (5 * 60u32..22 * 60).prop_map(|m| m * 60),
+        ),
+        0..30,
+    )
 }
 
 /// A day whose trips the suggested blocking chains, with some blocks
 /// dropped so that some trips run in no block.
-fn day() -> impl Strategy<Value = (transit_network::Network, Vec<transit_network::MaterializedTrip>)> {
+fn day() -> impl Strategy<
+    Value = (
+        transit_network::Network,
+        Vec<transit_network::MaterializedTrip>,
+    ),
+> {
     (trips(), any::<u64>()).prop_map(|(trips, drop)| {
         let net = world(&trips, &[]);
         let day = materialize(&net, date()).unwrap();
@@ -42,9 +54,20 @@ fn rules() -> impl Strategy<Value = WorkRules> {
     work_rules().prop_map(|w| w.checked().unwrap())
 }
 
-fn cut(net: &transit_network::Network, day: &[transit_network::MaterializedTrip], w: &WorkRules) -> Cut {
+fn cut(
+    net: &transit_network::Network,
+    day: &[transit_network::MaterializedTrip],
+    w: &WorkRules,
+) -> Cut {
     let places = NetworkPlaces::new(net, day);
-    cut_runs(&DayBlocks::new(net, day, None, None), w, None, "2026-10-23", Day::Fri, &places)
+    cut_runs(
+        &DayBlocks::new(net, day, None, None),
+        w,
+        None,
+        "2026-10-23",
+        Day::Fri,
+        &places,
+    )
 }
 
 proptest! {

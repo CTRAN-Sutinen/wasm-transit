@@ -26,8 +26,14 @@ fn elbow_route_follows_the_street_not_the_diagonal() {
     assert_eq!(
         route,
         vec![
-            StreetPoint { lat: 45.5040, lon: -73.5080 }, // the corner
-            StreetPoint { lat: 45.5080, lon: -73.5080 }, // the endpoint
+            StreetPoint {
+                lat: 45.5040,
+                lon: -73.5080
+            }, // the corner
+            StreetPoint {
+                lat: 45.5080,
+                lon: -73.5080
+            }, // the endpoint
         ]
     );
 }
@@ -50,7 +56,10 @@ fn same_segment_route_is_the_endpoint() {
     assert_eq!(a.seg, b.seg, "both on the horizontal leg");
     assert_eq!(
         net.route(a, b),
-        Some(vec![StreetPoint { lat: b.lat, lon: b.lon }]),
+        Some(vec![StreetPoint {
+            lat: b.lat,
+            lon: b.lon
+        }]),
         "straight inside the segment"
     );
 }
@@ -175,7 +184,10 @@ fn one_way_routes_with_the_digitized_direction() {
     let route = net.route(a, b).expect("eastbound one-way is legal");
     assert_eq!(
         route,
-        vec![StreetPoint { lat: 45.5040, lon: -73.5060 }],
+        vec![StreetPoint {
+            lat: 45.5040,
+            lon: -73.5060
+        }],
         "same segment, target ahead: the endpoint only"
     );
 }
@@ -197,7 +209,8 @@ fn one_way_against_the_direction_takes_the_long_way() {
     );
     assert!(
         !route.iter().any(|p| (p.lat - 45.5040).abs() < 1e-9
-            && p.lon > -73.5100 + 1e-9 && p.lon < -73.5060 - 1e-9),
+            && p.lon > -73.5100 + 1e-9
+            && p.lon < -73.5060 - 1e-9),
         "no interior point of Front St: {route:?}"
     );
 }
@@ -227,7 +240,10 @@ fn one_way_target_behind_is_not_a_shortcut() {
     assert!(c.t > a.t, "target ahead");
     assert_eq!(
         net.route(a, c),
-        Some(vec![StreetPoint { lat: c.lat, lon: c.lon }])
+        Some(vec![StreetPoint {
+            lat: c.lat,
+            lon: c.lon
+        }])
     );
 }
 
@@ -251,7 +267,10 @@ fn oneway_attribute_conventions_parse() {
     let r = net.route(b, a).expect("against the grain is the legal way");
     assert_eq!(
         r,
-        vec![StreetPoint { lat: 45.5040, lon: -73.5100 }]
+        vec![StreetPoint {
+            lat: 45.5040,
+            lon: -73.5100
+        }]
     );
     let c = net.snap(45.5045, -73.5060).expect("c");
     let d = net.snap(45.5045, -73.5100).expect("d");

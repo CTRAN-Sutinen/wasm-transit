@@ -7,7 +7,8 @@ use transit_network::{
 };
 
 fn network() -> Network {
-    serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
+    serde_json::from_str(include_str!("../../../testdata/network.json"))
+        .expect("testdata network parses")
 }
 
 fn tuesday() -> Date {
@@ -22,17 +23,29 @@ fn remove(edit: fn(String) -> NetworkEdit, id: &str) -> NetworkEdit {
 fn the_input_is_never_mutated() {
     let net = network();
     let before = net.clone();
-    let next = apply_edits(&net, &[NetworkEdit::SetName { name: "renamed".into() }]).unwrap();
+    let next = apply_edits(
+        &net,
+        &[NetworkEdit::SetName {
+            name: "renamed".into(),
+        }],
+    )
+    .unwrap();
     assert_eq!(net, before, "the last document is untouched");
     assert_eq!(next.name, "renamed");
-    assert_eq!(apply_edits(&net, &[]).unwrap(), net, "no edits answer the same document");
+    assert_eq!(
+        apply_edits(&net, &[]).unwrap(),
+        net,
+        "no edits answer the same document"
+    );
 }
 
 #[test]
 fn a_change_is_atomic() {
     let net = network();
     let edits = [
-        NetworkEdit::SetName { name: "half-applied".into() },
+        NetworkEdit::SetName {
+            name: "half-applied".into(),
+        },
         remove(|id| NetworkEdit::RemoveRoute { id }, "ghost"),
     ];
     let err = apply_edits(&net, &edits).unwrap_err();
@@ -48,11 +61,26 @@ fn removal_refuses_while_referenced() {
         let err = apply_edits(&net, &[edit]).unwrap_err();
         assert!(err.reason.contains(needle), "{err}");
     };
-    refused(remove(|id| NetworkEdit::RemoveStop { id }, "A"), "visited by pattern 10-inbound");
-    refused(remove(|id| NetworkEdit::RemoveRoute { id }, "10"), "carries pattern 10-inbound");
-    refused(remove(|id| NetworkEdit::RemovePattern { id }, "10-inbound"), "run by pattern trips 10-weekday");
-    refused(remove(|id| NetworkEdit::RemoveServiceType { id }, "weekday"), "governs pattern trips 10-weekday");
-    refused(remove(|id| NetworkEdit::RemovePatternTrips { id }, "10-weekday"), "trips in block 400");
+    refused(
+        remove(|id| NetworkEdit::RemoveStop { id }, "A"),
+        "visited by pattern 10-inbound",
+    );
+    refused(
+        remove(|id| NetworkEdit::RemoveRoute { id }, "10"),
+        "carries pattern 10-inbound",
+    );
+    refused(
+        remove(|id| NetworkEdit::RemovePattern { id }, "10-inbound"),
+        "run by pattern trips 10-weekday",
+    );
+    refused(
+        remove(|id| NetworkEdit::RemoveServiceType { id }, "weekday"),
+        "governs pattern trips 10-weekday",
+    );
+    refused(
+        remove(|id| NetworkEdit::RemovePatternTrips { id }, "10-weekday"),
+        "trips in block 400",
+    );
 
     let teardown: Vec<NetworkEdit> = vec![
         remove(|id| NetworkEdit::RemoveBlock { id }, "400"),
@@ -65,7 +93,11 @@ fn removal_refuses_while_referenced() {
     let empty = apply_edits(&net, &teardown).unwrap();
     assert!(empty.routes.is_empty() && empty.pattern_trips.is_empty());
     assert_eq!(empty.stops.len(), 2);
-    assert!(validation_issues(&empty).is_empty(), "{:?}", validation_issues(&empty));
+    assert!(
+        validation_issues(&empty).is_empty(),
+        "{:?}",
+        validation_issues(&empty)
+    );
 }
 
 #[test]
@@ -79,16 +111,28 @@ fn upserts_are_the_planners_verbs() {
     let next = apply_edits(
         &net,
         &[
-            NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips },
+            NetworkEdit::UpsertPatternTrips {
+                id: "10-weekday".into(),
+                pattern_trips,
+            },
             NetworkEdit::SetPlan {
-                plan: PlanMeta { id: "spring".into(), name: "Spring".into(), effective_from: Some(tuesday()), extra: Default::default() },
+                plan: PlanMeta {
+                    id: "spring".into(),
+                    name: "Spring".into(),
+                    effective_from: Some(tuesday()),
+                    extra: Default::default(),
+                },
                 through: None,
             },
         ],
     )
     .unwrap();
     assert_eq!(materialize(&net, tuesday()).unwrap().len(), 3);
-    assert_eq!(materialize(&next, tuesday()).unwrap().len(), 4, "the added trip materializes");
+    assert_eq!(
+        materialize(&next, tuesday()).unwrap().len(),
+        4,
+        "the added trip materializes"
+    );
     assert_eq!(next.plan.id, "spring", "the pick frame is stamped");
     assert!(validation_issues(&next).is_empty());
 
@@ -96,7 +140,14 @@ fn upserts_are_the_planners_verbs() {
     // names the break.
     let mut stranded = net.pattern_trips["10-weekday"].clone();
     stranded.trips.remove(0);
-    let broken = apply_edits(&net, &[NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips: stranded }]).unwrap();
+    let broken = apply_edits(
+        &net,
+        &[NetworkEdit::UpsertPatternTrips {
+            id: "10-weekday".into(),
+            pattern_trips: stranded,
+        }],
+    )
+    .unwrap();
     assert!(
         validation_issues(&broken)
             .iter()
@@ -108,19 +159,43 @@ fn upserts_are_the_planners_verbs() {
 #[test]
 fn a_retime_keeps_the_trip_and_its_runcut() {
     let net = network();
-    let next = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 29_100 }]).unwrap();
+    let next = apply_edits(
+        &net,
+        &[NetworkEdit::RetimeTrip {
+            trip: "10-weekday@28800".into(),
+            to_secs: 29_100,
+        }],
+    )
+    .unwrap();
     let (_, _, moved) = next.trip("10-weekday@28800").expect("same id");
     assert_eq!(moved.departs, Departs::At { start_secs: 29_100 });
     assert_eq!(next.blocks, net.blocks);
-    assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
-    let late = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 30_300 }]).unwrap();
+    assert!(
+        validation_issues(&next).is_empty(),
+        "{:?}",
+        validation_issues(&next)
+    );
+    let late = apply_edits(
+        &net,
+        &[NetworkEdit::RetimeTrip {
+            trip: "10-weekday@28800".into(),
+            to_secs: 30_300,
+        }],
+    )
+    .unwrap();
     assert!(!validation_issues(&late).is_empty());
 
     let refuse = |edit: NetworkEdit, needle: &str| {
         let err = apply_edits(&net, &[edit]).unwrap_err();
         assert!(err.reason.contains(needle), "{err}");
     };
-    refuse(NetworkEdit::RetimeTrip { trip: "ghost".into(), to_secs: 2 }, "unknown trip ghost");
+    refuse(
+        NetworkEdit::RetimeTrip {
+            trip: "ghost".into(),
+            to_secs: 2,
+        },
+        "unknown trip ghost",
+    );
 }
 
 #[test]
@@ -128,7 +203,11 @@ fn trips_are_added_and_removed_by_id() {
     let net = network();
     let next = apply_edits(
         &net,
-        &[NetworkEdit::AddTrip { pattern_trips: "10-weekday".into(), id: None, start_secs: 43_200 }],
+        &[NetworkEdit::AddTrip {
+            pattern_trips: "10-weekday".into(),
+            id: None,
+            start_secs: 43_200,
+        }],
     )
     .unwrap();
     let (_, _, added) = next.trip("10-weekday@43200").expect("the minted id");
@@ -137,14 +216,28 @@ fn trips_are_added_and_removed_by_id() {
     assert!(validation_issues(&next).is_empty());
     let refused = apply_edits(
         &net,
-        &[NetworkEdit::AddTrip { pattern_trips: "10-weekday".into(), id: Some("10-weekday@28800".into()), start_secs: 1 }],
+        &[NetworkEdit::AddTrip {
+            pattern_trips: "10-weekday".into(),
+            id: Some("10-weekday@28800".into()),
+            start_secs: 1,
+        }],
     )
     .unwrap_err();
     assert!(refused.reason.contains("already exists"), "{refused}");
 
-    let next = apply_edits(&net, &[NetworkEdit::RemoveTrip { trip: "10-weekday@28800".into() }]).unwrap();
+    let next = apply_edits(
+        &net,
+        &[NetworkEdit::RemoveTrip {
+            trip: "10-weekday@28800".into(),
+        }],
+    )
+    .unwrap();
     assert!(next.trip("10-weekday@28800").is_none());
     assert_eq!(next.blocks["400"].trips.len(), 1);
     assert!(next.blocks["400"].layovers.is_empty());
-    assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
+    assert!(
+        validation_issues(&next).is_empty(),
+        "{:?}",
+        validation_issues(&next)
+    );
 }

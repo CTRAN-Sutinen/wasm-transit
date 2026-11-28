@@ -16,14 +16,19 @@ mod common;
 use common::{assemblies, files, generator_files, GENERATOR};
 
 fn main() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
     let dir = root.join("assemblies");
     let wanted = assemblies(root);
 
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if entry.path().is_dir() && name != GENERATOR && !wanted.iter().any(|a| a.name == name) {
+            if entry.path().is_dir() && name != GENERATOR && !wanted.iter().any(|a| a.name == name)
+            {
                 fs::remove_dir_all(entry.path()).expect("remove a retired assembly");
             }
         }

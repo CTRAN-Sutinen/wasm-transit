@@ -22,6 +22,9 @@ impl transit_version::Load for crate::watchlist::Watchlist {
     }
 
     fn answer(&self, hash: String) -> WatchlistLoaded {
-        WatchlistLoaded { watchlist_hash: hash, version: transit_version::Versioned::schema_version(self) }
+        WatchlistLoaded {
+            watchlist_hash: hash,
+            version: transit_version::Versioned::schema_version(self),
+        }
     }
 }

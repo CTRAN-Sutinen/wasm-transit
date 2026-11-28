@@ -2,9 +2,9 @@
 //! property needs no oracle, so it also catches a boarding-window off-by-one
 //! that the fixpoint oracle shares.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_router::{earliest_arrival, RouterNetwork};
 
 #[path = "prop_support.rs"]

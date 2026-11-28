@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use proptest::prelude::*;
-use transit_codec::feed::{AgencyRow, CalendarRow, RouteRow, ShapeRow, StopRow, StopTimeRow, TripRow};
+use transit_codec::feed::{
+    AgencyRow, CalendarRow, RouteRow, ShapeRow, StopRow, StopTimeRow, TripRow,
+};
 use transit_codec::Feed;
 
 const SHAPE_IDS: [&str; 4] = ["sh 7", "A/1", "0", "x_line"];
@@ -56,8 +58,12 @@ fn gen_shape() -> impl Strategy<Value = GenShape> {
     (2usize..=5).prop_flat_map(|n| {
         (
             proptest::collection::vec(
-                (-899_999i32..900_000, -1_799_999i32..1_800_000)
-                    .prop_map(|(a, b)| (a as f64 / 1e4 + 0.000_012_345_67, b as f64 / 1e4 - 0.000_001_234_5)),
+                (-899_999i32..900_000, -1_799_999i32..1_800_000).prop_map(|(a, b)| {
+                    (
+                        a as f64 / 1e4 + 0.000_012_345_67,
+                        b as f64 / 1e4 - 0.000_001_234_5,
+                    )
+                }),
                 n,
             ),
             0u32..3,
@@ -65,13 +71,15 @@ fn gen_shape() -> impl Strategy<Value = GenShape> {
             any::<bool>(),
             any::<bool>(),
         )
-            .prop_map(|(points, first_seq, gaps, with_distances, reversed)| GenShape {
-                points,
-                first_seq,
-                gaps,
-                with_distances,
-                reversed,
-            })
+            .prop_map(
+                |(points, first_seq, gaps, with_distances, reversed)| GenShape {
+                    points,
+                    first_seq,
+                    gaps,
+                    with_distances,
+                    reversed,
+                },
+            )
     })
 }
 
@@ -79,11 +87,17 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
     proptest::collection::vec(gen_shape(), 0..=SHAPE_IDS.len()).prop_flat_map(|shapes| {
         let n = shapes.len();
         let trip = (
-            (2usize..=4).prop_flat_map(|k| proptest::sample::subsequence((0u8..6).collect::<Vec<u8>>(), k)),
-            if n == 0 { Just(None).boxed() } else { proptest::option::of(0..n).boxed() },
+            (2usize..=4)
+                .prop_flat_map(|k| proptest::sample::subsequence((0u8..6).collect::<Vec<u8>>(), k)),
+            if n == 0 {
+                Just(None).boxed()
+            } else {
+                proptest::option::of(0..n).boxed()
+            },
         )
             .prop_map(|(stops, shape)| GenTrip { stops, shape });
-        (Just(shapes), proptest::collection::vec(trip, 1..=6)).prop_map(|(shapes, trips)| Spec { shapes, trips })
+        (Just(shapes), proptest::collection::vec(trip, 1..=6))
+            .prop_map(|(shapes, trips)| Spec { shapes, trips })
     })
 }
 
@@ -108,7 +122,12 @@ fn build_feed(spec: &Spec) -> Feed {
             ..Default::default()
         });
     }
-    feed.routes.push(RouteRow { route_id: s("r"), route_short_name: s("r"), route_type: s("3"), ..Default::default() });
+    feed.routes.push(RouteRow {
+        route_id: s("r"),
+        route_short_name: s("r"),
+        route_type: s("3"),
+        ..Default::default()
+    });
     feed.calendar.push(CalendarRow {
         service_id: s("wk"),
         monday: s("1"),
@@ -167,7 +186,11 @@ fn build_feed(spec: &Spec) -> Feed {
 type ShapePoint = (String, u32, f64, f64, Option<f64>);
 
 fn shape_points(feed: &Feed) -> Vec<ShapePoint> {
-    let num = |v: &Option<String>| v.as_deref().filter(|x| !x.is_empty()).map(|x| x.parse::<f64>().unwrap());
+    let num = |v: &Option<String>| {
+        v.as_deref()
+            .filter(|x| !x.is_empty())
+            .map(|x| x.parse::<f64>().unwrap())
+    };
     let mut out: Vec<ShapePoint> = feed
         .shapes
         .iter()
@@ -188,7 +211,12 @@ fn shape_points(feed: &Feed) -> Vec<ShapePoint> {
 fn trip_shapes(feed: &Feed) -> BTreeMap<String, Option<String>> {
     feed.trips
         .iter()
-        .map(|t| (t.trip_id.clone().unwrap(), t.shape_id.clone().filter(|s| !s.is_empty())))
+        .map(|t| {
+            (
+                t.trip_id.clone().unwrap(),
+                t.shape_id.clone().filter(|s| !s.is_empty()),
+            )
+        })
         .collect()
 }
 

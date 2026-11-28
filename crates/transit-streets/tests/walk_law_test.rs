@@ -39,8 +39,16 @@ struct Line {
 }
 
 fn line() -> impl Strategy<Value = Line> {
-    (vec((0i64..7, 0i64..7), 2..=5), prop::sample::select(CLASSES), any::<bool>())
-        .prop_map(|(points, cfcc, oneway)| Line { points, cfcc, oneway })
+    (
+        vec((0i64..7, 0i64..7), 2..=5),
+        prop::sample::select(CLASSES),
+        any::<bool>(),
+    )
+        .prop_map(|(points, cfcc, oneway)| Line {
+            points,
+            cfcc,
+            oneway,
+        })
 }
 
 fn layer_bytes(lines: &[Line]) -> Vec<u8> {
@@ -77,10 +85,14 @@ fn point() -> impl Strategy<Value = (f64, f64)> {
 }
 
 fn case() -> impl Strategy<Value = (Streets, Vec<(String, f64, f64)>, f64, u32)> {
-    (vec(line(), 1..=7), stops(), 0.8f64..2.0, 30u32..900)
-        .prop_filter_map("the layer has a street", |(lines, stops, speed, max)| {
-            import(&layer_bytes(&lines)).ok().map(|doc| (doc, stops, speed, max))
-        })
+    (vec(line(), 1..=7), stops(), 0.8f64..2.0, 30u32..900).prop_filter_map(
+        "the layer has a street",
+        |(lines, stops, speed, max)| {
+            import(&layer_bytes(&lines))
+                .ok()
+                .map(|doc| (doc, stops, speed, max))
+        },
+    )
 }
 
 fn walkable(class: &str) -> bool {
@@ -116,7 +128,13 @@ impl Oracle {
                 let nb = *ids.entry(pair[1]).or_insert(n);
                 let a = (pair[0][0] as f64 / 1e6, pair[0][1] as f64 / 1e6);
                 let b = (pair[1][0] as f64 / 1e6, pair[1][1] as f64 / 1e6);
-                segs.push(OSeg { a, b, len: meters_between(a.0, a.1, b.0, b.1), na, nb });
+                segs.push(OSeg {
+                    a,
+                    b,
+                    len: meters_between(a.0, a.1, b.0, b.1),
+                    na,
+                    nb,
+                });
             }
         }
         let mut adj = vec![Vec::new(); ids.len()];
@@ -147,7 +165,9 @@ impl Oracle {
             let t = (-(ax * dx + ay * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
             all.push((i, t, (ax + t * dx).hypot(ay + t * dy)));
         }
-        let Some(min) = all.iter().map(|c| c.2).min_by(f64::total_cmp) else { return all };
+        let Some(min) = all.iter().map(|c| c.2).min_by(f64::total_cmp) else {
+            return all;
+        };
         all.retain(|c| c.2 <= min + 1e-6);
         all
     }
@@ -189,8 +209,15 @@ impl Oracle {
 
     /// Walk seconds for each choice of equally near positions. Infinite
     /// means no street path.
-    fn walks(&self, stops: &[(String, f64, f64)], speed: f64) -> BTreeMap<(String, String), Vec<f64>> {
-        let snapped: Vec<_> = stops.iter().map(|(_, lat, lon)| self.snap(*lat, *lon)).collect();
+    fn walks(
+        &self,
+        stops: &[(String, f64, f64)],
+        speed: f64,
+    ) -> BTreeMap<(String, String), Vec<f64>> {
+        let snapped: Vec<_> = stops
+            .iter()
+            .map(|(_, lat, lon)| self.snap(*lat, *lon))
+            .collect();
         let mut out = BTreeMap::new();
         for (i, a) in stops.iter().enumerate() {
             for (j, b) in stops.iter().enumerate() {
@@ -211,24 +238,39 @@ impl Oracle {
 }
 
 fn as_tuples(got: &[Walk]) -> Vec<(String, String, u32)> {
-    got.iter().map(|w| (w.from.clone(), w.to.clone(), w.walk_secs)).collect()
+    got.iter()
+        .map(|w| (w.from.clone(), w.to.clone(), w.walk_secs))
+        .collect()
 }
 
 /// Agrees up to a second of rounding, because the two sum the same meters in
 /// different orders and a walk near a whole second or the limit may round
 /// either way.
-fn agree(got: &[(String, String, u32)], want: &BTreeMap<(String, String), Vec<f64>>, max: u32) -> Result<(), String> {
-    let g: HashMap<_, _> = got.iter().map(|(a, b, s)| ((a.clone(), b.clone()), *s as f64)).collect();
+fn agree(
+    got: &[(String, String, u32)],
+    want: &BTreeMap<(String, String), Vec<f64>>,
+    max: u32,
+) -> Result<(), String> {
+    let g: HashMap<_, _> = got
+        .iter()
+        .map(|(a, b, s)| ((a.clone(), b.clone()), *s as f64))
+        .collect();
     let max = max as f64;
     for (k, s) in &g {
-        let Some(choices) = want.get(k) else { return Err(format!("{k:?}: got {s} s, a stop the oracle snaps nowhere")) };
+        let Some(choices) = want.get(k) else {
+            return Err(format!("{k:?}: got {s} s, a stop the oracle snaps nowhere"));
+        };
         if !choices.iter().any(|c| (c - s).abs() <= 1.0) {
-            return Err(format!("{k:?}: got {s} s, the oracle's choices {choices:?}"));
+            return Err(format!(
+                "{k:?}: got {s} s, the oracle's choices {choices:?}"
+            ));
         }
     }
     for (k, choices) in want {
         if !g.contains_key(k) && !choices.iter().any(|c| *c + 1.0 >= max) {
-            return Err(format!("{k:?}: no walk, the oracle's choices {choices:?} (limit {max})"));
+            return Err(format!(
+                "{k:?}: no walk, the oracle's choices {choices:?} (limit {max})"
+            ));
         }
     }
     Ok(())
@@ -327,7 +369,10 @@ fn street(cfcc: &str, oneway: bool, coords: &[(f64, f64)]) -> serde_json::Value 
 }
 
 fn doc(features: Vec<serde_json::Value>) -> Streets {
-    import(&serde_json::to_vec(&json!({ "type": "FeatureCollection", "features": features })).unwrap()).unwrap()
+    import(
+        &serde_json::to_vec(&json!({ "type": "FeatureCollection", "features": features })).unwrap(),
+    )
+    .unwrap()
 }
 
 fn stop(id: &str, lat: f64, lon: f64) -> (String, f64, f64) {
@@ -338,8 +383,15 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, f64, f64) {
 fn a_rider_never_walks_a_motorway_a_ramp_or_an_unknown_street() {
     let stops = [stop("a", 45.6000, -122.6000), stop("b", 45.6000, -122.5950)];
     for cfcc in ["A10", "A63", "X10"] {
-        let only = doc(vec![street(cfcc, false, &[(45.6, -122.6), (45.6, -122.595)])]);
-        assert!(walks(&only, &stops, WALK_SPEED_MPS, MAX_WALK_SECS).is_empty(), "{cfcc} is not walkable");
+        let only = doc(vec![street(
+            cfcc,
+            false,
+            &[(45.6, -122.6), (45.6, -122.595)],
+        )]);
+        assert!(
+            walks(&only, &stops, WALK_SPEED_MPS, MAX_WALK_SECS).is_empty(),
+            "{cfcc} is not walkable"
+        );
     }
     let beside = doc(vec![
         street("A10", false, &[(45.6, -122.6), (45.6, -122.595)]),
@@ -348,12 +400,22 @@ fn a_rider_never_walks_a_motorway_a_ramp_or_an_unknown_street() {
     let got = walks(&beside, &stops, WALK_SPEED_MPS, MAX_WALK_SECS);
     assert_eq!(got.len(), 2, "a to b and b to a, along the local street");
     let meters = meters_between(45.6002, -122.6, 45.6002, -122.595) + 2.0 * 0.0002 * M_PER_DEG;
-    assert!(got[0].walk_secs.abs_diff((meters / WALK_SPEED_MPS).ceil() as u32) <= 1, "{got:?}");
+    assert!(
+        got[0]
+            .walk_secs
+            .abs_diff((meters / WALK_SPEED_MPS).ceil() as u32)
+            <= 1,
+        "{got:?}"
+    );
 }
 
 #[test]
 fn a_rider_walks_a_one_way_street_both_ways() {
-    let one_way = doc(vec![street("A40", true, &[(45.6, -122.6), (45.6, -122.597)])]);
+    let one_way = doc(vec![street(
+        "A40",
+        true,
+        &[(45.6, -122.6), (45.6, -122.597)],
+    )]);
     let stops = [stop("a", 45.6, -122.6), stop("b", 45.6, -122.597)];
     let got = walks(&one_way, &stops, WALK_SPEED_MPS, MAX_WALK_SECS);
     assert_eq!(got.len(), 2);
@@ -363,7 +425,11 @@ fn a_rider_walks_a_one_way_street_both_ways() {
 #[test]
 fn a_walk_past_the_limit_is_no_walk() {
     // About 1.2 km of street is 15 minutes at 1.3 m/s.
-    let long = doc(vec![street("A40", false, &[(45.6, -122.6), (45.6, -122.585)])]);
+    let long = doc(vec![street(
+        "A40",
+        false,
+        &[(45.6, -122.6), (45.6, -122.585)],
+    )]);
     let stops = [stop("a", 45.6, -122.6), stop("b", 45.6, -122.585)];
     assert!(walks(&long, &stops, WALK_SPEED_MPS, MAX_WALK_SECS).is_empty());
     assert_eq!(walks(&long, &stops, WALK_SPEED_MPS, 1_200).len(), 2);

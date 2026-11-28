@@ -13,7 +13,10 @@ pub struct TripSpec {
 pub fn model_day(
     zip: &[u8],
     date: Date,
-) -> (transit_network::Network, Vec<transit_network::MaterializedTrip>) {
+) -> (
+    transit_network::Network,
+    Vec<transit_network::MaterializedTrip>,
+) {
     let feed = transit_codec::Feed::from_zip_bytes(zip).expect("parse");
     let outcome = transit_codec::import(&feed);
     let day = transit_network::materialize(&outcome.network, date).expect("materialize");
@@ -24,7 +27,14 @@ pub fn model_day(
 pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
     let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
         .iter()
-        .map(|t| (t.stops.clone(), (0..t.stops.len() as u32).map(|seq| t.start + seq * t.step).collect()))
+        .map(|t| {
+            (
+                t.stops.clone(),
+                (0..t.stops.len() as u32)
+                    .map(|seq| t.start + seq * t.step)
+                    .collect(),
+            )
+        })
         .collect();
     build_zip_timed(n_stops, 0.0008, &timed)
 }
@@ -36,13 +46,24 @@ pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
 pub fn build_zip_spaced(n_stops: usize, spacing_deg: f64, trips: &[TripSpec]) -> Vec<u8> {
     let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
         .iter()
-        .map(|t| (t.stops.clone(), (0..t.stops.len() as u32).map(|seq| t.start + seq * t.step).collect()))
+        .map(|t| {
+            (
+                t.stops.clone(),
+                (0..t.stops.len() as u32)
+                    .map(|seq| t.start + seq * t.step)
+                    .collect(),
+            )
+        })
         .collect();
     build_zip_timed(n_stops, spacing_deg, &timed)
 }
 
 #[allow(dead_code)]
-pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec<u32>)]) -> Vec<u8> {
+pub fn build_zip_timed(
+    n_stops: usize,
+    spacing_deg: f64,
+    trips: &[(Vec<u32>, Vec<u32>)],
+) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: String| {
@@ -50,8 +71,16 @@ pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec
         w.write_all(body.as_bytes()).unwrap();
     };
 
-    add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n".into());
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n1,1,R,3\n".into());
+    add(
+        &mut w,
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n".into(),
+    );
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n1,1,R,3\n".into(),
+    );
 
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon\n");
     for i in 0..n_stops {
@@ -64,7 +93,8 @@ pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec
         "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nALL,1,1,1,1,1,1,1,20260101,20261231\n".into());
 
     let mut trips_txt = String::from("route_id,service_id,trip_id\n");
-    let mut stop_times = String::from("trip_id,arrival_time,departure_time,stop_id,stop_sequence\n");
+    let mut stop_times =
+        String::from("trip_id,arrival_time,departure_time,stop_id,stop_sequence\n");
     for (i, (stops, times)) in trips.iter().enumerate() {
         trips_txt.push_str(&format!("1,ALL,t{i}\n"));
         for (seq, (&s, &secs)) in stops.iter().zip(times).enumerate() {
@@ -90,7 +120,12 @@ pub const INF: u32 = u32::MAX;
 /// to a fixpoint, with no leg bound. It shares no code with the round-based
 /// search.
 #[allow(dead_code)]
-pub fn oracle_arrival(net: &transit_router::RouterNetwork, from: usize, to: usize, depart: u32) -> u32 {
+pub fn oracle_arrival(
+    net: &transit_router::RouterNetwork,
+    from: usize,
+    to: usize,
+    depart: u32,
+) -> u32 {
     let n = net.stops.len();
     let mut arr = vec![INF; n];
     arr[from] = depart;
@@ -140,20 +175,43 @@ pub fn assert_feasible(it: &transit_router::Itinerary, depart: u32) {
     let mut place: &str = &it.from_stop_id;
     for leg in &it.legs {
         match leg {
-            Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {
+            Leg::Walk {
+                from_stop_id,
+                to_stop_id,
+                walk_secs,
+                ..
+            } => {
                 assert_eq!(place, from_stop_id, "walk starts where the last leg ended");
                 t += walk_secs;
                 place = to_stop_id;
             }
-            Leg::Transit { board_stop_id, board_secs, alight_stop_id, alight_secs, .. } => {
-                assert_eq!(place, board_stop_id, "transit boards where the last leg ended");
-                assert!(*board_secs >= t, "boards at {board_secs} before the previous leg ended at {t}");
+            Leg::Transit {
+                board_stop_id,
+                board_secs,
+                alight_stop_id,
+                alight_secs,
+                ..
+            } => {
+                assert_eq!(
+                    place, board_stop_id,
+                    "transit boards where the last leg ended"
+                );
+                assert!(
+                    *board_secs >= t,
+                    "boards at {board_secs} before the previous leg ended at {t}"
+                );
                 assert!(*alight_secs >= *board_secs, "alights before boarding");
                 t = *alight_secs;
                 place = alight_stop_id;
             }
         }
     }
-    assert_eq!(place, it.to_stop_id, "the itinerary ends at the destination");
-    assert_eq!(t, it.arrival_secs, "the last leg ends at the promised arrival");
+    assert_eq!(
+        place, it.to_stop_id,
+        "the itinerary ends at the destination"
+    );
+    assert_eq!(
+        t, it.arrival_secs,
+        "the last leg ends at the promised arrival"
+    );
 }

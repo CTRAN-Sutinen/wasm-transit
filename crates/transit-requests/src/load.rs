@@ -13,7 +13,8 @@ impl transit_version::Load for crate::StopRequests {
     type Answer = StopRequestsLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::StopRequests = transit_version::parse_versioned(bytes).map_err(|e| e.context("stop requests document"))?;
+        let document: crate::StopRequests = transit_version::parse_versioned(bytes)
+            .map_err(|e| e.context("stop requests document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
             format!("stop requests document: {}", reasons.join("; ")).into()
@@ -25,6 +26,9 @@ impl transit_version::Load for crate::StopRequests {
     }
 
     fn answer(&self, hash: String) -> StopRequestsLoaded {
-        StopRequestsLoaded { requests_hash: hash, requests: self.requests.len() as u32 }
+        StopRequestsLoaded {
+            requests_hash: hash,
+            requests: self.requests.len() as u32,
+        }
     }
 }

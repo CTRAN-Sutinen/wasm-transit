@@ -24,37 +24,64 @@ pub type LegGroupId = String;
 #[cfg_attr(feature = "bindings", ts(export))]
 pub struct Fares {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<FareId, ZoneFare>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<FareId, ZoneFare>>")
+    )]
     pub zone_fares: BTreeMap<FareId, ZoneFare>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<ZoneFareRule>>"))]
     pub zone_fare_rules: Vec<ZoneFareRule>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<AreaId, Area>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<AreaId, Area>>")
+    )]
     pub areas: BTreeMap<AreaId, Area>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<FareNetworkId, FareNetwork>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<FareNetworkId, FareNetwork>>")
+    )]
     pub networks: BTreeMap<FareNetworkId, FareNetwork>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<TimeframeId, Vec<Timeframe>>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<TimeframeId, Vec<Timeframe>>>")
+    )]
     pub timeframes: BTreeMap<TimeframeId, Vec<Timeframe>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<RiderCategoryId, RiderCategory>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<RiderCategoryId, RiderCategory>>")
+    )]
     pub rider_categories: BTreeMap<RiderCategoryId, RiderCategory>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<FareMediaId, FareMedia>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<FareMediaId, FareMedia>>")
+    )]
     pub media: BTreeMap<FareMediaId, FareMedia>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<FareProductId, Vec<FareOffer>>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<FareProductId, Vec<FareOffer>>>")
+    )]
     pub products: BTreeMap<FareProductId, Vec<FareOffer>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<FareLegRule>>"))]
     pub leg_rules: Vec<FareLegRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<FareLegJoinRule>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<Vec<FareLegJoinRule>>")
+    )]
     pub leg_join_rules: Vec<FareLegJoinRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<Vec<FareTransferRule>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<Vec<FareTransferRule>>")
+    )]
     pub transfer_rules: Vec<FareTransferRule>,
     #[serde(flatten)]
     #[cfg_attr(feature = "bindings", ts(skip))]

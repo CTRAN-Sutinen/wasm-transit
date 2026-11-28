@@ -11,22 +11,38 @@ use transit_live::AlertScope;
 use transit_network::Network;
 
 fn network() -> Network {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     transit_codec::import(&feed).network
 }
 
 const DATE: &str = "2026-10-23";
 
 fn day(net: &Network) -> Vec<transit_network::MaterializedTrip> {
-    transit_dispatch::day(net, transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(), &[]).unwrap().trips
+    transit_dispatch::day(
+        net,
+        transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+        &[],
+    )
+    .unwrap()
+    .trips
 }
 
 fn scope(route: Option<&str>, stop: Option<&str>) -> AlertScope {
-    AlertScope { route: route.map(String::from), stop: stop.map(String::from), ..Default::default() }
+    AlertScope {
+        route: route.map(String::from),
+        stop: stop.map(String::from),
+        ..Default::default()
+    }
 }
 
 fn stops(r: &transit_dispatch::Reach) -> Vec<(&str, u32)> {
-    r.stops.iter().map(|s| (s.stop.as_str(), s.departures)).collect()
+    r.stops
+        .iter()
+        .map(|s| (s.stop.as_str(), s.departures))
+        .collect()
 }
 
 #[test]
@@ -72,10 +88,24 @@ fn the_whole_agency_reaches_every_departure() {
 #[test]
 fn a_trip_reaches_only_on_its_date() {
     let net = network();
-    let on = |date: Option<&str>| AlertScope { trip: Some("t10".into()), date: date.map(String::from), start_secs: Some(28800), ..Default::default() };
-    assert_eq!(stops(&alert_reach(&net, &day(&net), &[on(Some(DATE))], DATE)), [("A", 1)]);
-    assert_eq!(alert_reach(&net, &day(&net), &[on(Some("2026-10-24"))], DATE).departures, 0);
-    assert_eq!(alert_reach(&net, &day(&net), &[on(None)], DATE).departures, 1);
+    let on = |date: Option<&str>| AlertScope {
+        trip: Some("t10".into()),
+        date: date.map(String::from),
+        start_secs: Some(28800),
+        ..Default::default()
+    };
+    assert_eq!(
+        stops(&alert_reach(&net, &day(&net), &[on(Some(DATE))], DATE)),
+        [("A", 1)]
+    );
+    assert_eq!(
+        alert_reach(&net, &day(&net), &[on(Some("2026-10-24"))], DATE).departures,
+        0
+    );
+    assert_eq!(
+        alert_reach(&net, &day(&net), &[on(None)], DATE).departures,
+        1
+    );
 }
 
 fn arb_scope() -> impl Strategy<Value = AlertScope> {
@@ -109,8 +139,10 @@ proptest! {
 #[test]
 fn a_cancelled_trip_is_reached_where_the_board_lists_it_skipped() {
     let net = network();
-    let cancel: transit_sync::TripCancel =
-        serde_json::from_value(serde_json::json!({ "id": "c30", "trip_id": "t30", "start_secs": 31200, "date": DATE })).unwrap();
+    let cancel: transit_sync::TripCancel = serde_json::from_value(
+        serde_json::json!({ "id": "c30", "trip_id": "t30", "start_secs": 31200, "date": DATE }),
+    )
+    .unwrap();
     let record = transit_sync::EditRecord {
         id: "r30".into(),
         diversion: None,
@@ -120,8 +152,19 @@ fn a_cancelled_trip_is_reached_where_the_board_lists_it_skipped() {
         updated_at: 0,
         extra: Default::default(),
     };
-    let d = transit_dispatch::day(&net, transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(), &[record]).unwrap();
-    let trip = AlertScope { route: Some("10".into()), trip: Some("t30".into()), date: Some(DATE.into()), start_secs: Some(31200), ..Default::default() };
+    let d = transit_dispatch::day(
+        &net,
+        transit_date::Date::from_ymd_opt(2026, 10, 23).unwrap(),
+        &[record],
+    )
+    .unwrap();
+    let trip = AlertScope {
+        route: Some("10".into()),
+        trip: Some("t30".into()),
+        date: Some(DATE.into()),
+        start_secs: Some(31200),
+        ..Default::default()
+    };
     let r = transit_dispatch::alert_reach_day(&net, &d, &[trip], DATE);
     assert_eq!(stops(&r), [("A", 1), ("C", 1)]);
 }

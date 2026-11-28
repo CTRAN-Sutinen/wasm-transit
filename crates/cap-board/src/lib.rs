@@ -9,9 +9,9 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use std::sync::Arc;
 
 use transit_dispatch::{BoardAt, Day, GroupedBoard, Overnight, ServiceDay, StopBoard};
 
@@ -109,10 +109,19 @@ pub enum Request {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_board/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    StopBoard { board: StopBoard },
-    GroupedBoard { board: GroupedBoard },
-    WatchlistBoard { stops: Vec<WatchBoardStop> },
-    AlertReach { entities: Vec<EntityReach>, reach: transit_dispatch::Reach },
+    StopBoard {
+        board: StopBoard,
+    },
+    GroupedBoard {
+        board: GroupedBoard,
+    },
+    WatchlistBoard {
+        stops: Vec<WatchBoardStop>,
+    },
+    AlertReach {
+        entities: Vec<EntityReach>,
+        reach: transit_dispatch::Reach,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,15 +142,38 @@ const PER_GROUP: u32 = 3;
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::StopBoard { network_hash, edits_hash, stop_id, date, from_secs, limit, live_hash, previous } => {
+        Request::StopBoard {
+            network_hash,
+            edits_hash,
+            stop_id,
+            date,
+            from_secs,
+            limit,
+            live_hash,
+            previous,
+        } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
+            let live = live_hash
+                .as_deref()
+                .map(|h| kind::<transit_live::LiveDay>().require(h))
+                .transpose()?;
             Ok(Response::StopBoard {
-                board: transit_dispatch::stop_board_at(&network, &days.at(&date, from_secs), &stop_id, limit as usize, live.as_deref()),
+                board: transit_dispatch::stop_board_at(
+                    &network,
+                    &days.at(&date, from_secs),
+                    &stop_id,
+                    limit as usize,
+                    live.as_deref(),
+                ),
             })
         }
-        Request::AlertReach { network_hash, edits_hash, date, alert } => {
+        Request::AlertReach {
+            network_hash,
+            edits_hash,
+            date,
+            alert,
+        } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, None)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             let mut all = Vec::new();
@@ -155,15 +187,40 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                         Ok(v) => (Some(v), None),
                         Err(why) => (None, Some(why)),
                     };
-                    EntityReach { published, not_published, names: reading.names, reach: transit_dispatch::alert_reach_day(&network, &days.today, &reading.scopes, &date) }
+                    EntityReach {
+                        published,
+                        not_published,
+                        names: reading.names,
+                        reach: transit_dispatch::alert_reach_day(
+                            &network,
+                            &days.today,
+                            &reading.scopes,
+                            &date,
+                        ),
+                    }
                 })
                 .collect();
-            Ok(Response::AlertReach { entities, reach: transit_dispatch::alert_reach_day(&network, &days.today, &all, &date) })
+            Ok(Response::AlertReach {
+                entities,
+                reach: transit_dispatch::alert_reach_day(&network, &days.today, &all, &date),
+            })
         }
-        Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash, previous } => {
+        Request::GroupedBoard {
+            network_hash,
+            edits_hash,
+            stop_id,
+            date,
+            from_secs,
+            per_group,
+            live_hash,
+            previous,
+        } => {
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
+            let live = live_hash
+                .as_deref()
+                .map(|h| kind::<transit_live::LiveDay>().require(h))
+                .transpose()?;
             let mut board = transit_dispatch::grouped_board_at(
                 &network,
                 &days.at(&date, from_secs),
@@ -172,29 +229,61 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 live.as_deref(),
             );
             if board.groups.iter().any(|g| g.departures.is_empty()) {
-                let records = edits_hash.as_deref().map(|h| cap_abi::kernel::kind::<transit_sync::EditDocument>().require(h)).transpose()?;
-                let records = records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+                let records = edits_hash
+                    .as_deref()
+                    .map(|h| cap_abi::kernel::kind::<transit_sync::EditDocument>().require(h))
+                    .transpose()?;
+                let records = records
+                    .as_deref()
+                    .map(|d| d.records.as_slice())
+                    .unwrap_or(&[]);
                 let date = transit_date::Date::read(&date)?;
-                transit_dispatch::with_next_service(&network, &mut board, &stop_id, date, from_secs, |on| {
-                    transit_dispatch::day(&network, on, records)
-                        .map(Box::new)
-                        .map_err(|e| format!("the network does not materialize on {on}: {e}"))
-                })?;
+                transit_dispatch::with_next_service(
+                    &network,
+                    &mut board,
+                    &stop_id,
+                    date,
+                    from_secs,
+                    |on| {
+                        transit_dispatch::day(&network, on, records)
+                            .map(Box::new)
+                            .map_err(|e| format!("the network does not materialize on {on}: {e}"))
+                    },
+                )?;
             }
             Ok(Response::GroupedBoard { board })
         }
-        Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash, previous } => {
-            let watchlist = kind::<transit_rider::watchlist::Watchlist>().require(&watchlist_hash)?;
+        Request::WatchlistBoard {
+            watchlist_hash,
+            network_hash,
+            edits_hash,
+            date,
+            from_secs,
+            limit,
+            live_hash,
+            previous,
+        } => {
+            let watchlist =
+                kind::<transit_rider::watchlist::Watchlist>().require(&watchlist_hash)?;
             let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let at = days.at(&date, from_secs);
             let network = kind::<transit_network::Network>().require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| kind::<transit_live::LiveDay>().require(h)).transpose()?;
+            let live = live_hash
+                .as_deref()
+                .map(|h| kind::<transit_live::LiveDay>().require(h))
+                .transpose()?;
             let stops = watchlist
                 .stop_ids()
                 .into_iter()
                 .map(|stop_id| WatchBoardStop {
                     label: watchlist.label(&stop_id),
-                    board: transit_dispatch::stop_board_at(&network, &at, &stop_id, limit as usize, live.as_deref()),
+                    board: transit_dispatch::stop_board_at(
+                        &network,
+                        &at,
+                        &stop_id,
+                        limit as usize,
+                        live.as_deref(),
+                    ),
                     id: stop_id,
                 })
                 .collect();
@@ -209,7 +298,12 @@ struct Days {
 }
 
 impl Days {
-    fn read(network_hash: &str, edits_hash: Option<&str>, date: &str, previous: Option<Previous>) -> Result<Days, cap_abi::Refusal> {
+    fn read(
+        network_hash: &str,
+        edits_hash: Option<&str>,
+        date: &str,
+        previous: Option<Previous>,
+    ) -> Result<Days, cap_abi::Refusal> {
         let today = day(network_hash, edits_hash, date)?;
         let previous = match previous {
             Some(p) => {
@@ -217,7 +311,6 @@ impl Days {
                     .ok()
                     .and_then(|d| d.pred_opt())
                     .ok_or_else(|| format!("invalid date {date:?}"))?
-                    
                     .to_string();
                 let day = day(network_hash, edits_hash, &on)?;
                 Some((on, day, p))
@@ -229,10 +322,18 @@ impl Days {
 
     fn at<'a>(&'a self, date: &'a str, from_secs: u32) -> BoardAt<'a> {
         BoardAt {
-            today: ServiceDay { date, trips: &self.today.trips, edits: self.today.edits.as_ref() },
+            today: ServiceDay {
+                date,
+                trips: &self.today.trips,
+                edits: self.today.edits.as_ref(),
+            },
             from_secs,
             previous: self.previous.as_ref().map(|(on, day, p)| Overnight {
-                day: ServiceDay { date: on, trips: &day.trips, edits: day.edits.as_ref() },
+                day: ServiceDay {
+                    date: on,
+                    trips: &day.trips,
+                    edits: day.edits.as_ref(),
+                },
                 from_secs: p.from_secs,
                 length_secs: p.length_secs,
             }),
@@ -245,7 +346,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the board has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: the board has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]
@@ -266,12 +369,23 @@ cap_abi::capability! {
     ],
 }
 
-fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
+fn day(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date: &str,
+) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
-    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
-    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let edits = edits_hash
+        .map(|hash| kind::<transit_sync::EditDocument>().require(hash))
+        .transpose()?;
+    let records = edits
+        .as_deref()
+        .map(|d| d.records.as_slice())
+        .unwrap_or(&[]);
     let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
     let key = transit_dispatch::day_key(network_hash, edits_hash, date);
-    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || {
+        transit_dispatch::day_of(&network, records, on)
+    })
 }

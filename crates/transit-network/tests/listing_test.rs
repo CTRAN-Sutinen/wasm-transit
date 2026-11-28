@@ -2,8 +2,8 @@
 //! (cap-directory/OPS.md).
 
 use transit_network::{
-    apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departs, EntityKind, HeadwayBand,
-    Network, NetworkEdit, PatternTrips, StopOffset, Trip,
+    apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departs,
+    EntityKind, HeadwayBand, Network, NetworkEdit, PatternTrips, StopOffset, Trip,
 };
 
 fn network() -> Network {
@@ -13,18 +13,33 @@ fn network() -> Network {
 #[test]
 fn rows_match_every_term_in_name_or_id() {
     let net = network();
-    let ids = |kind, q| entity_rows(&net, kind, q).into_iter().map(|r| r.id).collect::<Vec<_>>();
+    let ids = |kind, q| {
+        entity_rows(&net, kind, q)
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>()
+    };
     assert_eq!(ids(EntityKind::Stop, ""), ["A", "B", "C"]);
     assert_eq!(ids(EntityKind::Stop, "MAIN 2nd"), ["B"]);
     assert_eq!(ids(EntityKind::Stop, "main nowhere"), Vec::<String>::new());
     assert_eq!(ids(EntityKind::Route, "10"), ["10"]);
 
     let pattern = &entity_rows(&net, EntityKind::Pattern, "inbound")[0];
-    assert_eq!(pattern.context.as_deref(), Some("Route 10"), "a pattern is placed by its route");
+    assert_eq!(
+        pattern.context.as_deref(),
+        Some("Route 10"),
+        "a pattern is placed by its route"
+    );
     let pattern_trips = &entity_rows(&net, EntityKind::PatternTrips, "")[0];
-    assert_eq!(pattern_trips.context.as_deref(), Some("10 inbound via Main · Weekday"));
+    assert_eq!(
+        pattern_trips.context.as_deref(),
+        Some("10 inbound via Main · Weekday")
+    );
     assert_eq!(pattern_trips.trips, Some(3));
-    assert_eq!(entity_rows(&net, EntityKind::Block, "400")[0].trips, Some(2));
+    assert_eq!(
+        entity_rows(&net, EntityKind::Block, "400")[0].trips,
+        Some(2)
+    );
 }
 
 /// "Lin" finds route 002 Lincoln.
@@ -32,14 +47,33 @@ fn rows_match_every_term_in_name_or_id() {
 fn a_route_is_found_by_its_long_name() {
     let mut net = network();
     net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
-    let ids = |q| entity_rows(&net, EntityKind::Route, q).into_iter().map(|r| r.id).collect::<Vec<_>>();
+    let ids = |q| {
+        entity_rows(&net, EntityKind::Route, q)
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>()
+    };
     assert_eq!(ids("lin"), ["10"]);
-    assert_eq!(ids("10 LINCOLN"), ["10"], "the number and the long name together");
-    assert_eq!(ids("lincoln nowhere"), Vec::<String>::new(), "every term must match");
+    assert_eq!(
+        ids("10 LINCOLN"),
+        ["10"],
+        "the number and the long name together"
+    );
+    assert_eq!(
+        ids("lincoln nowhere"),
+        Vec::<String>::new(),
+        "every term must match"
+    );
 }
 
 fn stop(name: &str, lat: f64, parent: Option<&str>) -> transit_network::Stop {
-    transit_network::Stop { name: name.into(), lat, lon: -73.5, parent: parent.map(str::to_string), ..Default::default() }
+    transit_network::Stop {
+        name: name.into(),
+        lat,
+        lon: -73.5,
+        parent: parent.map(str::to_string),
+        ..Default::default()
+    }
 }
 
 fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
@@ -49,7 +83,11 @@ fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
         stops: stops
             .iter()
             .enumerate()
-            .map(|(i, s)| transit_network::PatternStop { stop: s.to_string(), distance_m: i as f64 * 500.0, ..Default::default() })
+            .map(|(i, s)| transit_network::PatternStop {
+                stop: s.to_string(),
+                distance_m: i as f64 * 500.0,
+                ..Default::default()
+            })
             .collect(),
         ..Default::default()
     }
@@ -59,28 +97,66 @@ fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
 /// variant. Any other difference makes a variant of its own.
 #[test]
 fn bay_variants_of_a_direction_read_as_one() {
-    let net = apply_edits(&network(), &[
-        NetworkEdit::UpsertStop { id: "STN".into(), stop: stop("Main & 2nd Station", 45.51, None) },
-        NetworkEdit::UpsertStop { id: "B".into(), stop: stop("Main & 2nd: Bay A", 45.51, Some("STN")) },
-        NetworkEdit::UpsertStop { id: "N1".into(), stop: stop("Main & 2nd: Bay B", 45.5101, Some("STN")) },
-        NetworkEdit::UpsertStop { id: "D".into(), stop: stop("Elm & 2nd", 45.515, None) },
-        NetworkEdit::UpsertPattern { id: "10-bay".into(), pattern: pattern("10 inbound from Bay B", &["A", "N1", "C"]) },
-        NetworkEdit::UpsertPattern { id: "10-short".into(), pattern: pattern("10 inbound express", &["A", "C"]) },
-        NetworkEdit::UpsertPattern { id: "10-elm".into(), pattern: pattern("10 inbound via Elm", &["A", "D", "C"]) },
-    ])
+    let net = apply_edits(
+        &network(),
+        &[
+            NetworkEdit::UpsertStop {
+                id: "STN".into(),
+                stop: stop("Main & 2nd Station", 45.51, None),
+            },
+            NetworkEdit::UpsertStop {
+                id: "B".into(),
+                stop: stop("Main & 2nd: Bay A", 45.51, Some("STN")),
+            },
+            NetworkEdit::UpsertStop {
+                id: "N1".into(),
+                stop: stop("Main & 2nd: Bay B", 45.5101, Some("STN")),
+            },
+            NetworkEdit::UpsertStop {
+                id: "D".into(),
+                stop: stop("Elm & 2nd", 45.515, None),
+            },
+            NetworkEdit::UpsertPattern {
+                id: "10-bay".into(),
+                pattern: pattern("10 inbound from Bay B", &["A", "N1", "C"]),
+            },
+            NetworkEdit::UpsertPattern {
+                id: "10-short".into(),
+                pattern: pattern("10 inbound express", &["A", "C"]),
+            },
+            NetworkEdit::UpsertPattern {
+                id: "10-elm".into(),
+                pattern: pattern("10 inbound via Elm", &["A", "D", "C"]),
+            },
+        ],
+    )
     .unwrap();
     let detail = route_detail(&net, "10").unwrap();
     let variants = &detail.directions[0].variants;
 
     let patterns = |i: usize| variants[i].patterns.clone();
-    assert_eq!(variants.len(), 3, "the bay variant joins its sibling; the others stand apart");
-    assert_eq!(patterns(0), ["10-bay", "10-inbound"], "same places, different bay: one variant");
+    assert_eq!(
+        variants.len(),
+        3,
+        "the bay variant joins its sibling; the others stand apart"
+    );
+    assert_eq!(
+        patterns(0),
+        ["10-bay", "10-inbound"],
+        "same places, different bay: one variant"
+    );
     assert_eq!(variants[0].trips, 3, "most trips first");
     assert_eq!(variants[0].name, "Main & 1st → Main & 3rd");
     let places: Vec<(&str, &str, Vec<&str>)> = variants[0]
         .stops
         .iter()
-        .map(|s| (s.place.as_str(), s.name.as_str(), s.stops.iter().map(String::as_str).collect()))
+        .map(|s| {
+            (
+                s.place.as_str(),
+                s.name.as_str(),
+                s.stops.iter().map(String::as_str).collect(),
+            )
+        })
         .collect();
     assert_eq!(
         places,
@@ -95,9 +171,14 @@ fn bay_variants_of_a_direction_read_as_one() {
     assert_eq!(patterns(1), ["10-elm"]);
     assert_eq!(variants[1].name, "Main & 1st → Main & 3rd via Elm & 2nd");
     assert_eq!(patterns(2), ["10-short"]);
-    assert_eq!(variants[2].name, "Main & 1st → Main & 3rd, skips Main & 2nd Station");
+    assert_eq!(
+        variants[2].name,
+        "Main & 1st → Main & 3rd, skips Main & 2nd Station"
+    );
 
-    assert!(variants.iter().all(|v| v.patterns.len() == 1 || v.stops.iter().all(|s| s.place != "D")));
+    assert!(variants
+        .iter()
+        .all(|v| v.patterns.len() == 1 || v.stops.iter().all(|s| s.place != "D")));
 }
 
 #[test]
@@ -105,10 +186,20 @@ fn a_route_lists_its_composition() {
     let net = network();
     let detail = route_detail(&net, "10").unwrap();
     assert_eq!(detail.patterns.len(), 1);
-    assert_eq!(detail.stops.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["A", "B", "C"]);
+    assert_eq!(
+        detail
+            .stops
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect::<Vec<_>>(),
+        ["A", "B", "C"]
+    );
     assert_eq!(detail.pattern_trips_by_type.len(), 1);
     assert_eq!(detail.pattern_trips_by_type[0].name, "Weekday");
-    assert_eq!(detail.pattern_trips_by_type[0].pattern_trips[0].trips, Some(3));
+    assert_eq!(
+        detail.pattern_trips_by_type[0].pattern_trips[0].trips,
+        Some(3)
+    );
     assert!(route_detail(&net, "nope").is_none());
 }
 
@@ -116,7 +207,13 @@ fn a_route_lists_its_composition() {
 fn a_stop_lists_the_routes_serving_it() {
     let net = network();
     let routes = stop_detail(&net, "B", None).unwrap().routes;
-    assert_eq!(routes.iter().map(|r| (r.id.as_str(), r.name.as_str())).collect::<Vec<_>>(), [("10", "Route 10")]);
+    assert_eq!(
+        routes
+            .iter()
+            .map(|r| (r.id.as_str(), r.name.as_str()))
+            .collect::<Vec<_>>(),
+        [("10", "Route 10")]
+    );
     assert!(stop_detail(&net, "nope", None).is_none());
 }
 
@@ -124,47 +221,63 @@ fn a_stop_lists_the_routes_serving_it() {
 /// (C-TRAN, Fisher's Landing).
 #[test]
 fn a_station_answers_its_bays_routes() {
-    let net = apply_edits(&network(), &[
-        NetworkEdit::UpsertStop {
-            id: "STN".into(),
-            stop: transit_network::Stop {
-                name: "Main & 2nd Station".into(),
-                lat: 45.510,
-                lon: -73.510,
-                parent: None,
-                transfer: false,
-                ..Default::default()
+    let net = apply_edits(
+        &network(),
+        &[
+            NetworkEdit::UpsertStop {
+                id: "STN".into(),
+                stop: transit_network::Stop {
+                    name: "Main & 2nd Station".into(),
+                    lat: 45.510,
+                    lon: -73.510,
+                    parent: None,
+                    transfer: false,
+                    ..Default::default()
+                },
             },
-        },
-        NetworkEdit::UpsertStop {
-            id: "B".into(),
-            stop: transit_network::Stop {
-                name: "Main & 2nd".into(),
-                lat: 45.510,
-                lon: -73.510,
-                parent: Some("STN".into()),
-                transfer: false,
-                ..Default::default()
+            NetworkEdit::UpsertStop {
+                id: "B".into(),
+                stop: transit_network::Stop {
+                    name: "Main & 2nd".into(),
+                    lat: 45.510,
+                    lon: -73.510,
+                    parent: Some("STN".into()),
+                    transfer: false,
+                    ..Default::default()
+                },
             },
-        },
-        NetworkEdit::UpsertStop {
-            id: "N1".into(),
-            stop: transit_network::Stop {
-                name: "Main & 2nd across".into(),
-                lat: 45.5105,
-                lon: -73.5095,
-                parent: Some("STN".into()),
-                transfer: false,
-                ..Default::default()
+            NetworkEdit::UpsertStop {
+                id: "N1".into(),
+                stop: transit_network::Stop {
+                    name: "Main & 2nd across".into(),
+                    lat: 45.5105,
+                    lon: -73.5095,
+                    parent: Some("STN".into()),
+                    transfer: false,
+                    ..Default::default()
+                },
             },
-        },
-    ])
+        ],
+    )
     .unwrap();
     let routes = |stop: &str| {
-        stop_detail(&net, stop, None).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+        stop_detail(&net, stop, None)
+            .unwrap()
+            .routes
+            .iter()
+            .map(|r| r.id.clone())
+            .collect::<Vec<_>>()
     };
-    assert_eq!(routes("STN"), ["10"], "the station answers its bays' routes");
-    assert_eq!(routes("N1"), ["10"], "a bay no route serves answers its sibling's routes");
+    assert_eq!(
+        routes("STN"),
+        ["10"],
+        "the station answers its bays' routes"
+    );
+    assert_eq!(
+        routes("N1"),
+        ["10"],
+        "a bay no route serves answers its sibling's routes"
+    );
     assert_eq!(routes("B"), ["10"]);
 
     // A bay with service of its own answers its own routes, not its siblings'
@@ -173,9 +286,20 @@ fn a_station_answers_its_bays_routes() {
     let mut route20 = net.routes["10"].clone();
     route20.name = "Route 20".into();
     net.routes.insert("20".into(), route20);
-    net.patterns.insert("20-only".into(), transit_network::Pattern { route: "20".into(), ..pattern("20 via N1", &["N1", "C"]) });
+    net.patterns.insert(
+        "20-only".into(),
+        transit_network::Pattern {
+            route: "20".into(),
+            ..pattern("20 via N1", &["N1", "C"])
+        },
+    );
     let routes = |stop: &str| {
-        stop_detail(&net, stop, None).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+        stop_detail(&net, stop, None)
+            .unwrap()
+            .routes
+            .iter()
+            .map(|r| r.id.clone())
+            .collect::<Vec<_>>()
     };
     assert_eq!(routes("N1"), ["20"], "a served bay answers its own routes");
     assert_eq!(routes("B"), ["10"], "and not its sibling's");
@@ -187,12 +311,25 @@ fn trip_counts_are_the_days_trips() {
     let mut net = network();
     net.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
         bands: vec![
-            HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 1800, extra: Default::default() },
-            HeadwayBand { start_secs: 7200, end_secs: 3600, headway_secs: 600, extra: Default::default() },
+            HeadwayBand {
+                start_secs: 0,
+                end_secs: 3600,
+                headway_secs: 1800,
+                extra: Default::default(),
+            },
+            HeadwayBand {
+                start_secs: 7200,
+                end_secs: 3600,
+                headway_secs: 600,
+                extra: Default::default(),
+            },
         ],
         exact: true,
     };
-    assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(4));
+    assert_eq!(
+        entity_rows(&net, EntityKind::PatternTrips, "")[0].trips,
+        Some(4)
+    );
 }
 
 /// Route 10 in direction "in" has the committed pattern A, B, C and a bay
@@ -207,10 +344,25 @@ fn with_a_bay_variant() -> Network {
     apply_edits(
         &net,
         &[
-            NetworkEdit::UpsertStop { id: "D".into(), stop: bay },
-            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To Downtown".into() },
-            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) },
-            NetworkEdit::UpsertPattern { id: "10-bay".into(), pattern: variant },
+            NetworkEdit::UpsertStop {
+                id: "D".into(),
+                stop: bay,
+            },
+            NetworkEdit::SetDirection {
+                route: "10".into(),
+                id: "in".into(),
+                name: "To Downtown".into(),
+            },
+            NetworkEdit::UpdatePattern {
+                id: "10-inbound".into(),
+                name: None,
+                route: None,
+                direction: Some("in".into()),
+            },
+            NetworkEdit::UpsertPattern {
+                id: "10-bay".into(),
+                pattern: variant,
+            },
             NetworkEdit::UpsertPatternTrips {
                 id: "10-bay-weekday".into(),
                 pattern_trips: PatternTrips {
@@ -219,13 +371,24 @@ fn with_a_bay_variant() -> Network {
                     trips: vec![Trip {
                         id: "bay@every".into(),
                         departs: Departs::Every {
-                            bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800, extra: Default::default() }],
+                            bands: vec![HeadwayBand {
+                                start_secs: 32_400,
+                                end_secs: 36_000,
+                                headway_secs: 1800,
+                                extra: Default::default(),
+                            }],
                             exact: true,
                         },
                         times: vec![
-                            StopOffset { arrival_secs: Some(0), departure_secs: Some(0) },
+                            StopOffset {
+                                arrival_secs: Some(0),
+                                departure_secs: Some(0),
+                            },
                             StopOffset::default(),
-                            StopOffset { arrival_secs: Some(600), departure_secs: Some(600) },
+                            StopOffset {
+                                arrival_secs: Some(600),
+                                departure_secs: Some(600),
+                            },
                         ],
                         ..Default::default()
                     }],
@@ -241,10 +404,30 @@ fn with_a_bay_variant() -> Network {
 fn a_route_lists_its_patterns_by_direction() {
     let net = with_a_bay_variant();
     let dirs = route_detail(&net, "10").unwrap().directions;
-    assert_eq!(dirs.len(), 2, "the named direction, then the patterns in none");
-    assert_eq!((dirs[0].direction.as_deref(), dirs[0].name.as_str()), (Some("in"), "To Downtown"));
-    assert_eq!(dirs[0].patterns.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["10-inbound"]);
-    assert_eq!((dirs[1].direction.as_deref(), dirs[1].patterns[0].id.as_str()), (None, "10-bay"));
+    assert_eq!(
+        dirs.len(),
+        2,
+        "the named direction, then the patterns in none"
+    );
+    assert_eq!(
+        (dirs[0].direction.as_deref(), dirs[0].name.as_str()),
+        (Some("in"), "To Downtown")
+    );
+    assert_eq!(
+        dirs[0]
+            .patterns
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>(),
+        ["10-inbound"]
+    );
+    assert_eq!(
+        (
+            dirs[1].direction.as_deref(),
+            dirs[1].patterns[0].id.as_str()
+        ),
+        (None, "10-bay")
+    );
     assert_eq!(route_detail(&network(), "10").unwrap().directions.len(), 1);
 }
 
@@ -252,34 +435,92 @@ fn a_route_lists_its_patterns_by_direction() {
 fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     let net = apply_edits(
         &with_a_bay_variant(),
-        &[NetworkEdit::UpdatePattern { id: "10-bay".into(), name: None, route: None, direction: Some("in".into()) }],
+        &[NetworkEdit::UpdatePattern {
+            id: "10-bay".into(),
+            name: None,
+            route: None,
+            direction: Some("in".into()),
+        }],
     )
     .unwrap();
     let t = timetable(&net, "10", Some("in"), &["weekday".to_string()]).unwrap();
-    assert_eq!((t.direction_name.as_str(), t.group.as_str()), ("To Downtown", "weekday"));
-    assert_eq!(t.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), ["A", "B", "D", "C"]);
-    assert_eq!(t.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), [true, false, true, true]);
-    let legend: Vec<_> = t.patterns.iter().map(|p| (p.pattern.as_str(), p.trips, p.headway)).collect();
+    assert_eq!(
+        (t.direction_name.as_str(), t.group.as_str()),
+        ("To Downtown", "weekday")
+    );
+    assert_eq!(
+        t.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(),
+        ["A", "B", "D", "C"]
+    );
+    assert_eq!(
+        t.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(),
+        [true, false, true, true]
+    );
+    let legend: Vec<_> = t
+        .patterns
+        .iter()
+        .map(|p| (p.pattern.as_str(), p.trips, p.headway))
+        .collect();
     assert_eq!(legend, [("10-inbound", 3, false), ("10-bay", 2, true)]);
-    let rows: Vec<_> =
-        t.trips.iter().map(|r| (r.start_secs, r.trip.as_str(), r.pattern.as_str(), r.block.as_deref())).collect();
+    let rows: Vec<_> = t
+        .trips
+        .iter()
+        .map(|r| {
+            (
+                r.start_secs,
+                r.trip.as_str(),
+                r.pattern.as_str(),
+                r.block.as_deref(),
+            )
+        })
+        .collect();
     assert_eq!(
         rows,
-        [(28_800, "10-weekday@28800", "10-inbound", Some("400")), (30_600, "10-weekday@30600", "10-inbound", Some("400")),
-         (32_400, "bay@every", "10-bay", None), (34_200, "bay@every", "10-bay", None),
-         (91_800, "10-weekday@91800", "10-inbound", None)]
+        [
+            (28_800, "10-weekday@28800", "10-inbound", Some("400")),
+            (30_600, "10-weekday@30600", "10-inbound", Some("400")),
+            (32_400, "bay@every", "10-bay", None),
+            (34_200, "bay@every", "10-bay", None),
+            (91_800, "10-weekday@91800", "10-inbound", None)
+        ]
     );
-    assert_eq!(t.trips[0].times, [Some(28_800), Some(29_100), None, Some(29_400)]);
-    assert_eq!(t.trips[2].times, [Some(32_400), Some(32_700), Some(33_000), None]);
+    assert_eq!(
+        t.trips[0].times,
+        [Some(28_800), Some(29_100), None, Some(29_400)]
+    );
+    assert_eq!(
+        t.trips[2].times,
+        [Some(32_400), Some(32_700), Some(33_000), None]
+    );
     for row in &t.trips {
         let day = transit_network::materialize_service(&net, &row.pattern_trips).unwrap();
-        let trip = day.iter().find(|m| m.trip == row.trip && m.start_secs == row.start_secs).unwrap();
-        assert_eq!(row.run_secs, trip.stop_times.last().unwrap().arrival_secs - trip.start_secs, "{}", row.trip);
+        let trip = day
+            .iter()
+            .find(|m| m.trip == row.trip && m.start_secs == row.start_secs)
+            .unwrap();
+        assert_eq!(
+            row.run_secs,
+            trip.stop_times.last().unwrap().arrival_secs - trip.start_secs,
+            "{}",
+            row.trip
+        );
     }
-    assert_eq!(t.trips.iter().map(|r| r.run_secs).collect::<Vec<_>>(), [600, 600, 600, 600, 600]);
+    assert_eq!(
+        t.trips.iter().map(|r| r.run_secs).collect::<Vec<_>>(),
+        [600, 600, 600, 600, 600]
+    );
 
-    assert!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().trips.is_empty());
-    assert_eq!(timetable(&with_a_bay_variant(), "10", None, &["weekday".to_string()]).unwrap().trips.len(), 2);
+    assert!(timetable(&net, "10", None, &["weekday".to_string()])
+        .unwrap()
+        .trips
+        .is_empty());
+    assert_eq!(
+        timetable(&with_a_bay_variant(), "10", None, &["weekday".to_string()])
+            .unwrap()
+            .trips
+            .len(),
+        2
+    );
     assert!(timetable(&net, "10", Some("out"), &["weekday".to_string()]).is_none());
     assert!(timetable(&net, "ghost", Some("in"), &["weekday".to_string()]).is_none());
     assert!(timetable(&net, "10", Some("in"), &["ghost".to_string()]).is_none());
@@ -300,16 +541,32 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     };
     let next = apply_edits(&base, &[edit]).unwrap();
     let t = timetable_against(&next, &base, "10", None, &["weekday".to_string()]).unwrap();
-    let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added, x.retimed_from_secs)).collect();
+    let marks: Vec<_> = t
+        .trips
+        .iter()
+        .map(|x| (x.start_secs, x.added, x.retimed_from_secs))
+        .collect();
     assert_eq!(
         marks,
-        [(28_200, false, Some(28_800)), (30_000, false, Some(30_600)), (31_800, true, None), (91_800, false, None)]
+        [
+            (28_200, false, Some(28_800)),
+            (30_000, false, Some(30_600)),
+            (31_800, true, None),
+            (91_800, false, None)
+        ]
     );
     assert!(t.removed.is_empty(), "nothing is cut: {:?}", t.removed);
-    assert_eq!(t.trips[0].trip, "10-weekday@28800", "the moved trip keeps its id");
+    assert_eq!(
+        t.trips[0].trip, "10-weekday@28800",
+        "the moved trip keeps its id"
+    );
     let plain = timetable(&next, "10", None, &["weekday".to_string()]).unwrap();
     assert!(
-        plain.trips.iter().all(|x| !x.added && x.retimed_from_secs.is_none()) && plain.removed.is_empty(),
+        plain
+            .trips
+            .iter()
+            .all(|x| !x.added && x.retimed_from_secs.is_none())
+            && plain.removed.is_empty(),
         "no baseline, no marks"
     );
 }
@@ -317,25 +574,57 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
 #[test]
 fn a_route_row_answers_its_long_name_when_it_has_one() {
     let mut net = network();
-    assert_eq!(entity_rows(&net, EntityKind::Route, "")[0].long_name, None, "no long name, none answered");
-    assert_eq!(stop_detail(&net, "B", None).unwrap().routes[0].long_name, None);
-    assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name, None);
+    assert_eq!(
+        entity_rows(&net, EntityKind::Route, "")[0].long_name,
+        None,
+        "no long name, none answered"
+    );
+    assert_eq!(
+        stop_detail(&net, "B", None).unwrap().routes[0].long_name,
+        None
+    );
+    assert_eq!(
+        timetable(&net, "10", None, &["weekday".to_string()])
+            .unwrap()
+            .route_long_name,
+        None
+    );
 
     net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
     let route = &entity_rows(&net, EntityKind::Route, "")[0];
-    assert_eq!((route.name.as_str(), route.long_name.as_deref()), ("Route 10", Some("Lincoln")));
-    assert_eq!(stop_detail(&net, "B", None).unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
-    assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name.as_deref(), Some("Lincoln"));
-    assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));
+    assert_eq!(
+        (route.name.as_str(), route.long_name.as_deref()),
+        ("Route 10", Some("Lincoln"))
+    );
+    assert_eq!(
+        stop_detail(&net, "B", None).unwrap().routes[0]
+            .long_name
+            .as_deref(),
+        Some("Lincoln")
+    );
+    assert_eq!(
+        timetable(&net, "10", None, &["weekday".to_string()])
+            .unwrap()
+            .route_long_name
+            .as_deref(),
+        Some("Lincoln")
+    );
+    assert!(entity_rows(&net, EntityKind::Stop, "")
+        .iter()
+        .all(|r| r.long_name.is_none()));
 }
 
 #[test]
 fn a_timetable_trip_names_its_service_key() {
     let net = network();
-    let tt = transit_network::timetable(&net, "10", None, &["weekday".to_string()]).expect("route 10 runs on weekdays");
+    let tt = transit_network::timetable(&net, "10", None, &["weekday".to_string()])
+        .expect("route 10 runs on weekdays");
     assert!(!tt.trips.is_empty());
     for t in &tt.trips {
-        assert_eq!(t.service_type, net.pattern_trips[&t.pattern_trips].service_type);
+        assert_eq!(
+            t.service_type,
+            net.pattern_trips[&t.pattern_trips].service_type
+        );
     }
 }
 
@@ -352,15 +641,38 @@ fn a_visit_names_its_neighbours_and_the_distance_to_each() {
                 let side = |j: Option<usize>| {
                     j.map(|j| {
                         let s = &p.stops[j];
-                        (s.stop.clone(), net.stops.get(&s.stop).map_or_else(|| s.stop.clone(), |x| x.name.clone()), (s.distance_m - here.distance_m).abs(), s.distance_published && here.distance_published)
+                        (
+                            s.stop.clone(),
+                            net.stops
+                                .get(&s.stop)
+                                .map_or_else(|| s.stop.clone(), |x| x.name.clone()),
+                            (s.distance_m - here.distance_m).abs(),
+                            s.distance_published && here.distance_published,
+                        )
                     })
                 };
-                let got = |n: &Option<transit_network::Neighbour>| n.as_ref().map(|n| (n.stop.clone(), n.name.clone(), n.metres, n.published));
-                assert_eq!(got(&v.previous), side(i.checked_sub(1)), "{stop} on {} at {i}", v.pattern);
-                assert_eq!(got(&v.next), side((i + 1 < p.stops.len()).then_some(i + 1)), "{stop} on {} at {i}", v.pattern);
+                let got = |n: &Option<transit_network::Neighbour>| {
+                    n.as_ref()
+                        .map(|n| (n.stop.clone(), n.name.clone(), n.metres, n.published))
+                };
+                assert_eq!(
+                    got(&v.previous),
+                    side(i.checked_sub(1)),
+                    "{stop} on {} at {i}",
+                    v.pattern
+                );
+                assert_eq!(
+                    got(&v.next),
+                    side((i + 1 < p.stops.len()).then_some(i + 1)),
+                    "{stop} on {} at {i}",
+                    v.pattern
+                );
             }
         }
     }
     let b = stop_detail(&network(), "B", None).unwrap();
-    assert!(b.visits.iter().any(|v| v.previous.is_some() && v.next.is_some()));
+    assert!(b
+        .visits
+        .iter()
+        .any(|v| v.previous.is_some() && v.next.is_some()));
 }

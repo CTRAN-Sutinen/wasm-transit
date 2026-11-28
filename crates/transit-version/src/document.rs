@@ -10,7 +10,6 @@ pub fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-
 /// Streams the canonical bytes (RFC 8785, [`jcs`]) into the digest, so
 /// hashing never holds a copy of the document. The result equals hashing
 /// [`canonical_bytes`].
@@ -33,7 +32,6 @@ pub fn canonical_bytes<T: serde::Serialize + ?Sized>(value: &T) -> Result<String
     jcs::to_string(value).map_err(|e| format!("document does not serialize: {e}"))
 }
 
-
 /// No JSON document starts with 0x1f.
 pub fn is_gzip(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0x1f, 0x8b])
@@ -44,8 +42,13 @@ pub fn is_gzip(bytes: &[u8]) -> bool {
 /// peaks at the parsed document plus the compressed input. The identity is
 /// the canonical hash either way, so both forms register the same document.
 pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
-    let source: Box<dyn std::io::Read + '_> = if is_gzip(bytes) { Box::new(flate2::read::GzDecoder::new(bytes)) } else { Box::new(bytes) };
-    serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source)).map_err(|e| format!("invalid document: {e}"))
+    let source: Box<dyn std::io::Read + '_> = if is_gzip(bytes) {
+        Box::new(flate2::read::GzDecoder::new(bytes))
+    } else {
+        Box::new(bytes)
+    };
+    serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source))
+        .map_err(|e| format!("invalid document: {e}"))
 }
 
 /// Reads the build's version, or the next one where the kind reads ahead
@@ -105,14 +108,18 @@ pub fn value_hash(value: &serde_json::Value) -> Result<String, String> {
     canonical_hash(value)
 }
 
-fn ahead<T>(value: serde_json::Value, how: crate::Ahead) -> Result<(T, Option<ReadAhead>), crate::Refusal>
+fn ahead<T>(
+    value: serde_json::Value,
+    how: crate::Ahead,
+) -> Result<(T, Option<ReadAhead>), crate::Refusal>
 where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
     let found = version_in::<T>(&value);
     let hash = value_hash(&value)?;
     let down = T::step_down(value)?;
-    let document = serde_json::from_value(down).map_err(|e| format!("invalid document after the step down from v{found}: {e}"))?;
+    let document = serde_json::from_value(down)
+        .map_err(|e| format!("invalid document after the step down from v{found}: {e}"))?;
     Ok((document, Some(ReadAhead { how, found, hash })))
 }
 
@@ -141,16 +148,13 @@ where
     T: serde::de::DeserializeOwned + crate::Versioned,
 {
     match crate::reads::<T>(version_in::<T>(&value))? {
-        crate::ReadAs::Current => {
-            serde_json::from_value(value).map(|document| (document, None)).map_err(|e| format!("invalid document: {e}").into())
-        }
+        crate::ReadAs::Current => serde_json::from_value(value)
+            .map(|document| (document, None))
+            .map_err(|e| format!("invalid document: {e}").into()),
         crate::ReadAs::Ahead(how) => ahead(value, how),
     }
 }
 
-
 pub fn version_in<T: crate::Versioned>(value: &serde_json::Value) -> u32 {
     T::version_in(value)
 }
-
-

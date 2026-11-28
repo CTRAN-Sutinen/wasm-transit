@@ -127,8 +127,14 @@ const LOCATIONS: &str = "locations.geojson";
 
 /// The spec requires these files, and one of calendar.txt and
 /// calendar_dates.txt, so they are written even when empty.
-const ALWAYS_WRITTEN: &[&str] =
-    &["agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt", "calendar.txt"];
+const ALWAYS_WRITTEN: &[&str] = &[
+    "agency.txt",
+    "stops.txt",
+    "routes.txt",
+    "trips.txt",
+    "stop_times.txt",
+    "calendar.txt",
+];
 
 gtfs_files! {
     agency: AgencyRow = "agency.txt" required [agency_name, agency_url, agency_timezone] [
@@ -254,15 +260,22 @@ fn has_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> bool 
     archive.by_name(name).is_ok()
 }
 
-fn read_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &'static str) -> Result<Option<String>, FeedError> {
+fn read_member(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    name: &'static str,
+) -> Result<Option<String>, FeedError> {
     let mut file = match archive.by_name(name) {
         Ok(file) => file,
         Err(zip::result::ZipError::FileNotFound) => return Ok(None),
         Err(e) => return Err(FeedError::Zip(e.to_string())),
     };
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).map_err(|e| FeedError::Zip(e.to_string()))?;
-    let text = String::from_utf8(bytes).map_err(|e| FeedError::Csv { file: name, message: e.to_string() })?;
+    file.read_to_end(&mut bytes)
+        .map_err(|e| FeedError::Zip(e.to_string()))?;
+    let text = String::from_utf8(bytes).map_err(|e| FeedError::Csv {
+        file: name,
+        message: e.to_string(),
+    })?;
     Ok(Some(match text.strip_prefix('\u{feff}') {
         Some(rest) => rest.to_string(),
         None => text,
@@ -270,7 +283,9 @@ fn read_member(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &'static str)
 }
 
 fn read_table<T: Table>(archive: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Result<Vec<T>, FeedError> {
-    let Some(text) = read_member(archive, T::FILE)? else { return Ok(Vec::new()) };
+    let Some(text) = read_member(archive, T::FILE)? else {
+        return Ok(Vec::new());
+    };
     // Real feeds have ragged rows (trailing separators, short optional
     // tails). Missing cells read as empty.
     let mut reader = csv::ReaderBuilder::new()
@@ -279,7 +294,10 @@ fn read_table<T: Table>(archive: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Result<
         .from_reader(text.as_bytes());
     let mut rows = Vec::new();
     for row in reader.deserialize() {
-        rows.push(row.map_err(|e| FeedError::Csv { file: T::FILE, message: e.to_string() })?);
+        rows.push(row.map_err(|e| FeedError::Csv {
+            file: T::FILE,
+            message: e.to_string(),
+        })?);
     }
     Ok(rows)
 }
@@ -288,7 +306,9 @@ fn read_table<T: Table>(archive: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Result<
 fn render<T: Table>(rows: &[T]) -> Vec<u8> {
     let cells: Vec<Vec<Option<&str>>> = rows.iter().map(Table::cells).collect();
     let used: Vec<usize> = (0..T::COLUMNS.len())
-        .filter(|&i| T::REQUIRED.contains(&T::COLUMNS[i]) || cells.iter().any(|row| row[i].is_some()))
+        .filter(|&i| {
+            T::REQUIRED.contains(&T::COLUMNS[i]) || cells.iter().any(|row| row[i].is_some())
+        })
         .collect();
     let mut text = String::new();
     line(&mut text, used.iter().map(|&i| T::COLUMNS[i]));
@@ -322,18 +342,27 @@ struct ZipWriter {
 
 impl ZipWriter {
     fn new() -> ZipWriter {
-        ZipWriter { writer: zip::ZipWriter::new(Cursor::new(Vec::new())) }
+        ZipWriter {
+            writer: zip::ZipWriter::new(Cursor::new(Vec::new())),
+        }
     }
 
     fn add(&mut self, name: &str, contents: &[u8]) {
-        let options =
-            zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        self.writer.start_file(name, options).expect("zip entry header serializes");
-        self.writer.write_all(contents).expect("zip entry body serializes");
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        self.writer
+            .start_file(name, options)
+            .expect("zip entry header serializes");
+        self.writer
+            .write_all(contents)
+            .expect("zip entry body serializes");
     }
 
     fn finish(self) -> Vec<u8> {
-        self.writer.finish().expect("zip central directory serializes").into_inner()
+        self.writer
+            .finish()
+            .expect("zip central directory serializes")
+            .into_inner()
     }
 }
 
@@ -393,12 +422,24 @@ pub fn base64_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(ALPHABET[(n >> 18) as usize & 63] as char);
         out.push(ALPHABET[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { ALPHABET[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { ALPHABET[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -408,8 +449,11 @@ mod tests {
     use super::*;
 
     fn fixture() -> Vec<u8> {
-        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip"))
-            .expect("fixture exists")
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../web/e2e/fixtures/sample-gtfs.zip"
+        ))
+        .expect("fixture exists")
     }
 
     #[test]
@@ -437,6 +481,9 @@ mod tests {
             ..Default::default()
         });
         let text = String::from_utf8(render(&feed.fare_attributes)).unwrap();
-        assert!(text.starts_with("fare_id,price,currency_type,payment_method,transfers\r\n"), "{text}");
+        assert!(
+            text.starts_with("fare_id,price,currency_type,payment_method,transfers\r\n"),
+            "{text}"
+        );
     }
 }

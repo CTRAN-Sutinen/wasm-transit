@@ -1,9 +1,9 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use transit_network::{
-    recovery_floors, required_recovery, Departs, MaterializedTrip, Network, NetworkEdit, RecoveryAt, RecoverySource, TripRef,
+    recovery_floors, required_recovery, Departs, MaterializedTrip, Network, NetworkEdit,
+    RecoveryAt, RecoverySource, TripRef,
 };
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
@@ -84,32 +84,55 @@ struct Candidate<'a> {
 /// Each trip follows the vehicle that leaves it the least slack among those
 /// waiting where it starts (the same stop, or a bay of the same station), or
 /// else takes a new vehicle. Authored blocks stay as authored.
-pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>) -> Suggestion {
+pub fn suggest_blocks(
+    network: &Network,
+    day: &[MaterializedTrip],
+    constraints: Option<&SchedulingConstraints>,
+) -> Suggestion {
     let floors = recovery_floors(network);
-    let blocked: BTreeSet<&str> =
-        network.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();
+    let blocked: BTreeSet<&str> = network
+        .blocks
+        .values()
+        .flat_map(|b| b.trips.iter().map(|t| t.trip.as_str()))
+        .collect();
     let mut instances: BTreeMap<&str, Vec<&MaterializedTrip>> = BTreeMap::new();
     for t in day.iter().filter(|t| !blocked.contains(t.trip.as_str())) {
         instances.entry(t.trip.as_str()).or_default().push(t);
     }
     let station = |stop: &str| -> String {
-        network.stops.get(stop).and_then(|s| s.parent.clone()).unwrap_or_else(|| stop.to_string())
+        network
+            .stops
+            .get(stop)
+            .and_then(|s| s.parent.clone())
+            .unwrap_or_else(|| stop.to_string())
     };
 
     let mut unblocked = Vec::new();
     let mut candidates: Vec<Candidate> = Vec::new();
     for (id, runs) in &instances {
         let model = network.trip(id);
-        let frequency = runs.len() > 1 || model.is_some_and(|(_, _, t)| matches!(t.departs, Departs::Every { .. }));
+        let frequency = runs.len() > 1
+            || model.is_some_and(|(_, _, t)| matches!(t.departs, Departs::Every { .. }));
         if frequency {
-            unblocked.push(Unblocked { trip: id.to_string(), reason: UnblockedReason::Frequency });
+            unblocked.push(Unblocked {
+                trip: id.to_string(),
+                reason: UnblockedReason::Frequency,
+            });
             continue;
         }
         let trip = runs[0];
         let pattern = network.patterns.get(&trip.pattern);
-        let from = pattern.and_then(|p| p.stops.first()).map(|s| s.stop.as_str()).unwrap_or("");
-        let to = pattern.and_then(|p| p.stops.last()).map(|s| s.stop.as_str()).unwrap_or("");
-        let service_type = model.map(|(_, pt, _)| pt.service_type.as_str()).unwrap_or("");
+        let from = pattern
+            .and_then(|p| p.stops.first())
+            .map(|s| s.stop.as_str())
+            .unwrap_or("");
+        let to = pattern
+            .and_then(|p| p.stops.last())
+            .map(|s| s.stop.as_str())
+            .unwrap_or("");
+        let service_type = model
+            .map(|(_, pt, _)| pt.service_type.as_str())
+            .unwrap_or("");
         let at = RecoveryAt {
             route: &trip.route,
             service_type,
@@ -118,8 +141,20 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
         };
         // A suggested wait is authored as a layover, so the floor judges it
         // where the constraints do not.
-        let required = required_recovery(&floors, constraints.and_then(|c| c.recovery_secs(&at)), true, to);
-        candidates.push(Candidate { trip, start: trip.start_secs, end: end(trip), from, to, required });
+        let required = required_recovery(
+            &floors,
+            constraints.and_then(|c| c.recovery_secs(&at)),
+            true,
+            to,
+        );
+        candidates.push(Candidate {
+            trip,
+            start: trip.start_secs,
+            end: end(trip),
+            from,
+            to,
+            required,
+        });
     }
     candidates.sort_by(|a, b| (a.start, &a.trip.trip).cmp(&(b.start, &b.trip.trip)));
 
@@ -132,7 +167,9 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
             .filter_map(|(ci, chain)| {
                 let last = &candidates[*chain.last().expect("chains are never empty")];
                 let ready = last.end.checked_add(last.required.map_or(0, |r| r.0))?;
-                (station(last.to) == station(c.from) && interlines(&last.trip.route, &c.trip.route) && ready <= c.start)
+                (station(last.to) == station(c.from)
+                    && interlines(&last.trip.route, &c.trip.route)
+                    && ready <= c.start)
                     .then(|| (c.start - ready, ci))
             })
             .min();
@@ -155,15 +192,28 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
     let mut edits = Vec::new();
     for chain in &chains {
         let block_id = fresh();
-        edits.push(NetworkEdit::AddBlock { id: Some(block_id.clone()) });
+        edits.push(NetworkEdit::AddBlock {
+            id: Some(block_id.clone()),
+        });
         let mut trips = Vec::new();
         for (pos, &k) in chain.iter().enumerate() {
             let c = &candidates[k];
-            edits.push(NetworkEdit::AddBlockTrip { block: block_id.clone(), trip: TripRef { trip: c.trip.trip.clone(), extra: Default::default() } });
+            edits.push(NetworkEdit::AddBlockTrip {
+                block: block_id.clone(),
+                trip: TripRef {
+                    trip: c.trip.trip.clone(),
+                    extra: Default::default(),
+                },
+            });
             let wait = chain.get(pos + 1).map(|&n| {
                 let gap = candidates[n].start - c.end;
                 let required = c.required.map_or(0, |r| r.0);
-                Wait { gap_secs: gap, required_secs: required, required_by: c.required.map(|r| r.1), slack_secs: gap - required }
+                Wait {
+                    gap_secs: gap,
+                    required_secs: required,
+                    required_by: c.required.map(|r| r.1),
+                    slack_secs: gap - required,
+                }
             });
             trips.push(SuggestedTrip {
                 trip: c.trip.trip.clone(),
@@ -177,7 +227,11 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
         }
         for (pos, t) in trips.iter().enumerate() {
             if let Some(w) = &t.wait {
-                edits.push(NetworkEdit::SetLayover { block: block_id.clone(), after_trip: pos, secs: Some(w.gap_secs) });
+                edits.push(NetworkEdit::SetLayover {
+                    block: block_id.clone(),
+                    after_trip: pos,
+                    secs: Some(w.gap_secs),
+                });
             }
         }
         blocks.push(SuggestedBlock { block_id, trips });
@@ -193,7 +247,11 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
         .collect();
     for chain in &chains {
         let first = candidates[chain[0]].trip;
-        let last_end = chain.iter().map(|&k| span_end(candidates[k].trip)).max().expect("chains are never empty");
+        let last_end = chain
+            .iter()
+            .map(|&k| span_end(candidates[k].trip))
+            .max()
+            .expect("chains are never empty");
         events.push((first.start_secs, 1));
         events.push((last_end, -1));
     }
@@ -220,5 +278,8 @@ pub fn suggest_blocks(network: &Network, day: &[MaterializedTrip], constraints: 
 /// The later of the last arrival and the last departure, as the fleet
 /// summary reads a vehicle's span.
 fn span_end(trip: &MaterializedTrip) -> u32 {
-    trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs)).unwrap_or(trip.start_secs)
+    trip.stop_times
+        .last()
+        .map(|st| st.arrival_secs.max(st.departure_secs))
+        .unwrap_or(trip.start_secs)
 }

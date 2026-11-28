@@ -10,7 +10,10 @@ fn pascal(id: &str) -> String {
     id.split(['-', '_'])
         .map(|part| {
             let mut chars = part.chars();
-            chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
+            chars
+                .next()
+                .map(|c| c.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
         })
         .collect()
 }
@@ -32,16 +35,26 @@ fn export_bindings_capability_map() {
     for id in &ids {
         let (name, dir) = (pascal(id), format!("cap_{}", id.replace('-', "_")));
         text += &format!("import type {{ Request as {name}Request }} from \"./{dir}/Request\";\n");
-        text += &format!("import type {{ Response as {name}Response }} from \"./{dir}/Response\";\n");
+        text +=
+            &format!("import type {{ Response as {name}Response }} from \"./{dir}/Response\";\n");
     }
     text += "\nexport type Caps = {\n";
     for id in &ids {
         let name = pascal(id);
-        text += &format!("  {}: [{name}Request, {name}Response];\n", id.replace('-', "_"));
+        text += &format!(
+            "  {}: [{name}Request, {name}Response];\n",
+            id.replace('-', "_")
+        );
     }
     text += "};\n";
-    let dir = std::env::var("TS_RS_EXPORT_DIR").map(PathBuf::from).unwrap_or_else(|_| root.join("web/src/types"));
-    let dir = if dir.is_absolute() { dir } else { root.join(dir) };
+    let dir = std::env::var("TS_RS_EXPORT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("web/src/types"));
+    let dir = if dir.is_absolute() {
+        dir
+    } else {
+        root.join(dir)
+    };
     fs::create_dir_all(&dir).expect("the bindings' directory");
     fs::write(dir.join("caps.ts"), text).expect("write caps.ts");
 }

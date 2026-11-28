@@ -13,7 +13,10 @@ pub const WALK_SPEED_MPS: f64 = 1.3;
 pub const MAX_WALK_SECS: u32 = 600;
 
 pub fn walkable(class: StreetClass) -> bool {
-    !matches!(class, StreetClass::Motorway | StreetClass::Ramp | StreetClass::Unknown)
+    !matches!(
+        class,
+        StreetClass::Motorway | StreetClass::Ramp | StreetClass::Unknown
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,9 +47,7 @@ pub struct DirectWalk {
     pub path: Vec<StreetPoint>,
 }
 
-transit_version::kind_tag!(
-    WalksKind = "walks"
-);
+transit_version::kind_tag!(WalksKind = "walks");
 
 impl transit_version::Versioned for WalkTable {
     const KIND: &'static str = "walks";
@@ -84,15 +85,30 @@ impl WalkGraph {
             .ways
             .iter()
             .filter(|w| walkable(w.class))
-            .map(|w| crate::Way { oneway: false, ..w.clone() })
+            .map(|w| crate::Way {
+                oneway: false,
+                ..w.clone()
+            })
             .collect();
-        WalkGraph(StreetNetwork::build(&Streets { kind: Default::default(), schema_version: Default::default(), ways }))
+        WalkGraph(StreetNetwork::build(&Streets {
+            kind: Default::default(),
+            schema_version: Default::default(),
+            ways,
+        }))
     }
 
-    pub fn walks(&self, stops: &[(String, f64, f64)], speed_mps: f64, max_walk_secs: u32) -> Vec<Walk> {
+    pub fn walks(
+        &self,
+        stops: &[(String, f64, f64)],
+        speed_mps: f64,
+        max_walk_secs: u32,
+    ) -> Vec<Walk> {
         let net = &self.0;
         let limit_m = max_walk_secs as f64 * speed_mps;
-        let snapped: Vec<_> = stops.iter().map(|(_, lat, lon)| net.snap(*lat, *lon)).collect();
+        let snapped: Vec<_> = stops
+            .iter()
+            .map(|(_, lat, lon)| net.snap(*lat, *lon))
+            .collect();
         let mut dist = vec![f64::INFINITY; net.node_count() as usize];
         let mut touched = Vec::new();
         let mut out = Vec::new();
@@ -110,8 +126,16 @@ impl WalkGraph {
                 let secs = (meters / speed_mps).ceil();
                 if secs <= max_walk_secs as f64 {
                     let walk_secs = secs as u32;
-                    out.push(Walk { from: stops[i].0.clone(), to: stops[j].0.clone(), walk_secs });
-                    out.push(Walk { from: stops[j].0.clone(), to: stops[i].0.clone(), walk_secs });
+                    out.push(Walk {
+                        from: stops[i].0.clone(),
+                        to: stops[j].0.clone(),
+                        walk_secs,
+                    });
+                    out.push(Walk {
+                        from: stops[j].0.clone(),
+                        to: stops[i].0.clone(),
+                        walk_secs,
+                    });
                 }
             }
             for node in touched.drain(..) {
@@ -133,26 +157,48 @@ impl WalkGraph {
     ) -> Vec<PointWalk> {
         let net = &self.0;
         let limit_m = max_walk_secs as f64 * speed_mps;
-        let Some(from) = net.snap(lat, lon).filter(|p| p.dist_m <= limit_m) else { return Vec::new() };
+        let Some(from) = net.snap(lat, lon).filter(|p| p.dist_m <= limit_m) else {
+            return Vec::new();
+        };
         let mut dist = vec![f64::INFINITY; net.node_count() as usize];
         net.reach(from, limit_m - from.dist_m, &mut dist, &mut Vec::new());
         let mut out = Vec::new();
         for (id, s_lat, s_lon) in stops {
-            let Some(to) = net.snap(*s_lat, *s_lon) else { continue };
+            let Some(to) = net.snap(*s_lat, *s_lon) else {
+                continue;
+            };
             let meters = from.dist_m + net.meters_to(from, &dist, to) + to.dist_m;
             let secs = (meters / speed_mps).ceil();
             if secs > max_walk_secs as f64 {
                 continue;
             }
-            let Some(path) = self.path(from, (lat, lon), to, (*s_lat, *s_lon)) else { continue };
-            out.push(PointWalk { stop_id: id.clone(), walk_secs: secs as u32, path });
+            let Some(path) = self.path(from, (lat, lon), to, (*s_lat, *s_lon)) else {
+                continue;
+            };
+            out.push(PointWalk {
+                stop_id: id.clone(),
+                walk_secs: secs as u32,
+                path,
+            });
         }
         out.sort_by_key(|w| w.walk_secs);
         out
     }
 
-    fn path(&self, from: StreetPosition, a: (f64, f64), to: StreetPosition, b: (f64, f64)) -> Option<Vec<StreetPoint>> {
-        let mut points = vec![StreetPoint { lat: a.0, lon: a.1 }, StreetPoint { lat: from.lat, lon: from.lon }];
+    fn path(
+        &self,
+        from: StreetPosition,
+        a: (f64, f64),
+        to: StreetPosition,
+        b: (f64, f64),
+    ) -> Option<Vec<StreetPoint>> {
+        let mut points = vec![
+            StreetPoint { lat: a.0, lon: a.1 },
+            StreetPoint {
+                lat: from.lat,
+                lon: from.lon,
+            },
+        ];
         points.extend(self.0.route(from, to)?);
         points.push(StreetPoint { lat: b.0, lon: b.1 });
         points.dedup();
@@ -171,6 +217,11 @@ pub fn walks_from(
     WalkGraph::new(streets).walks_from(lat, lon, stops, speed_mps, max_walk_secs)
 }
 
-pub fn walks(streets: &Streets, stops: &[(String, f64, f64)], speed_mps: f64, max_walk_secs: u32) -> Vec<Walk> {
+pub fn walks(
+    streets: &Streets,
+    stops: &[(String, f64, f64)],
+    speed_mps: f64,
+    max_walk_secs: u32,
+) -> Vec<Walk> {
     WalkGraph::new(streets).walks(stops, speed_mps, max_walk_secs)
 }

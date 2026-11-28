@@ -32,7 +32,9 @@ impl<'de> Deserialize<'de> for NetworkKind {
         if kind == KIND {
             Ok(NetworkKind)
         } else {
-            Err(serde::de::Error::custom(format!("a {kind:?} document is not a network")))
+            Err(serde::de::Error::custom(format!(
+                "a {kind:?} document is not a network"
+            )))
         }
     }
 }
@@ -87,7 +89,9 @@ pub struct MigrationNote {
 /// A document with no tag is version 1. A non-object or a non-numeric tag is
 /// an error.
 pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
-    let root = doc.as_object().ok_or("a network document is a JSON object")?;
+    let root = doc
+        .as_object()
+        .ok_or("a network document is a JSON object")?;
     if let Some(kind) = root.get("kind") {
         if kind.as_str() != Some(KIND) {
             return Err(format!("a {kind} document is not a network"));
@@ -106,7 +110,9 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
 pub fn migrate_step(mut doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let found = schema_version_of(&doc)?;
     if found != from {
-        return Err(format!("the network v{from} step was given a v{found} document"));
+        return Err(format!(
+            "the network v{from} step was given a v{found} document"
+        ));
     }
     match from {
         1 => {
@@ -123,7 +129,9 @@ pub fn migrate_step(mut doc: Value, from: u32) -> Result<(Value, Vec<MigrationNo
             }
             Ok((Value::Object(tagged), Vec::new()))
         }
-        n => Err(format!("no network step from v{n} (this build reads up to v{SCHEMA_VERSION})")),
+        n => Err(format!(
+            "no network step from v{n} (this build reads up to v{SCHEMA_VERSION})"
+        )),
     }
 }
 
@@ -132,10 +140,14 @@ pub fn migrate_step(mut doc: Value, from: u32) -> Result<(Value, Vec<MigrationNo
 pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let from = schema_version_of(&doc)?;
     if to > SCHEMA_VERSION {
-        return Err(format!("network v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"));
+        return Err(format!(
+            "network v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"
+        ));
     }
     if from >= to {
-        return Err(format!("network v{from} is not older than v{to}: nothing to migrate"));
+        return Err(format!(
+            "network v{from} is not older than v{to}: nothing to migrate"
+        ));
     }
     let mut doc = doc;
     let mut notes = Vec::new();
@@ -149,6 +161,7 @@ pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), St
 
 pub fn migrate_network(doc: Value) -> Result<(Network, Vec<MigrationNote>), String> {
     let (doc, notes) = migrate_to(doc, SCHEMA_VERSION)?;
-    let network = serde_json::from_value(doc).map_err(|e| format!("network v{SCHEMA_VERSION}: {e}"))?;
+    let network =
+        serde_json::from_value(doc).map_err(|e| format!("network v{SCHEMA_VERSION}: {e}"))?;
     Ok((network, notes))
 }

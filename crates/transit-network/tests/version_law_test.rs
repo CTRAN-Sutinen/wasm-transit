@@ -3,7 +3,9 @@
 //! trip_law_test.rs and alignment_law_test.rs.
 
 use serde_json::{json, Value};
-use transit_network::{migrate_network, migrate_step, migrate_to, schema_version_of, Network, SCHEMA_VERSION};
+use transit_network::{
+    migrate_network, migrate_step, migrate_to, schema_version_of, Network, SCHEMA_VERSION,
+};
 
 /// An untagged v1 document, with ids in every keyed map.
 fn v1() -> Value {
@@ -31,7 +33,9 @@ fn untag(doc: &mut Value) {
 fn a_written_network_names_its_kind_and_version_first() {
     let text = serde_json::to_string(&Network::default()).unwrap();
     assert!(
-        text.starts_with(&format!("{{\"kind\":\"network\",\"schema_version\":{SCHEMA_VERSION},")),
+        text.starts_with(&format!(
+            "{{\"kind\":\"network\",\"schema_version\":{SCHEMA_VERSION},"
+        )),
         "{}",
         &text[..80.min(text.len())]
     );
@@ -41,15 +45,23 @@ fn a_written_network_names_its_kind_and_version_first() {
 fn an_untagged_document_is_version_1() {
     assert_eq!(schema_version_of(&v1()), Ok(1));
     let read: Network = serde_json::from_value(v1()).unwrap();
-    assert_eq!(read.schema_version.0, 1, "the type reads an untagged document as v1, so the kernel can refuse it");
+    assert_eq!(
+        read.schema_version.0, 1,
+        "the type reads an untagged document as v1, so the kernel can refuse it"
+    );
 }
 
 #[test]
 fn a_document_naming_another_kind_is_no_network() {
     let mut doc = v1();
     doc["kind"] = json!("edit_records");
-    assert!(schema_version_of(&doc).unwrap_err().contains("not a network"));
-    assert!(serde_json::from_value::<Network>(doc).unwrap_err().to_string().contains("not a network"));
+    assert!(schema_version_of(&doc)
+        .unwrap_err()
+        .contains("not a network"));
+    assert!(serde_json::from_value::<Network>(doc)
+        .unwrap_err()
+        .to_string()
+        .contains("not a network"));
 }
 
 #[test]
@@ -67,8 +79,18 @@ fn migration_is_the_steps_in_order() {
 fn migration_keeps_every_id_and_reports_no_loss_it_did_not_make() {
     let (network, notes) = migrate_network(v1()).unwrap();
     assert_eq!(network.schema_version.0, SCHEMA_VERSION);
-    assert_eq!(network.stops.keys().map(|k| k.as_str()).collect::<Vec<_>>(), ["s1", "s2"]);
-    assert_eq!(network.routes.keys().map(|k| k.as_str()).collect::<Vec<_>>(), ["r1"]);
+    assert_eq!(
+        network.stops.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
+        ["s1", "s2"]
+    );
+    assert_eq!(
+        network
+            .routes
+            .keys()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>(),
+        ["r1"]
+    );
     assert!(notes.is_empty(), "v1 → v2 loses nothing: {notes:?}");
 }
 
@@ -94,5 +116,9 @@ fn a_newer_version_is_refused_naming_both() {
     let mut doc = serde_json::to_value(Network::default()).unwrap();
     doc["schema_version"] = json!(SCHEMA_VERSION + 1);
     let err = migrate_to(doc, SCHEMA_VERSION + 1).unwrap_err();
-    assert!(err.contains(&format!("v{}", SCHEMA_VERSION + 1)) && err.contains(&format!("v{SCHEMA_VERSION}")), "{err}");
+    assert!(
+        err.contains(&format!("v{}", SCHEMA_VERSION + 1))
+            && err.contains(&format!("v{SCHEMA_VERSION}")),
+        "{err}"
+    );
 }

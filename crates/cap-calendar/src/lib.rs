@@ -39,14 +39,24 @@ pub enum Response {
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::ActiveServices { network_hash, edits_hash, date } => {
+        Request::ActiveServices {
+            network_hash,
+            edits_hash,
+            date,
+        } => {
             let day = day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = kind::<transit_network::Network>().require(&network_hash)?;
             Ok(Response::ActiveServices {
                 services: transit_dispatch::active_services(&network, &day.trips),
             })
         }
-        Request::ServiceDates { network_hash, edits_hash, service_type, from, to } => {
+        Request::ServiceDates {
+            network_hash,
+            edits_hash,
+            service_type,
+            from,
+            to,
+        } => {
             // Check the request's own fields first, so a garbage date is a
             // caller error and not a missing-document error.
             let from = transit_date::Date::read(&from)?;
@@ -56,8 +66,14 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 Some(hash) => kind::<transit_sync::EditDocument>().require(hash)?,
                 None => Arc::new(Default::default()),
             };
-            let dates = transit_dispatch::service_dates(&network, &records.records, &service_type, from, to)
-                .map_err(|e| format!("the network does not materialize: {e}"))?;
+            let dates = transit_dispatch::service_dates(
+                &network,
+                &records.records,
+                &service_type,
+                from,
+                to,
+            )
+            .map_err(|e| format!("the network does not materialize: {e}"))?;
             Ok(Response::ServiceDates {
                 dates: dates.iter().map(|d| d.to_string()).collect(),
             })
@@ -70,7 +86,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the calendar has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: the calendar has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]
@@ -91,12 +109,23 @@ cap_abi::capability! {
 
 /// Cached under `transit_dispatch::day_key`. The date parses first, so a bad
 /// date is the caller's error.
-fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
+fn day(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date: &str,
+) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
-    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
-    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let edits = edits_hash
+        .map(|hash| kind::<transit_sync::EditDocument>().require(hash))
+        .transpose()?;
+    let records = edits
+        .as_deref()
+        .map(|d| d.records.as_slice())
+        .unwrap_or(&[]);
     let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
     let key = transit_dispatch::day_key(network_hash, edits_hash, date);
-    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || {
+        transit_dispatch::day_of(&network, records, on)
+    })
 }

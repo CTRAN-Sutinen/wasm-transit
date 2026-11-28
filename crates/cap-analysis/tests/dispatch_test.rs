@@ -18,7 +18,8 @@ struct GenTrip {
 
 fn load_layer(bytes: Vec<u8>) -> serde_json::Value {
     let request = serde_json::json!({ "op": "load_layer", "bytes": bytes });
-    let outcome: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(&request.to_string())).expect("an outcome");
+    let outcome: serde_json::Value =
+        serde_json::from_str(&cap_analysis::invoke(&request.to_string())).expect("an outcome");
     outcome["ok"].clone()
 }
 
@@ -40,7 +41,14 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
             if seq.len() < 2 {
                 seq = vec![0, 1];
             }
-            GenTrip { route, service, block, start_slot, stops: seq, leg_min }
+            GenTrip {
+                route,
+                service,
+                block,
+                start_slot,
+                stops: seq,
+                leg_min,
+            }
         })
 }
 
@@ -57,7 +65,11 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
         "agency.txt",
         "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
     );
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n",
+    );
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));
@@ -253,9 +265,23 @@ fn unknown_hashes_are_errors_not_panics() {
 
 #[test]
 fn a_network_compares_against_itself_as_unchanged() {
-    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).unwrap().0;
-    let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), members: vec!["0".into()] };
+    let net = network(&[GenTrip {
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot: 10,
+        stops: vec![0, 1],
+        leg_min: 5,
+    }]);
+    let hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .unwrap()
+        .0;
+    let same = cap_analysis::Request::ServiceTypeCompare {
+        base_hash: hash.clone(),
+        network_hash: hash.clone(),
+        members: vec!["0".into()],
+    };
     match cap_analysis::dispatch(same).unwrap() {
         cap_analysis::Response::ServiceTypeCompare { comparison } => {
             let comparison = comparison.expect("service type 0 runs alone on its dates");
@@ -269,7 +295,10 @@ fn a_network_compares_against_itself_as_unchanged() {
         network_hash: hash,
         members: vec!["0".into()],
     };
-    assert!(cap_analysis::dispatch(unknown).unwrap_err().message.contains("unknown network"));
+    assert!(cap_analysis::dispatch(unknown)
+        .unwrap_err()
+        .message
+        .contains("unknown network"));
 }
 
 #[test]
@@ -282,27 +311,54 @@ fn json_seam_round_trips_the_tagged_form() {
     });
     let loaded: serde_json::Value =
         serde_json::from_str(&cap_analysis::invoke(&request.to_string())).unwrap();
-    assert!(loaded["ok"]["network_hash"].as_str().unwrap().starts_with("sha256:"));
+    assert!(loaded["ok"]["network_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
     let hash = loaded["ok"]["network_hash"].as_str().unwrap();
 
-    let stats: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(&serde_json::json!({
-        "op": "network_stats", "network_hash": hash, "date": "2026-01-05",
-    }).to_string())).unwrap();
+    let stats: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(
+        &serde_json::json!({
+            "op": "network_stats", "network_hash": hash, "date": "2026-01-05",
+        })
+        .to_string(),
+    ))
+    .unwrap();
     assert!(stats["ok"]["stats"]["trips"].as_u64().unwrap() >= 1);
     assert!(stats["ok"]["stats"]["routes"].as_array().unwrap().len() >= 1);
 
     let bad: serde_json::Value =
         serde_json::from_str(&cap_analysis::invoke(r#"{"op": "nope"}"#)).unwrap();
-    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid request"));
+    assert!(bad["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid request"));
 }
 
 #[test]
 fn stop_gaps_answer_through_the_seam() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 13,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let gaps = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
         network_hash: network_hash.clone(),
@@ -310,7 +366,9 @@ fn stop_gaps_answer_through_the_seam() {
         stop_id: "s0".into(),
     })
     .expect("stop_gaps");
-    let cap_analysis::Response::StopGaps { gaps } = gaps else { panic!("stop_gaps") };
+    let cap_analysis::Response::StopGaps { gaps } = gaps else {
+        panic!("stop_gaps")
+    };
     assert_eq!(gaps.departures, 2);
     // start_slot 10 and 13 give 6000 s and 7800 s, so one 1800 s gap.
     assert_eq!(gaps.max_gap_secs, Some(1800));
@@ -318,7 +376,11 @@ fn stop_gaps_answer_through_the_seam() {
     assert_eq!(gaps.hourly.len(), 2, "6000 s is hour 1, 7800 s is hour 2");
     assert_eq!(gaps.hourly[0].hour, 1);
     assert_eq!(gaps.hourly[0].departures, 1);
-    assert_eq!(gaps.hourly[0].max_gap_secs, Some(1800), "the gap starts in hour 1");
+    assert_eq!(
+        gaps.hourly[0].max_gap_secs,
+        Some(1800),
+        "the gap starts in hour 1"
+    );
     assert_eq!(gaps.hourly[1].hour, 2);
     assert_eq!(gaps.hourly[1].departures, 1);
     assert_eq!(gaps.hourly[1].max_gap_secs, None, "no gap starts in hour 2");
@@ -331,7 +393,9 @@ fn stop_gaps_answer_through_the_seam() {
         stop_id: "s1".into(),
     })
     .expect("stop_gaps");
-    let cap_analysis::Response::StopGaps { gaps: terminal } = terminal else { panic!("stop_gaps") };
+    let cap_analysis::Response::StopGaps { gaps: terminal } = terminal else {
+        panic!("stop_gaps")
+    };
     assert_eq!(terminal.departures, 0, "final-stop visits never count");
     assert!(terminal.hourly.is_empty());
 
@@ -341,13 +405,23 @@ fn stop_gaps_answer_through_the_seam() {
         stop_id: "nope".into(),
     })
     .expect("stop_gaps");
-    let cap_analysis::Response::StopGaps { gaps: unknown } = unknown else { panic!("stop_gaps") };
+    let cap_analysis::Response::StopGaps { gaps: unknown } = unknown else {
+        panic!("stop_gaps")
+    };
     assert_eq!(unknown.departures, 0);
     assert!(unknown.hourly.is_empty());
 
-    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
+    let net = network(&[GenTrip {
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot: 10,
+        stops: vec![0, 1],
+        leg_min: 5,
+    }]);
     let loaded: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(
-        &serde_json::json!({ "op": "load_network", "network": serde_json::to_value(net).unwrap() }).to_string(),
+        &serde_json::json!({ "op": "load_network", "network": serde_json::to_value(net).unwrap() })
+            .to_string(),
     ))
     .unwrap();
     let hash = loaded["ok"]["network_hash"].as_str().unwrap();
@@ -360,24 +434,53 @@ fn stop_gaps_answer_through_the_seam() {
         &serde_json::json!({ "op": "stop_gaps", "network_hash": hash, "date": "garbage", "stop_id": "s0" }).to_string(),
     ))
     .unwrap();
-    assert!(bad["error"]["message"].as_str().unwrap().contains("invalid date"));
+    assert!(bad["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid date"));
 }
 
 #[test]
 fn hourly_trips_answer_through_the_seam() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 1, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 13,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 1,
+            block: None,
+            start_slot: 13,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let hours = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
         network_hash: network_hash.clone(),
         date: "2026-01-05".into(), // a Monday: service 0 runs, service 1 does not
     })
     .expect("hourly_trips");
-    let cap_analysis::Response::HourlyTrips { hours } = hours else { panic!("hourly_trips") };
+    let cap_analysis::Response::HourlyTrips { hours } = hours else {
+        panic!("hourly_trips")
+    };
     assert_eq!(hours.len(), 2);
     assert_eq!(hours[0].hour, 1);
     assert_eq!(hours[0].trips, 1);
@@ -385,41 +488,81 @@ fn hourly_trips_answer_through_the_seam() {
     assert_eq!(hours[1].hour, 2);
     assert_eq!(hours[1].trips, 1);
 
-    let weekend_only = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(weekend_only).expect("load").0;
+    let weekend_only = network(&[GenTrip {
+        route: 0,
+        service: 1,
+        block: None,
+        start_slot: 10,
+        stops: vec![0, 1],
+        leg_min: 5,
+    }]);
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(weekend_only)
+        .expect("load")
+        .0;
     let quiet = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
         network_hash,
         date: "2026-01-05".into(),
     })
     .expect("hourly_trips");
-    let cap_analysis::Response::HourlyTrips { hours: quiet } = quiet else { panic!("hourly_trips") };
+    let cap_analysis::Response::HourlyTrips { hours: quiet } = quiet else {
+        panic!("hourly_trips")
+    };
     assert!(quiet.is_empty(), "a day nothing runs answers empty");
 }
 
 #[test]
 fn schedule_texture_answers_through_the_seam() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 15, stops: vec![0, 1], leg_min: 5 }, // 9000 s
-        GenTrip { route: 0, service: 0, block: None, start_slot: 18, stops: vec![0, 1], leg_min: 5 }, // 10800 s
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 15,
+            stops: vec![0, 1],
+            leg_min: 5,
+        }, // 9000 s
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 18,
+            stops: vec![0, 1],
+            leg_min: 5,
+        }, // 10800 s
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let texture = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
         network_hash: network_hash.clone(),
         members: vec!["0".into()],
     })
     .expect("schedule_texture");
-    let cap_analysis::Response::ScheduleTexture { texture } = texture else { panic!("schedule_texture") };
+    let cap_analysis::Response::ScheduleTexture { texture } = texture else {
+        panic!("schedule_texture")
+    };
     let texture = texture.expect("the weekday type runs alone on its dates");
-    assert_eq!((texture.group.as_str(), texture.members.as_slice()), ("0", ["0".to_string()].as_slice()));
+    assert_eq!(
+        (texture.group.as_str(), texture.members.as_slice()),
+        ("0", ["0".to_string()].as_slice())
+    );
     assert_eq!(texture.trips, 2);
-    assert_eq!(texture.on_clockface, 2, "4800 and 6600 are both on the grid");
+    assert_eq!(
+        texture.on_clockface, 2,
+        "4800 and 6600 are both on the grid"
+    );
     assert_eq!(texture.pattern_trips.len(), 1, "one schedule");
     let row = &texture.pattern_trips[0];
     assert_eq!(row.trips, 2);
     assert_eq!(row.min_gap_secs, Some(1800));
     assert_eq!(row.max_gap_secs, Some(1800));
-    assert_eq!(row.median_gap_secs, None, "one gap is no median (the QAF-55 floor)");
+    assert_eq!(
+        row.median_gap_secs, None,
+        "one gap is no median (the QAF-55 floor)"
+    );
     assert_eq!(row.on_clockface, 2);
 
     let unknown = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
@@ -427,7 +570,9 @@ fn schedule_texture_answers_through_the_seam() {
         members: vec!["nope".into()],
     })
     .expect("schedule_texture");
-    let cap_analysis::Response::ScheduleTexture { texture: unknown } = unknown else { panic!("schedule_texture") };
+    let cap_analysis::Response::ScheduleTexture { texture: unknown } = unknown else {
+        panic!("schedule_texture")
+    };
     assert!(unknown.is_none());
 }
 
@@ -435,17 +580,36 @@ fn schedule_texture_answers_through_the_seam() {
 fn route_overlap_answers_through_the_seam() {
     // Routes 0 and 1 share stop 0 and no segments.
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 1, service: 0, block: None, start_slot: 12, stops: vec![0, 2], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 1,
+            service: 0,
+            block: None,
+            start_slot: 12,
+            stops: vec![0, 2],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let overlaps = cap_analysis::dispatch(cap_analysis::Request::RouteOverlap {
         network_hash: network_hash.clone(),
         date: "2026-01-05".into(),
     })
     .expect("route_overlap");
-    let cap_analysis::Response::RouteOverlap { overlaps } = overlaps else { panic!("route_overlap") };
+    let cap_analysis::Response::RouteOverlap { overlaps } = overlaps else {
+        panic!("route_overlap")
+    };
     assert_eq!(overlaps.len(), 1, "routes 0 and 1 share stop 0");
     let pair = &overlaps[0];
     assert_eq!(pair.a, "0");
@@ -453,14 +617,19 @@ fn route_overlap_answers_through_the_seam() {
     assert_eq!(pair.shared_stops, 1);
     assert_eq!(pair.shared_segments, 0, "no consecutive pair runs in both");
     assert_eq!(pair.stack_stop.as_deref(), Some("s0"));
-    assert_eq!(pair.stack_departures, 2, "one departure each at the shared stop");
+    assert_eq!(
+        pair.stack_departures, 2,
+        "one departure each at the shared stop"
+    );
 
     let quiet = cap_analysis::dispatch(cap_analysis::Request::RouteOverlap {
         network_hash,
         date: "2026-01-10".into(), // a Saturday: service 0 does not run
     })
     .expect("route_overlap");
-    let cap_analysis::Response::RouteOverlap { overlaps: quiet } = quiet else { panic!("route_overlap") };
+    let cap_analysis::Response::RouteOverlap { overlaps: quiet } = quiet else {
+        panic!("route_overlap")
+    };
     assert!(quiet.is_empty());
 }
 
@@ -469,10 +638,27 @@ fn timed_transfers_answer_through_the_seam() {
     // Route 0 arrives at s0 at 06:00 and route 1 departs at 06:10, a 600 s
     // wait.
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![0, 2], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 1,
+            service: 0,
+            block: None,
+            start_slot: 11,
+            stops: vec![0, 2],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let transfers = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
         network_hash: network_hash.clone(),
@@ -481,8 +667,14 @@ fn timed_transfers_answer_through_the_seam() {
         window: None,
     })
     .expect("timed_transfers");
-    let cap_analysis::Response::TimedTransfers { transfers } = transfers else { panic!("timed_transfers") };
-    assert_eq!(transfers.len(), 1, "route 0's arrival meets route 1's departure");
+    let cap_analysis::Response::TimedTransfers { transfers } = transfers else {
+        panic!("timed_transfers")
+    };
+    assert_eq!(
+        transfers.len(),
+        1,
+        "route 0's arrival meets route 1's departure"
+    );
     let t = &transfers[0];
     assert_eq!((t.from_route.as_str(), t.to_route.as_str()), ("0", "1"));
     assert_eq!(t.arrival_secs, 6000);
@@ -494,11 +686,19 @@ fn timed_transfers_answer_through_the_seam() {
         network_hash: network_hash.clone(),
         date: "2026-01-05".into(),
         stop_id: "s0".into(),
-        window: Some(transit_analysis::TransferWindow { min_secs: 60, max_secs: 300 }),
+        window: Some(transit_analysis::TransferWindow {
+            min_secs: 60,
+            max_secs: 300,
+        }),
     })
     .expect("timed_transfers");
-    let cap_analysis::Response::TimedTransfers { transfers: narrow } = narrow else { panic!("timed_transfers") };
-    assert!(narrow.is_empty(), "a 600 s wait does not fit a 300 s window");
+    let cap_analysis::Response::TimedTransfers { transfers: narrow } = narrow else {
+        panic!("timed_transfers")
+    };
+    assert!(
+        narrow.is_empty(),
+        "a 600 s wait does not fit a 300 s window"
+    );
 
     let unknown = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
         network_hash,
@@ -507,18 +707,44 @@ fn timed_transfers_answer_through_the_seam() {
         window: None,
     })
     .expect("timed_transfers");
-    let cap_analysis::Response::TimedTransfers { transfers: unknown } = unknown else { panic!("timed_transfers") };
+    let cap_analysis::Response::TimedTransfers { transfers: unknown } = unknown else {
+        panic!("timed_transfers")
+    };
     assert!(unknown.is_empty());
 }
 
 #[test]
 fn hub_connections_and_route_frequency_answer_through_the_seam() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 11,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 1,
+            service: 0,
+            block: None,
+            start_slot: 11,
+            stops: vec![1, 2],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let pairs = cap_analysis::dispatch(cap_analysis::Request::HubConnections {
         network_hash: network_hash.clone(),
@@ -527,12 +753,24 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
         window: None,
     })
     .expect("hub_connections");
-    let cap_analysis::Response::HubConnections { connections } = pairs else { panic!("hub_connections") };
+    let cap_analysis::Response::HubConnections { connections } = pairs else {
+        panic!("hub_connections")
+    };
     // Route 0 arrives at s1 at 06:05 and 06:15, and route 1 leaves at 06:10.
     assert_eq!(connections.len(), 1);
     let c = &connections[0];
-    assert_eq!((c.from_route.as_str(), c.to_route.as_str(), c.connections), ("0", "1", 1));
-    assert_eq!((c.shortest_wait_secs, c.longest_wait_secs, c.median_wait_secs), (300, 300, None));
+    assert_eq!(
+        (c.from_route.as_str(), c.to_route.as_str(), c.connections),
+        ("0", "1", 1)
+    );
+    assert_eq!(
+        (
+            c.shortest_wait_secs,
+            c.longest_wait_secs,
+            c.median_wait_secs
+        ),
+        (300, 300, None)
+    );
     let none = cap_analysis::dispatch(cap_analysis::Request::HubConnections {
         network_hash: network_hash.clone(),
         date: "2026-01-05".into(),
@@ -540,7 +778,9 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
         window: None,
     })
     .expect("hub_connections");
-    let cap_analysis::Response::HubConnections { connections: none } = none else { panic!("hub_connections") };
+    let cap_analysis::Response::HubConnections { connections: none } = none else {
+        panic!("hub_connections")
+    };
     assert!(none.is_empty());
 
     let grid = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency {
@@ -548,22 +788,52 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
         members: vec!["0".into()],
     })
     .expect("route_frequency");
-    let cap_analysis::Response::RouteFrequency { frequency: Some(grid) } = grid else { panic!("route_frequency") };
+    let cap_analysis::Response::RouteFrequency {
+        frequency: Some(grid),
+    } = grid
+    else {
+        panic!("route_frequency")
+    };
     let route0 = &grid.routes[0];
-    assert_eq!((route0.route_id.as_str(), route0.headway_stop.as_deref()), ("0", Some("s0")));
+    assert_eq!(
+        (route0.route_id.as_str(), route0.headway_stop.as_deref()),
+        ("0", Some("s0"))
+    );
     let hour = &route0.hours[0];
-    assert_eq!((hour.hour, hour.departures, hour.shortest_gap_secs, hour.longest_gap_secs), (1, 2, Some(600), Some(600)));
-    let unknown = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency { network_hash, members: vec!["nope".into()] })
-        .expect("route_frequency");
-    assert!(matches!(unknown, cap_analysis::Response::RouteFrequency { frequency: None }));
+    assert_eq!(
+        (
+            hour.hour,
+            hour.departures,
+            hour.shortest_gap_secs,
+            hour.longest_gap_secs
+        ),
+        (1, 2, Some(600), Some(600))
+    );
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency {
+        network_hash,
+        members: vec!["nope".into()],
+    })
+    .expect("route_frequency");
+    assert!(matches!(
+        unknown,
+        cap_analysis::Response::RouteFrequency { frequency: None }
+    ));
 }
 
 #[test]
 fn include_flags_shape_the_stats_response() {
     let net = network(&[GenTrip {
-        route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5,
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot: 10,
+        stops: vec![0, 1],
+        leg_min: 5,
     }]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let shaped = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
         network_hash: network_hash.clone(),
@@ -573,7 +843,9 @@ fn include_flags_shape_the_stats_response() {
         include_service_types: false,
     })
     .expect("stats");
-    let cap_analysis::Response::NetworkStats { stats: lean } = shaped else { panic!("stats") };
+    let cap_analysis::Response::NetworkStats { stats: lean } = shaped else {
+        panic!("stats")
+    };
 
     let full = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
         network_hash,
@@ -583,11 +855,22 @@ fn include_flags_shape_the_stats_response() {
         include_service_types: true,
     })
     .expect("stats");
-    let cap_analysis::Response::NetworkStats { stats: rich } = full else { panic!("stats") };
+    let cap_analysis::Response::NetworkStats { stats: rich } = full else {
+        panic!("stats")
+    };
 
-    assert!(lean.routes.is_empty() && lean.stops.is_empty(), "the lists empty on request");
-    assert!(lean.service_types.is_empty(), "the design axis empties on request too");
-    assert!(!rich.routes.is_empty() && !rich.stops.is_empty(), "defaults keep the UI's payload");
+    assert!(
+        lean.routes.is_empty() && lean.stops.is_empty(),
+        "the lists empty on request"
+    );
+    assert!(
+        lean.service_types.is_empty(),
+        "the design axis empties on request too"
+    );
+    assert!(
+        !rich.routes.is_empty() && !rich.stops.is_empty(),
+        "defaults keep the UI's payload"
+    );
     assert_eq!(lean.trips, rich.trips);
     assert_eq!(lean.active_routes, rich.active_routes);
     assert_eq!(lean.active_stops, rich.active_stops);
@@ -595,19 +878,37 @@ fn include_flags_shape_the_stats_response() {
     assert_eq!(lean.transfer_stops, rich.transfer_stops);
     let lean_json = serde_json::to_string(&lean).unwrap();
     let rich_json = serde_json::to_string(&rich).unwrap();
-    assert!(lean_json.len() < rich_json.len(), "lean {} vs rich {}", lean_json.len(), rich_json.len());
+    assert!(
+        lean_json.len() < rich_json.len(),
+        "lean {} vs rich {}",
+        lean_json.len(),
+        rich_json.len()
+    );
 }
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let doc = include_str!("../../../testdata/network.json");
-    let via_json: serde_json::Value =
-        serde_json::from_str(&cap_analysis::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
-    let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_analysis::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
-    assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
+    let via_json: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(&format!(
+        r#"{{"op":"load_network","network":{doc}}}"#
+    )))
+    .unwrap();
+    let via_bytes: serde_json::Value = serde_json::from_str(&cap_analysis::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        doc.as_bytes(),
+    ))
+    .unwrap();
+    assert!(
+        via_json["ok"]["network_hash"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("sha256:")),
+        "{via_json}"
+    );
     assert_eq!(via_bytes, via_json);
-    let bad = cap_analysis::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
+    let bad = cap_analysis::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        b"{not a network",
+    );
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -615,8 +916,18 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
 fn unserved_points_answer_the_where() {
     // One weekday trip runs s0 to s1. The layer has a point at s0 and a far
     // one.
-    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let net = network(&[GenTrip {
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot: 10,
+        stops: vec![0, 1],
+        leg_min: 5,
+    }]);
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let layer = load_layer(
         br#"{"type":"FeatureCollection","features":[
@@ -625,7 +936,10 @@ fn unserved_points_answer_the_where() {
         ]}"#
             .to_vec(),
     );
-    let layer_hash = layer["layer_hash"].as_str().expect("layer_hash").to_string();
+    let layer_hash = layer["layer_hash"]
+        .as_str()
+        .expect("layer_hash")
+        .to_string();
 
     let points = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
         network_hash: network_hash.clone(),
@@ -636,13 +950,31 @@ fn unserved_points_answer_the_where() {
         members: vec!["0".into()],
     })
     .expect("unserved_points");
-    let cap_analysis::Response::UnservedPoints { unserved: Some(unserved), .. } = points else { panic!("unserved_points") };
+    let cap_analysis::Response::UnservedPoints {
+        unserved: Some(unserved),
+        ..
+    } = points
+    else {
+        panic!("unserved_points")
+    };
     assert_eq!(unserved.group, "0");
     let points = unserved.points;
-    assert_eq!(points.len(), 1, "the point at s0 is served; the far one is not");
-    assert_eq!(points[0].nearest_stop.as_deref(), Some("s1"), "s1 is marginally nearer than s0");
+    assert_eq!(
+        points.len(),
+        1,
+        "the point at s0 is served; the far one is not"
+    );
+    assert_eq!(
+        points[0].nearest_stop.as_deref(),
+        Some("s1"),
+        "s1 is marginally nearer than s0"
+    );
     assert!((points[0].lat - 46.0).abs() < 1e-9 && (points[0].lon - -74.0).abs() < 1e-9);
-    assert!(points[0].nearest_m > 60_000.0, "the far point is ~70 km out: {}", points[0].nearest_m);
+    assert!(
+        points[0].nearest_m > 60_000.0,
+        "the far point is ~70 km out: {}",
+        points[0].nearest_m
+    );
 
     let weekend = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
         network_hash: network_hash.clone(),
@@ -653,13 +985,25 @@ fn unserved_points_answer_the_where() {
         members: vec!["1".into()],
     })
     .expect("unserved_points");
-    let cap_analysis::Response::UnservedPoints { unserved, .. } = weekend else { panic!("unserved_points") };
-    assert!(unserved.is_none(), "a service with no trips is in no combination");
+    let cap_analysis::Response::UnservedPoints { unserved, .. } = weekend else {
+        panic!("unserved_points")
+    };
+    assert!(
+        unserved.is_none(),
+        "a service with no trips is in no combination"
+    );
 
     // The proposal is a copy with no trips, so it loses the point at s0.
-    let mut empty = cap_abi::kernel::kind::<transit_network::Network>().require(&network_hash).expect("held").as_ref().clone();
+    let mut empty = cap_abi::kernel::kind::<transit_network::Network>()
+        .require(&network_hash)
+        .expect("held")
+        .as_ref()
+        .clone();
     empty.pattern_trips.clear();
-    let empty_hash = cap_abi::kernel::kind::<transit_network::Network>().register(empty).expect("load").0;
+    let empty_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(empty)
+        .expect("load")
+        .0;
     let compared = cap_analysis::dispatch(cap_analysis::Request::CoverageCompare {
         base_hash: network_hash,
         network_hash: empty_hash,
@@ -674,10 +1018,18 @@ fn unserved_points_answer_the_where() {
         window: None,
     })
     .expect("coverage_compare");
-    let cap_analysis::Response::CoverageCompare { layer, comparison } = compared else { panic!("coverage_compare") };
+    let cap_analysis::Response::CoverageCompare { layer, comparison } = compared else {
+        panic!("coverage_compare")
+    };
     assert_eq!(layer.label, "people");
-    assert_eq!((comparison.base.served, comparison.proposal.served), (100.0, 0.0));
-    assert_eq!((comparison.served_gained, comparison.served_lost), (0.0, 100.0));
+    assert_eq!(
+        (comparison.base.served, comparison.proposal.served),
+        (100.0, 0.0)
+    );
+    assert_eq!(
+        (comparison.served_gained, comparison.served_lost),
+        (0.0, 100.0)
+    );
     assert_eq!(comparison.base.members, ["0"]);
 }
 
@@ -686,36 +1038,88 @@ fn unserved_points_answer_the_where() {
 #[test]
 fn service_groups_answer_the_combinations() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 3, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 2, block: None, start_slot: 12, stops: vec![0, 1], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 3,
+            block: None,
+            start_slot: 11,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 2,
+            block: None,
+            start_slot: 12,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups {
         network_hash: network_hash.clone(),
     })
     .expect("service_groups");
-    let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
-    let rows: std::collections::BTreeMap<&str, u32> =
-        groups.iter().map(|g| (g.combination.id.as_str(), g.trips)).collect();
+    let cap_analysis::Response::ServiceGroups { groups } = groups else {
+        panic!("service_groups")
+    };
+    let rows: std::collections::BTreeMap<&str, u32> = groups
+        .iter()
+        .map(|g| (g.combination.id.as_str(), g.trips))
+        .collect();
     assert_eq!(
         rows,
-        [("0", 1), ("0 + 2", 2), ("0 + 3", 2), ("0 + 2 + 3", 3)].into_iter().collect(),
+        [("0", 1), ("0 + 2", 2), ("0 + 3", 2), ("0 + 2 + 3", 3)]
+            .into_iter()
+            .collect(),
         "each set that runs together, with its pooled trips"
     );
-    assert!(groups.windows(2).all(|w| w[0].combination.dates.len() >= w[1].combination.dates.len()), "most days first");
-    assert!(groups.iter().all(|g| !g.combination.members.contains(&"1".to_string())), "the trip-less weekend runs nothing");
+    assert!(
+        groups
+            .windows(2)
+            .all(|w| w[0].combination.dates.len() >= w[1].combination.dates.len()),
+        "most days first"
+    );
+    assert!(
+        groups
+            .iter()
+            .all(|g| !g.combination.members.contains(&"1".to_string())),
+        "the trip-less weekend runs nothing"
+    );
     let overlay = groups.iter().find(|g| g.combination.id == "0 + 3").unwrap();
-    assert_eq!(overlay.combination.spans.len(), 1, "Mar–Jun Tue/Thu/Fri is one span");
-    assert_eq!(overlay.combination.spans[0].start, "2026-03-03", "the first Tuesday in range");
+    assert_eq!(
+        overlay.combination.spans.len(),
+        1,
+        "Mar–Jun Tue/Thu/Fri is one span"
+    );
+    assert_eq!(
+        overlay.combination.spans[0].start, "2026-03-03",
+        "the first Tuesday in range"
+    );
 
     let detail = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
         network_hash,
         members: overlay.combination.members.clone(),
     })
     .expect("service_type_detail");
-    let cap_analysis::Response::ServiceTypeDetail { detail: Some(detail) } = detail else { panic!("detail") };
+    let cap_analysis::Response::ServiceTypeDetail {
+        detail: Some(detail),
+    } = detail
+    else {
+        panic!("detail")
+    };
     assert_eq!((detail.group.as_str(), detail.trips), ("0 + 3", 2));
 }
 
@@ -725,11 +1129,35 @@ fn service_groups_answer_the_combinations() {
 #[test]
 fn missed_connections_and_longest_waits_answer_through_the_seam() {
     let net = network(&[
-        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
-        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 10,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 0,
+            service: 0,
+            block: None,
+            start_slot: 11,
+            stops: vec![0, 1],
+            leg_min: 5,
+        },
+        GenTrip {
+            route: 1,
+            service: 0,
+            block: None,
+            start_slot: 11,
+            stops: vec![1, 2],
+            leg_min: 5,
+        },
     ]);
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let missed = cap_analysis::dispatch(cap_analysis::Request::MissedConnections {
         network_hash: network_hash.clone(),
@@ -739,11 +1167,21 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
         miss_secs: None,
     })
     .expect("missed_connections");
-    let cap_analysis::Response::MissedConnections { missed } = missed else { panic!("missed_connections") };
+    let cap_analysis::Response::MissedConnections { missed } = missed else {
+        panic!("missed_connections")
+    };
     assert_eq!(missed.len(), 1);
     let m = &missed[0];
     assert_eq!((m.from_route.as_str(), m.to_route.as_str()), ("0", "1"));
-    assert_eq!((m.arrival_secs, m.departure_secs, m.missed_by_secs, m.next_departure_secs), (6900, 6600, 360, None));
+    assert_eq!(
+        (
+            m.arrival_secs,
+            m.departure_secs,
+            m.missed_by_secs,
+            m.next_departure_secs
+        ),
+        (6900, 6600, 360, None)
+    );
 
     let waits = cap_analysis::dispatch(cap_analysis::Request::LongestWaits {
         network_hash,
@@ -752,8 +1190,20 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
         limit: None,
     })
     .expect("longest_waits");
-    let cap_analysis::Response::LongestWaits { waits } = waits else { panic!("longest_waits") };
-    let rows: Vec<_> = waits.iter().map(|w| (w.stop_id.as_str(), w.longest_wait_secs, w.wait_from_secs, w.departures)).collect();
+    let cap_analysis::Response::LongestWaits { waits } = waits else {
+        panic!("longest_waits")
+    };
+    let rows: Vec<_> = waits
+        .iter()
+        .map(|w| {
+            (
+                w.stop_id.as_str(),
+                w.longest_wait_secs,
+                w.wait_from_secs,
+                w.departures,
+            )
+        })
+        .collect();
     assert_eq!(rows, [("s0", 600, 6000, 2)]);
 }
 
@@ -761,10 +1211,20 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
 /// 4:00, so hour 2 holds a 40-minute gap.
 #[test]
 fn day_types_plan_compare_and_findings_answer_through_the_seam() {
-    let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
+    let trip = |start_slot| GenTrip {
+        route: 0,
+        service: 0,
+        block: None,
+        start_slot,
+        stops: vec![0, 1],
+        leg_min: 5,
+    };
     let slots: Vec<u16> = (6..=12).chain(16..=24).collect();
     let net = network(&slots.iter().map(|&s| trip(s)).collect::<Vec<_>>());
-    let network_hash = cap_abi::kernel::kind::<transit_network::Network>().register(net).expect("load").0;
+    let network_hash = cap_abi::kernel::kind::<transit_network::Network>()
+        .register(net)
+        .expect("load")
+        .0;
 
     let types = cap_analysis::dispatch(cap_analysis::Request::DayTypes {
         network_hash: network_hash.clone(),
@@ -772,10 +1232,18 @@ fn day_types_plan_compare_and_findings_answer_through_the_seam() {
         through: None,
     })
     .expect("day_types");
-    let cap_analysis::Response::DayTypes { day_types } = types else { panic!("day_types") };
+    let cap_analysis::Response::DayTypes { day_types } = types else {
+        panic!("day_types")
+    };
     assert_eq!(day_types.len(), 1, "the weekday service alone");
-    assert_eq!(day_types[0].weekdays, [true, true, true, true, true, false, false]);
-    assert!(day_types[0].groups[0].dates.iter().all(|d| d.as_str() >= "2026-03-01"));
+    assert_eq!(
+        day_types[0].weekdays,
+        [true, true, true, true, true, false, false]
+    );
+    assert!(day_types[0].groups[0]
+        .dates
+        .iter()
+        .all(|d| d.as_str() >= "2026-03-01"));
 
     let compared = cap_analysis::dispatch(cap_analysis::Request::PlanCompare {
         base_hash: network_hash.clone(),
@@ -784,9 +1252,20 @@ fn day_types_plan_compare_and_findings_answer_through_the_seam() {
         through: None,
     })
     .expect("plan_compare");
-    let cap_analysis::Response::PlanCompare { day_types: compared } = compared else { panic!("plan_compare") };
-    let first = compared[0].groups[0].comparison.as_ref().expect("the group runs");
-    assert!(first.routes.is_empty(), "a plan against itself changes no route");
+    let cap_analysis::Response::PlanCompare {
+        day_types: compared,
+    } = compared
+    else {
+        panic!("plan_compare")
+    };
+    let first = compared[0].groups[0]
+        .comparison
+        .as_ref()
+        .expect("the group runs");
+    assert!(
+        first.routes.is_empty(),
+        "a plan against itself changes no route"
+    );
 
     let found = cap_analysis::dispatch(cap_analysis::Request::NetworkFindings {
         network_hash: network_hash.clone(),
@@ -795,9 +1274,28 @@ fn day_types_plan_compare_and_findings_answer_through_the_seam() {
         params: None,
     })
     .expect("network_findings");
-    let cap_analysis::Response::NetworkFindings { findings: Some(found) } = found else { panic!("network_findings") };
-    let holes: Vec<_> = found.holes.iter().map(|h| (h.now.route_id.as_str(), h.now.hour, h.now.longest_gap_secs, h.now.around_gap_secs)).collect();
+    let cap_analysis::Response::NetworkFindings {
+        findings: Some(found),
+    } = found
+    else {
+        panic!("network_findings")
+    };
+    let holes: Vec<_> = found
+        .holes
+        .iter()
+        .map(|h| {
+            (
+                h.now.route_id.as_str(),
+                h.now.hour,
+                h.now.longest_gap_secs,
+                h.now.around_gap_secs,
+            )
+        })
+        .collect();
     assert_eq!(holes, [("0", 2, 2400, 600)]);
-    assert!(found.holes[0].base.is_some(), "against itself, the hole was there before");
+    assert!(
+        found.holes[0].base.is_some(),
+        "against itself, the hole was there before"
+    );
     assert!(found.resolved.holes.is_empty());
 }

@@ -28,14 +28,20 @@ fn lanes(caps: &[Linked], op: &str, reads: &str) -> (fn(&str) -> String, fn(u32,
         .iter()
         .filter(|c| c.declared.ops.iter().any(|o| o == op) && c.declared.documents.contains(&reads))
         .collect();
-    let [linked] = found[..] else { panic!("{} capabilities answer {op} over a {reads}, not one", found.len()) };
+    let [linked] = found[..] else {
+        panic!(
+            "{} capabilities answer {op} over a {reads}, not one",
+            found.len()
+        )
+    };
     (linked.declared.invoke, linked.declared.invoke_bytes)
 }
 
 pub fn real_output(caps: &[Linked]) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: Value = serde_json::from_str(
-        &std::fs::read_to_string(root.join("web/public/caps/manifest.json")).expect("the manifest (run `just caps`)"),
+        &std::fs::read_to_string(root.join("web/public/caps/manifest.json"))
+            .expect("the manifest (run `just caps`)"),
     )
     .unwrap();
     let feed = std::fs::read(root.join("web/e2e/fixtures/sample-gtfs.zip")).unwrap();
@@ -49,8 +55,11 @@ pub fn real_output(caps: &[Linked]) {
             json!({"op": "load_streets", "streets": streets}).to_string()
         })
         .collect();
-    let loads: Vec<(&str, &str)> =
-        cap_abi::kinds::KINDS.iter().filter_map(|k| k.load).map(|l| (l.op, l.id)).collect();
+    let loads: Vec<(&str, &str)> = cap_abi::kinds::KINDS
+        .iter()
+        .filter_map(|k| k.load)
+        .map(|l| (l.op, l.id))
+        .collect();
     let locks = Locks::read();
 
     let mut failures = Vec::new();
@@ -61,12 +70,25 @@ pub fn real_output(caps: &[Linked]) {
     let mut promised = std::collections::BTreeMap::<String, String>::new();
     for cap in manifest["capabilities"].as_array().unwrap() {
         let id = cap["id"].as_str().unwrap();
-        let linked = caps.iter().find(|c| c.declared.id == id).unwrap_or_else(|| panic!("capability {id} is not linked"));
+        let linked = caps
+            .iter()
+            .find(|c| c.declared.id == id)
+            .unwrap_or_else(|| panic!("capability {id} is not linked"));
         let (invoke, invoke_bytes) = (linked.declared.invoke, linked.declared.invoke_bytes);
-        let reads: Vec<&str> = cap["documents"].as_array().map(|d| d.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let reads: Vec<&str> = cap["documents"]
+            .as_array()
+            .map(|d| d.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
         for (name, kind) in &loads {
-            let load = manifest["kernel_ops"].as_array().unwrap().iter().find(|op| op["name"] == *name);
-            if let (true, Some(request)) = (reads.contains(kind), load.and_then(|op| op["example"].get("request"))) {
+            let load = manifest["kernel_ops"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|op| op["name"] == *name);
+            if let (true, Some(request)) = (
+                reads.contains(kind),
+                load.and_then(|op| op["example"].get("request")),
+            ) {
                 invoke(&request.to_string());
             }
         }
@@ -82,7 +104,9 @@ pub fn real_output(caps: &[Linked]) {
             }
         }
         for (op, doc) in cap["op_docs"].as_object().into_iter().flatten() {
-            let Some(request) = doc["example"].get("request") else { continue };
+            let Some(request) = doc["example"].get("request") else {
+                continue;
+            };
             let answer: Value = match serde_json::from_str(&invoke(&request.to_string())) {
                 Ok(answer) => answer,
                 Err(e) => {
@@ -96,7 +120,10 @@ pub fn real_output(caps: &[Linked]) {
             for (key, problems) in locks.check(&answer) {
                 *checked.entry(key.clone()).or_default() += 1;
                 if !problems.is_empty() {
-                    failures.push(format!("{id}.{op}: its {key} document does not match its schema: {}", problems.join("; ")));
+                    failures.push(format!(
+                        "{id}.{op}: its {key} document does not match its schema: {}",
+                        problems.join("; ")
+                    ));
                 }
             }
         }
@@ -109,14 +136,25 @@ pub fn real_output(caps: &[Linked]) {
             ));
         }
     }
-    assert!(failures.is_empty(), "documents that do not match their schemas:\n  {}", failures.join("\n  "));
-    assert!(!checked.is_empty(), "no answer held a document: the gate checked nothing");
+    assert!(
+        failures.is_empty(),
+        "documents that do not match their schemas:\n  {}",
+        failures.join("\n  ")
+    );
+    assert!(
+        !checked.is_empty(),
+        "no answer held a document: the gate checked nothing"
+    );
     println!("real output: {}", json!(checked));
 }
 
 fn ok(answer: String, what: &str) -> Value {
-    let answer: Value = serde_json::from_str(&answer).unwrap_or_else(|e| panic!("{what}: not JSON ({e})"));
-    answer.get("ok").cloned().unwrap_or_else(|| panic!("{what}: {answer}"))
+    let answer: Value =
+        serde_json::from_str(&answer).unwrap_or_else(|e| panic!("{what}: not JSON ({e})"));
+    answer
+        .get("ok")
+        .cloned()
+        .unwrap_or_else(|| panic!("{what}: {answer}"))
 }
 
 pub fn soak(caps: &[Linked]) {
@@ -129,8 +167,14 @@ pub fn soak(caps: &[Linked]) {
     let (network, network_bytes) = lanes(caps, "import", "feed");
     let (plans, _) = lanes(caps, "publish", "network");
 
-    let loaded = ok(network_bytes(transit_codec::Feed::CODE, &zip), "load the feed");
-    let import = ok(network(&json!({"op": "import", "feed_hash": loaded["feed_hash"]}).to_string()), "import");
+    let loaded = ok(
+        network_bytes(transit_codec::Feed::CODE, &zip),
+        "load the feed",
+    );
+    let import = ok(
+        network(&json!({"op": "import", "feed_hash": loaded["feed_hash"]}).to_string()),
+        "import",
+    );
     let publish = ok(
         plans(
             &json!({
@@ -150,14 +194,24 @@ pub fn soak(caps: &[Linked]) {
     for (what, answer) in [("import", &import), ("publish", &publish)] {
         for (key, problems) in locks.check(answer) {
             if !problems.is_empty() {
-                failures.push(format!("{what}: its {key} document does not match its schema: {}", problems.join("; ")));
+                failures.push(format!(
+                    "{what}: its {key} document does not match its schema: {}",
+                    problems.join("; ")
+                ));
             }
             checked.push(key);
         }
     }
-    assert!(failures.is_empty(), "{feed}: documents that do not match their schemas:\n  {}", failures.join("\n  "));
+    assert!(
+        failures.is_empty(),
+        "{feed}: documents that do not match their schemas:\n  {}",
+        failures.join("\n  ")
+    );
     for want in ["network v2", "boundary v1", "plans v1"] {
-        assert!(checked.iter().any(|k| k == want), "the soak checked no {want} document: {checked:?}");
+        assert!(
+            checked.iter().any(|k| k == want),
+            "the soak checked no {want} document: {checked:?}"
+        );
     }
     println!("soak: {feed}: {checked:?} match their schemas");
 }

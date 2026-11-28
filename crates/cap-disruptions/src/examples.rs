@@ -8,9 +8,15 @@ pub fn examples() -> Vec<Example> {
     let net = fixtures::network();
     let edits = transit_sync::EditDocument::new(fixtures::dispatch_fixture_edits());
     let (live, live_hash) = fixtures::live_example().expect("the fixture live document");
-    let stops = fixtures::fixture_stops().checked().expect("the fixture stops pass");
-    let alerts = fixtures::fixture_alerts().checked().expect("the fixture alerts pass");
-    let notes = fixtures::fixture_notes().checked().expect("the fixture notes pass");
+    let stops = fixtures::fixture_stops()
+        .checked()
+        .expect("the fixture stops pass");
+    let alerts = fixtures::fixture_alerts()
+        .checked()
+        .expect("the fixture alerts pass");
+    let notes = fixtures::fixture_notes()
+        .checked()
+        .expect("the fixture notes pass");
     let hash = |d: &dyn erased::Hash| d.hash();
     let loads = vec![
         fixtures::load_network(&net.derived),
@@ -42,9 +48,27 @@ pub fn examples() -> Vec<Example> {
     let mut start = gap_request("start_alert");
     start["source"] = json!({ "kind": "edit", "id": "e1" });
     vec![
-        Example { bytes: None, kinds: vec![], op: "today", loads: loads.clone(), request: request("today") },
-        Example { bytes: None, kinds: vec![], op: "gaps", loads: gap_loads.clone(), request: gap_request("gaps") },
-        Example { bytes: None, kinds: vec![], op: "start_alert", loads: gap_loads, request: start },
+        Example {
+            bytes: None,
+            kinds: vec![],
+            op: "today",
+            loads: loads.clone(),
+            request: request("today"),
+        },
+        Example {
+            bytes: None,
+            kinds: vec![],
+            op: "gaps",
+            loads: gap_loads.clone(),
+            request: gap_request("gaps"),
+        },
+        Example {
+            bytes: None,
+            kinds: vec![],
+            op: "start_alert",
+            loads: gap_loads,
+            request: start,
+        },
     ]
 }
 

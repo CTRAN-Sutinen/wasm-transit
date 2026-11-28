@@ -1,6 +1,8 @@
 //! Pattern lines and entity focus (`pattern_alignment`, `entity_focus`).
 
-use transit_network::{entity_focus, pattern_alignment, Alignment, AlignmentPoint, Coord, EntityKind, Network};
+use transit_network::{
+    entity_focus, pattern_alignment, Alignment, AlignmentPoint, Coord, EntityKind, Network,
+};
 
 fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -11,20 +13,40 @@ fn c(lat: f64, lon: f64) -> Coord {
 }
 
 fn run(net: &mut Network, pattern: &str, points: &[Coord]) {
-    let points = points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect();
-    net.alignments.insert("line".into(), Alignment { points, extra: Default::default() });
+    let points = points
+        .iter()
+        .map(|p| AlignmentPoint {
+            lat: p.lat,
+            lon: p.lon,
+            distance: None,
+        })
+        .collect();
+    net.alignments.insert(
+        "line".into(),
+        Alignment {
+            points,
+            extra: Default::default(),
+        },
+    );
     net.patterns.get_mut(pattern).unwrap().alignment = Some("line".into());
 }
 
 #[test]
 fn a_pattern_draws_its_alignment_else_its_stops() {
     let mut net = network();
-    assert_eq!(pattern_alignment(&net, "10-inbound"), vec![c(45.5, -73.5), c(45.51, -73.51), c(45.52, -73.52)]);
+    assert_eq!(
+        pattern_alignment(&net, "10-inbound"),
+        vec![c(45.5, -73.5), c(45.51, -73.51), c(45.52, -73.52)]
+    );
     let path = vec![c(45.5, -73.5), c(45.505, -73.5), c(45.52, -73.52)];
     run(&mut net, "10-inbound", &path);
     assert_eq!(pattern_alignment(&net, "10-inbound"), path);
     run(&mut net, "10-inbound", &[c(1.0, 1.0)]);
-    assert_eq!(pattern_alignment(&net, "10-inbound").len(), 3, "a one-point alignment is no line");
+    assert_eq!(
+        pattern_alignment(&net, "10-inbound").len(),
+        3,
+        "a one-point alignment is no line"
+    );
     assert!(pattern_alignment(&net, "nope").is_empty());
 }
 
@@ -43,7 +65,14 @@ fn an_entity_frames_what_it_runs() {
     }
     let stop = entity_focus(&net, EntityKind::Stop, "B").unwrap();
     assert_eq!((stop.lines.len(), stop.points), (0, vec![c(45.51, -73.51)]));
-    for kind in [EntityKind::Stop, EntityKind::Route, EntityKind::Pattern, EntityKind::PatternTrips, EntityKind::ServiceType, EntityKind::Block] {
+    for kind in [
+        EntityKind::Stop,
+        EntityKind::Route,
+        EntityKind::Pattern,
+        EntityKind::PatternTrips,
+        EntityKind::ServiceType,
+        EntityKind::Block,
+    ] {
         assert!(entity_focus(&net, kind, "nope").is_none(), "{kind:?}");
     }
 }

@@ -8,8 +8,8 @@ pub mod rules_gen;
 
 use transit_date::Date;
 use transit_network::{
-    Anchor, Block, CalendarRule, DateRange, Departs, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, Route,
-    ServiceType, Stop, StopOffset, Trip, TripRef, WeekdaySet,
+    Anchor, Block, CalendarRule, DateRange, Departs, Layover, Mode, Network, Pattern, PatternStop,
+    PatternTrips, Route, ServiceType, Stop, StopOffset, Trip, TripRef, WeekdaySet,
 };
 
 pub const H: u32 = 3600;
@@ -24,8 +24,18 @@ fn pattern(route: &str, from: &str, to: &str) -> Pattern {
         route: route.into(),
         name: format!("{route} {from}→{to}"),
         stops: vec![
-            PatternStop { stop: from.into(), timepoint: true, distance_m: 0.0, ..Default::default() },
-            PatternStop { stop: to.into(), timepoint: true, distance_m: 2000.0, ..Default::default() },
+            PatternStop {
+                stop: from.into(),
+                timepoint: true,
+                distance_m: 0.0,
+                ..Default::default()
+            },
+            PatternStop {
+                stop: to.into(),
+                timepoint: true,
+                distance_m: 2000.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -56,7 +66,16 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
         .collect(),
         routes: ["5", "6"]
             .into_iter()
-            .map(|r| (r.to_string(), Route { name: r.into(), mode: Mode::Bus, ..Default::default() }))
+            .map(|r| {
+                (
+                    r.to_string(),
+                    Route {
+                        name: r.into(),
+                        mode: Mode::Bus,
+                        ..Default::default()
+                    },
+                )
+            })
             .collect(),
         patterns: [
             ("5o".to_string(), pattern("5", "A", "C")),
@@ -89,10 +108,18 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
     };
     for &(route, outbound, start) in trips {
         let pattern = format!("{route}{}", if outbound { "o" } else { "i" });
-        let at = |t: u32| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) };
+        let at = |t: u32| StopOffset {
+            arrival_secs: Some(t),
+            departure_secs: Some(t),
+        };
         net.pattern_trips
             .entry(format!("{pattern}-wk"))
-            .or_insert_with(|| PatternTrips { pattern: pattern.clone(), service_type: "wk".into(), trips: vec![], extra: Default::default() })
+            .or_insert_with(|| PatternTrips {
+                pattern: pattern.clone(),
+                service_type: "wk".into(),
+                trips: vec![],
+                extra: Default::default(),
+            })
             .trips
             .push(Trip {
                 id: trip_id(route, outbound, start),
@@ -108,12 +135,27 @@ pub fn world(trips: &[(&str, bool, u32)], blocks: &[(&str, Vec<String>)]) -> Net
     for (id, members) in blocks {
         net.blocks.insert(
             id.to_string(),
-            Block { trips: members.iter().map(|t| TripRef { trip: t.clone(), extra: Default::default() }).collect(), layovers: vec![], extra: Default::default() },
+            Block {
+                trips: members
+                    .iter()
+                    .map(|t| TripRef {
+                        trip: t.clone(),
+                        extra: Default::default(),
+                    })
+                    .collect(),
+                layovers: vec![],
+                extra: Default::default(),
+            },
         );
     }
     net
 }
 
 pub fn layover(net: &mut Network, block: &str, after: usize, secs: u32) {
-    net.blocks.get_mut(block).unwrap().layovers.push(Layover { after_trip: after, secs, at: None, extra: Default::default() });
+    net.blocks.get_mut(block).unwrap().layovers.push(Layover {
+        after_trip: after,
+        secs,
+        at: None,
+        extra: Default::default(),
+    });
 }

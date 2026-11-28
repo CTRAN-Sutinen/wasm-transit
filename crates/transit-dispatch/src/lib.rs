@@ -24,8 +24,11 @@
 
 pub mod divert;
 pub mod geometry;
+pub use divert::{
+    cancel_of, cancel_rows, diversion_of, diversion_rows, draft_view, CancelRow, DiversionDraft,
+    DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView,
+};
 pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
-pub use divert::{cancel_of, cancel_rows, diversion_of, diversion_rows, draft_view, CancelRow, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,8 +36,8 @@ use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-use transit_network::{materialize, MaterializedTrip, Network, StopTime};
 use transit_live::{classify, LiveAlert, LiveDay, LiveStatus, Visit};
+use transit_network::{materialize, MaterializedTrip, Network, StopTime};
 use transit_sync::{Diversion, EditRecord, EditReport, TripCancel};
 
 /// The trip instance is the (trip, start) identity. On a pooled station
@@ -154,11 +157,16 @@ fn patch_trip(trip: &mut MaterializedTrip, d: &Diversion) {
 }
 
 pub fn cancel_day(day: &[MaterializedTrip], cancels: &[TripCancel]) -> Vec<MaterializedTrip> {
-    day.iter().filter(|t| !cancels.iter().any(|c| c.cancels(&t.trip, t.start_secs))).cloned().collect()
+    day.iter()
+        .filter(|t| !cancels.iter().any(|c| c.cancels(&t.trip, t.start_secs)))
+        .cloned()
+        .collect()
 }
 
 fn anchor_positions(stop_times: &[StopTime], d: &Diversion) -> Option<(usize, usize)> {
-    let p0 = stop_times.iter().position(|st| st.stop == d.first_kept_stop)?;
+    let p0 = stop_times
+        .iter()
+        .position(|st| st.stop == d.first_kept_stop)?;
     let p1 = stop_times[p0 + 1..]
         .iter()
         .position(|st| st.stop == d.last_kept_stop)
@@ -173,7 +181,9 @@ pub fn report_against_network(network: &Network, records: &[EditRecord]) -> Vec<
         .iter()
         .map(|record| {
             let verdict = match (&record.diversion, &record.cancel) {
-                (Some(d), None) => validate_against_network(network, d).map(|()| affected_trips(network, d)),
+                (Some(d), None) => {
+                    validate_against_network(network, d).map(|()| affected_trips(network, d))
+                }
                 (None, Some(c)) => cancelled_instances(network, c),
                 _ => Err("a record carries exactly one edit".into()),
             };
@@ -184,19 +194,29 @@ pub fn report_against_network(network: &Network, records: &[EditRecord]) -> Vec<
                     error: Some(error),
                     affected_trips: 0,
                 },
-                Ok(affected_trips) => EditReport { id: record.id.clone(), valid: true, error: None, affected_trips },
+                Ok(affected_trips) => EditReport {
+                    id: record.id.clone(),
+                    valid: true,
+                    error: None,
+                    affected_trips,
+                },
             }
         })
         .collect()
 }
 
 fn cancelled_instances(network: &Network, c: &TripCancel) -> Result<usize, String> {
-    let (_, _, trip) = network.trip(&c.trip_id).ok_or_else(|| format!("unknown trip {}", c.trip_id))?;
+    let (_, _, trip) = network
+        .trip(&c.trip_id)
+        .ok_or_else(|| format!("unknown trip {}", c.trip_id))?;
     let starts = trip.departs.instances();
     match c.start_secs {
         None => Ok(starts.len()),
         Some(s) if starts.contains(&s) => Ok(1),
-        Some(s) => Err(format!("trip {} has no instance starting at {s}", c.trip_id)),
+        Some(s) => Err(format!(
+            "trip {} has no instance starting at {s}",
+            c.trip_id
+        )),
     }
 }
 
@@ -227,7 +247,10 @@ fn validate_against_network(network: &Network, d: &Diversion) -> Result<(), Stri
         if detour.len() < 2 {
             return Err("a detour needs at least two points".into());
         }
-        if detour.iter().any(|p| !p.lat.is_finite() || !p.lon.is_finite()) {
+        if detour
+            .iter()
+            .any(|p| !p.lat.is_finite() || !p.lon.is_finite())
+        {
             return Err("detour contains non-finite coordinates".into());
         }
     }
@@ -244,7 +267,13 @@ fn affected_trips(network: &Network, d: &Diversion) -> usize {
                 .get(&pattern_trips.pattern)
                 .is_some_and(|pattern| pattern_matches(pattern, d))
         })
-        .map(|pattern_trips| pattern_trips.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>())
+        .map(|pattern_trips| {
+            pattern_trips
+                .trips
+                .iter()
+                .map(|t| t.departs.instances().len())
+                .sum::<usize>()
+        })
         .sum()
 }
 
@@ -367,15 +396,29 @@ pub struct Day {
     pub edits: Option<DayEdits>,
 }
 
-pub fn day(network: &Network, date: Date, records: &[EditRecord]) -> Result<Day, transit_network::NetworkError> {
+pub fn day(
+    network: &Network,
+    date: Date,
+    records: &[EditRecord],
+) -> Result<Day, transit_network::NetworkError> {
     let base = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
     let cancels = transit_sync::cancels_in_force_on(records, date);
     if diversions.is_empty() && cancels.is_empty() {
-        return Ok(Day { trips: base, edits: None });
+        return Ok(Day {
+            trips: base,
+            edits: None,
+        });
     }
     let trips = cancel_day(&patch_day(&base, &diversions), &cancels);
-    Ok(Day { trips, edits: Some(DayEdits { base, diversions, cancels }) })
+    Ok(Day {
+        trips,
+        edits: Some(DayEdits {
+            base,
+            diversions,
+            cancels,
+        }),
+    })
 }
 
 pub fn day_key(network_hash: &str, edits_hash: Option<&str>, date: &str) -> String {
@@ -413,7 +456,9 @@ pub fn stop_board(
     let rows = live_rows(network, day, &own, from_secs, limit, live);
     let skipped = skipped_visits(network, day, &own, from_secs, limit, edits);
     if rows.is_empty() && skipped.is_empty() {
-        let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
+        let group: Vec<String> = transit_network::walking_group(network, stop_id)
+            .into_keys()
+            .collect();
         if group.len() >= 2 {
             let rows = live_rows(network, day, &group, from_secs, limit, live);
             let skipped = skipped_visits(network, day, &group, from_secs, limit, edits);
@@ -466,21 +511,36 @@ pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
     mut day_on: impl FnMut(Date) -> Result<D, String>,
 ) -> Result<(), String> {
     let stops: Vec<String> = if board.pooled {
-        transit_network::walking_group(network, stop_id).into_keys().collect()
+        transit_network::walking_group(network, stop_id)
+            .into_keys()
+            .collect()
     } else {
         vec![stop_id.to_string()]
     };
-    let mut pending: Vec<usize> = (0..board.groups.len()).filter(|&i| board.groups[i].departures.is_empty()).collect();
+    let mut pending: Vec<usize> = (0..board.groups.len())
+        .filter(|&i| board.groups[i].departures.is_empty())
+        .collect();
     for k in 1..=NEXT_SERVICE_DAYS {
         if pending.is_empty() {
             break;
         }
-        let Some(on) = date.checked_add_days(transit_date::Days::new(k as i64)) else { break };
+        let Some(on) = date.checked_add_days(transit_date::Days::new(k as i64)) else {
+            break;
+        };
         let day = day_on(on)?;
-        let rows = board_over(network, &day.trips, &stops, from_secs.saturating_sub(k * 86_400), usize::MAX);
+        let rows = board_over(
+            network,
+            &day.trips,
+            &stops,
+            from_secs.saturating_sub(k * 86_400),
+            usize::MAX,
+        );
         pending.retain(|&i| {
             let group = &mut board.groups[i];
-            let Some(row) = rows.iter().find(|r| r.route == group.route && r.destination == group.destination) else {
+            let Some(row) = rows
+                .iter()
+                .find(|r| r.route == group.route && r.destination == group.destination)
+            else {
                 return true;
             };
             group.next = Some(NextService {
@@ -529,7 +589,9 @@ pub fn grouped_board(
     let mut keys = served(&own);
     let mut pooled = false;
     if keys.is_empty() {
-        let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
+        let group: Vec<String> = transit_network::walking_group(network, stop_id)
+            .into_keys()
+            .collect();
         if group.len() >= 2 {
             keys = served(&group);
             stops = group;
@@ -556,15 +618,32 @@ pub fn grouped_board(
                 route_long_name: r.and_then(|r| r.long_name.clone()),
                 route_color: r.and_then(|r| r.color.clone()),
                 route_text_color: r.and_then(|r| r.text_color.clone()),
-                departures: board.rows.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
-                skipped: board.skipped.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
+                departures: board
+                    .rows
+                    .iter()
+                    .filter(|x| ours(&x.departure))
+                    .take(per_group)
+                    .cloned()
+                    .collect(),
+                skipped: board
+                    .skipped
+                    .iter()
+                    .filter(|x| ours(&x.departure))
+                    .take(per_group)
+                    .cloned()
+                    .collect(),
                 next: None,
                 route,
                 destination,
             }
         })
         .collect();
-    GroupedBoard { groups, alerts: board.alerts, pooled: board.pooled, live: board.live }
+    GroupedBoard {
+        groups,
+        alerts: board.alerts,
+        pooled: board.pooled,
+        live: board.live,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -613,7 +692,13 @@ fn dated(d: &mut BoardDeparture, date: &str) {
     d.date = Some(date.to_string());
 }
 
-fn merge_rows(today: Vec<BoardRow>, today_from: i64, previous: Vec<BoardRow>, previous_from: i64, limit: usize) -> Vec<BoardRow> {
+fn merge_rows(
+    today: Vec<BoardRow>,
+    today_from: i64,
+    previous: Vec<BoardRow>,
+    previous_from: i64,
+    limit: usize,
+) -> Vec<BoardRow> {
     let mut all: Vec<(i64, BoardRow)> = today
         .into_iter()
         .map(|r| (today_from, r))
@@ -642,9 +727,16 @@ fn merge_skipped(
     let mut all: Vec<(i64, SkippedVisit)> = today
         .into_iter()
         .map(|s| (leaves_in(s.departure.departure_secs, today_from), s))
-        .chain(previous.into_iter().map(|s| (leaves_in(s.departure.departure_secs, previous_from), s)))
+        .chain(
+            previous
+                .into_iter()
+                .map(|s| (leaves_in(s.departure.departure_secs, previous_from), s)),
+        )
         .collect();
-    all.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.departure.trip.cmp(&y.departure.trip)));
+    all.sort_by(|(a, x), (b, y)| {
+        a.cmp(b)
+            .then_with(|| x.departure.trip.cmp(&y.departure.trip))
+    });
     all.into_iter().take(limit).map(|(_, s)| s).collect()
 }
 
@@ -662,10 +754,24 @@ fn merge_alerts(today: Vec<LiveAlert>, previous: Vec<LiveAlert>) -> Vec<LiveAler
 /// leave. GTFS times past 24:00 belong to the date the trip started. Each date
 /// reads its own edits and live instances. An instance with no date is
 /// today's ([`LiveDay::on`]).
-pub fn stop_board_at(network: &Network, at: &BoardAt, stop_id: &str, limit: usize, live: Option<&LiveDay>) -> StopBoard {
+pub fn stop_board_at(
+    network: &Network,
+    at: &BoardAt,
+    stop_id: &str,
+    limit: usize,
+    live: Option<&LiveDay>,
+) -> StopBoard {
     let current = at.today.date;
     let today_live = live.map(|l| l.on(current, current));
-    let mut board = stop_board(network, at.today.trips, stop_id, at.from_secs, limit, today_live.as_ref(), at.today.edits);
+    let mut board = stop_board(
+        network,
+        at.today.trips,
+        stop_id,
+        at.from_secs,
+        limit,
+        today_live.as_ref(),
+        at.today.edits,
+    );
     for r in &mut board.rows {
         dated(&mut r.departure, current);
     }
@@ -678,7 +784,15 @@ pub fn stop_board_at(network: &Network, at: &BoardAt, stop_id: &str, limit: usiz
         return board;
     };
     let prev_live = live.map(|l| l.on(prev.day.date, current));
-    let mut earlier = stop_board(network, prev.day.trips, stop_id, prev.from_secs, limit, prev_live.as_ref(), prev.day.edits);
+    let mut earlier = stop_board(
+        network,
+        prev.day.trips,
+        stop_id,
+        prev.from_secs,
+        limit,
+        prev_live.as_ref(),
+        prev.day.edits,
+    );
     for r in &mut earlier.rows {
         dated(&mut r.departure, prev.day.date);
     }
@@ -698,10 +812,24 @@ pub fn stop_board_at(network: &Network, at: &BoardAt, stop_id: &str, limit: usiz
 /// [`grouped_board`] at a moment, answered as [`stop_board_at`] answers. A
 /// group that only the previous date runs stays while it has departures to
 /// leave.
-pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_group: usize, live: Option<&LiveDay>) -> GroupedBoard {
+pub fn grouped_board_at(
+    network: &Network,
+    at: &BoardAt,
+    stop_id: &str,
+    per_group: usize,
+    live: Option<&LiveDay>,
+) -> GroupedBoard {
     let current = at.today.date;
     let today_live = live.map(|l| l.on(current, current));
-    let mut board = grouped_board(network, at.today.trips, stop_id, at.from_secs, per_group, today_live.as_ref(), at.today.edits);
+    let mut board = grouped_board(
+        network,
+        at.today.trips,
+        stop_id,
+        at.from_secs,
+        per_group,
+        today_live.as_ref(),
+        at.today.edits,
+    );
     let today_from = at.today_secs();
     for g in &mut board.groups {
         for r in &mut g.departures {
@@ -710,11 +838,27 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
         for s in &mut g.skipped {
             dated(&mut s.departure, current);
         }
-        g.departures = merge_rows(std::mem::take(&mut g.departures), today_from, Vec::new(), 0, per_group);
+        g.departures = merge_rows(
+            std::mem::take(&mut g.departures),
+            today_from,
+            Vec::new(),
+            0,
+            per_group,
+        );
     }
-    let Some(prev) = at.previous else { return board };
+    let Some(prev) = at.previous else {
+        return board;
+    };
     let prev_live = live.map(|l| l.on(prev.day.date, current));
-    let earlier = grouped_board(network, prev.day.trips, stop_id, prev.from_secs, per_group, prev_live.as_ref(), prev.day.edits);
+    let earlier = grouped_board(
+        network,
+        prev.day.trips,
+        stop_id,
+        prev.from_secs,
+        per_group,
+        prev_live.as_ref(),
+        prev.day.edits,
+    );
     let prev_from = prev.from_secs as i64;
     for mut e in earlier.groups {
         if e.departures.is_empty() && e.skipped.is_empty() {
@@ -726,13 +870,30 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
         for s in &mut e.skipped {
             dated(&mut s.departure, prev.day.date);
         }
-        match board.groups.iter_mut().find(|g| g.route == e.route && g.destination == e.destination) {
+        match board
+            .groups
+            .iter_mut()
+            .find(|g| g.route == e.route && g.destination == e.destination)
+        {
             Some(g) => {
-                g.departures = merge_rows(std::mem::take(&mut g.departures), today_from, e.departures, prev_from, per_group);
-                g.skipped = merge_skipped(std::mem::take(&mut g.skipped), today_from, e.skipped, prev_from, per_group);
+                g.departures = merge_rows(
+                    std::mem::take(&mut g.departures),
+                    today_from,
+                    e.departures,
+                    prev_from,
+                    per_group,
+                );
+                g.skipped = merge_skipped(
+                    std::mem::take(&mut g.skipped),
+                    today_from,
+                    e.skipped,
+                    prev_from,
+                    per_group,
+                );
             }
             None => {
-                e.departures = merge_rows(Vec::new(), today_from, e.departures, prev_from, per_group);
+                e.departures =
+                    merge_rows(Vec::new(), today_from, e.departures, prev_from, per_group);
                 board.groups.push(e);
             }
         }
@@ -740,7 +901,12 @@ pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_grou
     let order = |route: &str| network.routes.get(route).and_then(|r| r.sort_order);
     board.groups.sort_by(|a, b| {
         let (sa, sb) = (order(&a.route), order(&b.route));
-        (sa.is_none(), sa, &a.route, &a.destination).cmp(&(sb.is_none(), sb, &b.route, &b.destination))
+        (sa.is_none(), sa, &a.route, &a.destination).cmp(&(
+            sb.is_none(),
+            sb,
+            &b.route,
+            &b.destination,
+        ))
     });
     board.alerts = merge_alerts(board.alerts, earlier.alerts);
     board.live |= earlier.live;
@@ -771,15 +937,32 @@ pub struct ReachedStop {
     pub departures: u32,
 }
 
-pub fn alert_reach(network: &Network, day: &[MaterializedTrip], scopes: &[transit_live::AlertScope], date: &str) -> Reach {
+pub fn alert_reach(
+    network: &Network,
+    day: &[MaterializedTrip],
+    scopes: &[transit_live::AlertScope],
+    date: &str,
+) -> Reach {
     reach_over(network, departures_of(day), scopes, date)
 }
 
-pub fn alert_reach_day(network: &Network, day: &Day, scopes: &[transit_live::AlertScope], date: &str) -> Reach {
+pub fn alert_reach_day(
+    network: &Network,
+    day: &Day,
+    scopes: &[transit_live::AlertScope],
+    date: &str,
+) -> Reach {
     let mut all = departures_of(&day.trips);
     if let Some(edits) = &day.edits {
-        let kept: BTreeSet<(String, u32, String)> = all.iter().map(|d| (d.trip.to_string(), d.start_secs, d.stop.to_string())).collect();
-        all.extend(departures_of(&edits.base).into_iter().filter(|d| !kept.contains(&(d.trip.to_string(), d.start_secs, d.stop.to_string()))));
+        let kept: BTreeSet<(String, u32, String)> = all
+            .iter()
+            .map(|d| (d.trip.to_string(), d.start_secs, d.stop.to_string()))
+            .collect();
+        all.extend(
+            departures_of(&edits.base).into_iter().filter(|d| {
+                !kept.contains(&(d.trip.to_string(), d.start_secs, d.stop.to_string()))
+            }),
+        );
     }
     reach_over(network, all, scopes, date)
 }
@@ -796,13 +979,31 @@ fn departures_of(day: &[MaterializedTrip]) -> Vec<Departure<'_>> {
     day.iter()
         .flat_map(|t| {
             let departing = t.stop_times.len().saturating_sub(1);
-            t.stop_times[..departing].iter().map(move |st| Departure { route: &t.route, pattern: &t.pattern, trip: &t.trip, start_secs: t.start_secs, stop: &st.stop })
+            t.stop_times[..departing].iter().map(move |st| Departure {
+                route: &t.route,
+                pattern: &t.pattern,
+                trip: &t.trip,
+                start_secs: t.start_secs,
+                stop: &st.stop,
+            })
         })
         .collect()
 }
 
-fn reach_over(network: &Network, departures: Vec<Departure<'_>>, scopes: &[transit_live::AlertScope], date: &str) -> Reach {
-    let alert = LiveAlert { scopes: scopes.iter().filter(|s| s.on(date, date)).cloned().collect(), ..Default::default() };
+fn reach_over(
+    network: &Network,
+    departures: Vec<Departure<'_>>,
+    scopes: &[transit_live::AlertScope],
+    date: &str,
+) -> Reach {
+    let alert = LiveAlert {
+        scopes: scopes
+            .iter()
+            .filter(|s| s.on(date, date))
+            .cloned()
+            .collect(),
+        ..Default::default()
+    };
     if alert.scopes.is_empty() {
         return Reach::default();
     }
@@ -810,8 +1011,17 @@ fn reach_over(network: &Network, departures: Vec<Departure<'_>>, scopes: &[trans
     let mut routes: BTreeSet<String> = BTreeSet::new();
     let mut visits = Vec::new();
     for d in departures {
-        let direction = network.patterns.get(d.pattern).and_then(|p| p.direction.as_deref());
-        let visit = Visit { route: d.route, direction, stop: d.stop, trip: d.trip, start_secs: d.start_secs };
+        let direction = network
+            .patterns
+            .get(d.pattern)
+            .and_then(|p| p.direction.as_deref());
+        let visit = Visit {
+            route: d.route,
+            direction,
+            stop: d.stop,
+            trip: d.trip,
+            start_secs: d.start_secs,
+        };
         if alert.touches(&visit) || alert.touches_stop(d.stop) {
             *by_stop.entry(d.stop.to_string()).or_default() += 1;
             routes.insert(d.route.to_string());
@@ -831,7 +1041,12 @@ fn reach_over(network: &Network, departures: Vec<Departure<'_>>, scopes: &[trans
             }
         })
         .collect();
-    Reach { departures: visits.len() as u32, stops, routes: routes.into_iter().collect(), visits }
+    Reach {
+        departures: visits.len() as u32,
+        stops,
+        routes: routes.into_iter().collect(),
+        visits,
+    }
 }
 
 fn with_alerts(
@@ -844,9 +1059,21 @@ fn with_alerts(
 ) -> StopBoard {
     let all = live.map(|l| l.alerts.as_slice()).unwrap_or_default();
     let ids = |d: &BoardDeparture| -> Vec<String> {
-        let direction = network.patterns.get(&d.pattern).and_then(|p| p.direction.as_deref());
-        let visit = Visit { route: &d.route, direction, stop: &d.stop, trip: &d.trip, start_secs: d.start_secs };
-        all.iter().filter(|a| a.touches(&visit) || a.touches_stop(&d.stop)).map(|a| a.id.clone()).collect()
+        let direction = network
+            .patterns
+            .get(&d.pattern)
+            .and_then(|p| p.direction.as_deref());
+        let visit = Visit {
+            route: &d.route,
+            direction,
+            stop: &d.stop,
+            trip: &d.trip,
+            start_secs: d.start_secs,
+        };
+        all.iter()
+            .filter(|a| a.touches(&visit) || a.touches_stop(&d.stop))
+            .map(|a| a.id.clone())
+            .collect()
     };
     for r in &mut rows {
         r.alerts = ids(&r.departure);
@@ -863,7 +1090,13 @@ fn with_alerts(
         })
         .cloned()
         .collect();
-    StopBoard { rows, skipped, alerts, pooled, live: live.is_some() }
+    StopBoard {
+        rows,
+        skipped,
+        alerts,
+        pooled,
+        live: live.is_some(),
+    }
 }
 
 fn skipped_visits(
@@ -874,7 +1107,9 @@ fn skipped_visits(
     limit: usize,
     edits: Option<&DayEdits>,
 ) -> Vec<SkippedVisit> {
-    let Some(edits) = edits else { return Vec::new() };
+    let Some(edits) = edits else {
+        return Vec::new();
+    };
     let kept: BTreeSet<(String, u32, String)> = board_over(network, day, stops, 0, usize::MAX)
         .into_iter()
         .map(|d| (d.trip, d.start_secs, d.stop))
@@ -884,11 +1119,20 @@ fn skipped_visits(
         .filter(|d| !kept.contains(&(d.trip.clone(), d.start_secs, d.stop.clone())))
         .take(limit)
         .map(|d| {
-            let cancel = edits.cancels.iter().find(|c| c.cancels(&d.trip, d.start_secs)).map(|c| c.id.clone());
+            let cancel = edits
+                .cancels
+                .iter()
+                .find(|c| c.cancels(&d.trip, d.start_secs))
+                .map(|c| c.id.clone());
             SkippedVisit {
                 diversion: cancel
                     .is_none()
-                    .then(|| edits.diversions.iter().find(|v| v.route_id == d.route && v.skipped_stops.contains(&d.stop)))
+                    .then(|| {
+                        edits
+                            .diversions
+                            .iter()
+                            .find(|v| v.route_id == d.route && v.skipped_stops.contains(&d.stop))
+                    })
                     .flatten()
                     .map(|v| v.id.clone()),
                 cancel,
@@ -911,32 +1155,43 @@ fn live_rows(
     let lookback = live
         .into_iter()
         .flat_map(|l| l.trips.iter().flat_map(|t| t.stops.iter()))
-        .filter_map(|s| Some(s.predicted_departure?.saturating_sub(s.scheduled_departure?)))
+        .filter_map(|s| {
+            Some(
+                s.predicted_departure?
+                    .saturating_sub(s.scheduled_departure?),
+            )
+        })
         .max()
         .unwrap_or(0)
         .min(MAX_LOOKBACK_SECS);
-    let mut rows: Vec<BoardRow> = board_over(network, day, stops, from_secs.saturating_sub(lookback), usize::MAX)
-        .into_iter()
-        .map(|d| {
-            let expected = live
-                .and_then(|l| l.visit(&d.trip, d.start_secs, &d.stop, d.departure_secs))
-                .and_then(|v| v.predicted_departure);
-            let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
-            BoardRow {
-                status: classify(delay, &window),
-                wait: wait(expected.unwrap_or(d.departure_secs), from_secs),
-                expected_secs: expected,
-                delay_secs: delay,
-                departure: d,
-                alerts: Vec::new(),
-            }
-        })
-        .filter(|r| r.expected_secs.unwrap_or(r.departure.departure_secs) >= from_secs)
-        .filter(|r| {
-            let d = &r.departure;
-            live.is_none_or(|l| l.runs(&d.trip, d.start_secs, &d.stop, d.departure_secs))
-        })
-        .collect();
+    let mut rows: Vec<BoardRow> = board_over(
+        network,
+        day,
+        stops,
+        from_secs.saturating_sub(lookback),
+        usize::MAX,
+    )
+    .into_iter()
+    .map(|d| {
+        let expected = live
+            .and_then(|l| l.visit(&d.trip, d.start_secs, &d.stop, d.departure_secs))
+            .and_then(|v| v.predicted_departure);
+        let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
+        BoardRow {
+            status: classify(delay, &window),
+            wait: wait(expected.unwrap_or(d.departure_secs), from_secs),
+            expected_secs: expected,
+            delay_secs: delay,
+            departure: d,
+            alerts: Vec::new(),
+        }
+    })
+    .filter(|r| r.expected_secs.unwrap_or(r.departure.departure_secs) >= from_secs)
+    .filter(|r| {
+        let d = &r.departure;
+        live.is_none_or(|l| l.runs(&d.trip, d.start_secs, &d.stop, d.departure_secs))
+    })
+    .collect();
     rows.sort_by(|a, b| {
         let at = |r: &BoardRow| r.expected_secs.unwrap_or(r.departure.departure_secs);
         at(a)
@@ -968,11 +1223,17 @@ fn board_over(
                 start_secs: trip.start_secs,
                 route: trip.route.clone(),
                 route_name: route_name(network, &trip.route),
-                route_long_name: network.routes.get(&trip.route).and_then(|r| r.long_name.clone()),
+                route_long_name: network
+                    .routes
+                    .get(&trip.route)
+                    .and_then(|r| r.long_name.clone()),
                 pattern: trip.pattern.clone(),
                 stop: st.stop.clone(),
                 stop_name: stop_name(network, Some(&st.stop)),
-                platform: network.stops.get(&st.stop).and_then(|s| s.info.platform.clone()),
+                platform: network
+                    .stops
+                    .get(&st.stop)
+                    .and_then(|s| s.info.platform.clone()),
                 departure_secs: st.departure_secs,
                 destination: transit_network::visit_destination(network, trip, visit),
             });
@@ -989,12 +1250,20 @@ fn board_over(
 }
 
 fn route_name(network: &Network, route: &str) -> String {
-    network.routes.get(route).map(|r| r.label().to_string()).unwrap_or_else(|| route.to_string())
+    network
+        .routes
+        .get(route)
+        .map(|r| r.label().to_string())
+        .unwrap_or_else(|| route.to_string())
 }
 
 fn stop_name(network: &Network, stop: Option<&str>) -> String {
     stop.map(|id| {
-        network.stops.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.to_string())
+        network
+            .stops
+            .get(id)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| id.to_string())
     })
     .unwrap_or_default()
 }
@@ -1013,7 +1282,8 @@ pub fn block_chain(
     let mut rows = Vec::with_capacity(block.trips.len());
     for (index, trip_ref) in block.trips.iter().enumerate() {
         let stored = network.trip(&trip_ref.trip);
-        let mut runs: Vec<&MaterializedTrip> = day.iter().filter(|t| t.trip == trip_ref.trip).collect();
+        let mut runs: Vec<&MaterializedTrip> =
+            day.iter().filter(|t| t.trip == trip_ref.trip).collect();
         runs.sort_by_key(|t| t.start_secs);
         let layover = block
             .layovers
@@ -1023,8 +1293,12 @@ pub fn block_chain(
         if runs.is_empty() {
             rows.push(BlockChainTrip {
                 trip: trip_ref.trip.clone(),
-                pattern_trips: stored.map(|(key, _, _)| key.to_string()).unwrap_or_default(),
-                start_secs: stored.and_then(|(_, _, t)| t.departs.first_start()).unwrap_or(0),
+                pattern_trips: stored
+                    .map(|(key, _, _)| key.to_string())
+                    .unwrap_or_default(),
+                start_secs: stored
+                    .and_then(|(_, _, t)| t.departs.first_start())
+                    .unwrap_or(0),
                 route: String::new(),
                 route_name: String::new(),
                 pattern: String::new(),
@@ -1041,9 +1315,13 @@ pub fn block_chain(
         }
         let last = runs.len() - 1;
         for (k, trip) in runs.into_iter().enumerate() {
-            let effective_end = trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs));
+            let effective_end = trip
+                .stop_times
+                .last()
+                .map(|st| st.arrival_secs.max(st.departure_secs));
             // The authored end, which the layover was authored against.
-            let authored_end = stored.and_then(|(_, _, t)| transit_network::trip_arrival_end_secs(t, trip.start_secs));
+            let authored_end = stored
+                .and_then(|(_, _, t)| transit_network::trip_arrival_end_secs(t, trip.start_secs));
             let live_delay = match (live, trip.stop_times.last(), authored_end) {
                 (Some(live), Some(st), Some(published)) => live
                     .visit(&trip.trip, trip.start_secs, &st.stop, published)
@@ -1066,8 +1344,16 @@ pub fn block_chain(
                 route_name: route_name(network, &trip.route),
                 pattern: trip.pattern.clone(),
                 runs: true,
-                first_stop: trip.stop_times.first().map(|st| st.stop.clone()).unwrap_or_default(),
-                last_stop: trip.stop_times.last().map(|st| st.stop.clone()).unwrap_or_default(),
+                first_stop: trip
+                    .stop_times
+                    .first()
+                    .map(|st| st.stop.clone())
+                    .unwrap_or_default(),
+                last_stop: trip
+                    .stop_times
+                    .last()
+                    .map(|st| st.stop.clone())
+                    .unwrap_or_default(),
                 end_secs: effective_end,
                 live_end_delay_secs: live_delay,
                 layover_after_secs: layover,
@@ -1086,7 +1372,10 @@ pub fn effective_day(
 ) -> Result<Vec<MaterializedTrip>, transit_network::NetworkError> {
     let day = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
-    Ok(cancel_day(&patch_day(&day, &diversions), &transit_sync::cancels_in_force_on(records, date)))
+    Ok(cancel_day(
+        &patch_day(&day, &diversions),
+        &transit_sync::cancels_in_force_on(records, date),
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1103,7 +1392,10 @@ pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> 
         let ids: BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
         let count = day.iter().filter(|d| ids.contains(d.trip.as_str())).count();
         if count > 0 {
-            out.push(DayBlock { block_id: block_id.clone(), trip_count: count as u32 });
+            out.push(DayBlock {
+                block_id: block_id.clone(),
+                trip_count: count as u32,
+            });
         }
     }
     out
@@ -1162,9 +1454,16 @@ pub fn fleet_summary(network: &Network, day: &[MaterializedTrip]) -> FleetSummar
         }
         runs.sort_unstable();
         blocks += 1;
-        revenue_secs += runs.iter().map(|(s, e)| e.saturating_sub(*s) as u64).sum::<u64>();
+        revenue_secs += runs
+            .iter()
+            .map(|(s, e)| e.saturating_sub(*s) as u64)
+            .sum::<u64>();
         let start = runs[0].0;
-        let end = runs.iter().map(|r| r.1).max().expect("running block has an end");
+        let end = runs
+            .iter()
+            .map(|r| r.1)
+            .max()
+            .expect("running block has an end");
         platform_secs += end.saturating_sub(start) as u64;
         events.push((start, 1));
         events.push((end, -1));
@@ -1227,7 +1526,11 @@ pub fn service_dates(
     to: Date,
 ) -> Result<Vec<Date>, transit_network::NetworkError> {
     // The agreement with `active_services` depends on this check.
-    if !network.pattern_trips.values().any(|s| s.service_type == service_type) {
+    if !network
+        .pattern_trips
+        .values()
+        .any(|s| s.service_type == service_type)
+    {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
@@ -1240,7 +1543,9 @@ pub fn service_dates(
                 .is_some_and(|t| t.rule.runs_on(date))
         } else {
             let day = effective_day(network, date, records)?;
-            active_services(network, &day).iter().any(|s| s == service_type)
+            active_services(network, &day)
+                .iter()
+                .any(|s| s == service_type)
         };
         if runs {
             out.push(date);

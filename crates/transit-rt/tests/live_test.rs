@@ -7,12 +7,22 @@ use transit_rt::{decode_overview, live_day};
 
 #[test]
 fn a_snapshot_resolves_into_trip_instances() {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let (net, boundary) = (&imported.network, &imported.boundary);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
 
-    let day = live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default());
+    let day = live_day(
+        net,
+        boundary,
+        Some(&rt),
+        None,
+        None,
+        OnTimeWindow::default(),
+    );
     assert_eq!(day.unmatched_trips, 0);
     assert_eq!(day.window, OnTimeWindow::default());
     let trip = day.trips.iter().find(|t| t.trip == "t10").unwrap();
@@ -23,27 +33,62 @@ fn a_snapshot_resolves_into_trip_instances() {
     assert_eq!(a.predicted_departure, Some(8 * 3600 + 120), "08:02");
 
     let bus = &day.vehicles[0];
-    assert_eq!((bus.trip.as_deref(), bus.start_secs), (Some("t10"), Some(8 * 3600)));
+    assert_eq!(
+        (bus.trip.as_deref(), bus.start_secs),
+        (Some("t10"), Some(8 * 3600))
+    );
     assert_eq!(bus.delay_secs, Some(180));
     assert_eq!(bus.status, LiveStatus::Late);
-    assert_eq!(bus.route_name.as_deref(), Some("10"), "named as the model names the route");
+    assert_eq!(
+        bus.route_name.as_deref(),
+        Some("10"),
+        "named as the model names the route"
+    );
 
-    let strict = OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 120 };
-    assert_eq!(live_day(net, boundary, Some(&rt), None, None, strict).vehicles[0].status, LiveStatus::VeryLate);
+    let strict = OnTimeWindow {
+        early_secs: 0,
+        late_secs: 60,
+        very_late_secs: 120,
+    };
+    assert_eq!(
+        live_day(net, boundary, Some(&rt), None, None, strict).vehicles[0].status,
+        LiveStatus::VeryLate
+    );
 
-    let positions_only = live_day(net, boundary, None, Some(&rt), None, OnTimeWindow::default());
+    let positions_only = live_day(
+        net,
+        boundary,
+        None,
+        Some(&rt),
+        None,
+        OnTimeWindow::default(),
+    );
     assert!(positions_only.trips.is_empty());
     assert_eq!(positions_only.vehicles[0].status, LiveStatus::NoPrediction);
 
     let empty = transit_network::Network::default();
-    assert_eq!(live_day(&empty, &Boundary::default(), Some(&rt), None, None, OnTimeWindow::default()).unmatched_trips, rt.trips.len() as u32);
+    assert_eq!(
+        live_day(
+            &empty,
+            &Boundary::default(),
+            Some(&rt),
+            None,
+            None,
+            OnTimeWindow::default()
+        )
+        .unmatched_trips,
+        rt.trips.len() as u32
+    );
 }
 
 /// An absent `start_date` is the current service day (`LiveDay::on`). An
 /// unreadable one leaves the update unmatched.
 #[test]
 fn the_start_date_is_the_instances_service_date() {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let (net, boundary) = (&imported.network, &imported.boundary);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
@@ -55,7 +100,14 @@ fn the_start_date_is_the_instances_service_date() {
         for v in &mut rt.vehicle_positions {
             v.start_date = date.map(Into::into);
         }
-        live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default())
+        live_day(
+            net,
+            boundary,
+            Some(&rt),
+            None,
+            None,
+            OnTimeWindow::default(),
+        )
     };
 
     let dated = with_date(Some("20261023"));

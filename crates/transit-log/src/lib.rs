@@ -10,8 +10,13 @@
 
 pub mod receive;
 pub mod references;
-pub use references::{added, added_in, blame, broken, named, naming, touched, touched_in, unjudged, values_at, Broken, Declared, EntryRef, KindReferences, KindVersion, Naming, RecordKind, Unjudged};
-pub use receive::{receive, Conflict, Failed, Moved, OpCall, Received, Refused, MadeDocument, Write};
+pub use receive::{
+    receive, Conflict, Failed, MadeDocument, Moved, OpCall, Received, Refused, Write,
+};
+pub use references::{
+    added, added_in, blame, broken, named, naming, touched, touched_in, unjudged, values_at,
+    Broken, Declared, EntryRef, KindReferences, KindVersion, Naming, RecordKind, Unjudged,
+};
 use std::collections::BTreeMap;
 
 #[cfg(feature = "bindings")]
@@ -23,13 +28,9 @@ pub const ENTRY_VERSION: u32 = 1;
 
 pub const CHECKPOINT_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    EntryKind = "log_entry"
-);
+transit_version::kind_tag!(EntryKind = "log_entry");
 
-transit_version::kind_tag!(
-    CheckpointKind = "log_checkpoint"
-);
+transit_version::kind_tag!(CheckpointKind = "log_checkpoint");
 
 pub type Hash<'a> = &'a dyn Fn(&Value) -> String;
 
@@ -208,7 +209,11 @@ pub fn changes(fold: &Checkpoint, next: &[KindRecords], hash: Hash) -> Vec<Chang
             }
             out.push(Change {
                 kind: k.kind.clone(),
-                version: if now.is_some() { k.version } else { was.map_or(k.version, |w| w.version) },
+                version: if now.is_some() {
+                    k.version
+                } else {
+                    was.map_or(k.version, |w| w.version)
+                },
                 id: id.clone(),
                 before: was.map(|w| hash(&w.value)),
                 after: now.cloned(),
@@ -248,7 +253,11 @@ pub fn overlap(changes: &[Change], unread: &[Entry]) -> Option<Overlap> {
             .filter(|e| e.changes.iter().any(|u| u.kind == c.kind && u.id == c.id))
             .map(|e| e.seq)
             .max()
-            .map(|seq| Overlap { kind: c.kind.clone(), id: c.id.clone(), seq })
+            .map(|seq| Overlap {
+                kind: c.kind.clone(),
+                id: c.id.clone(),
+                seq,
+            })
     })
 }
 
@@ -272,7 +281,13 @@ pub fn apply(fold: &mut Checkpoint, entry: &Entry, hash: Hash) -> Result<(), Str
     for c in &entry.changes {
         let records = fold.records.entry(c.kind.clone()).or_default();
         match &c.after {
-            Some(value) => records.insert(c.id.clone(), Held { version: c.version, value: value.clone() }),
+            Some(value) => records.insert(
+                c.id.clone(),
+                Held {
+                    version: c.version,
+                    value: value.clone(),
+                },
+            ),
             None => records.remove(&c.id),
         };
         if records.is_empty() {
@@ -305,16 +320,27 @@ pub fn read_entry(log: &str, stored: &Stored) -> Result<Entry, transit_version::
     if value.get("kind").and_then(Value::as_str) != Some(EntryKind::KIND) {
         return Err(format!("not a {} document", EntryKind::KIND).into());
     }
-    let found = value.get("schema_version").and_then(Value::as_u64).unwrap_or(0);
+    let found = value
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     if found != u64::from(ENTRY_VERSION) {
-        return Err(transit_version::refused(EntryKind::KIND, found as u32, ENTRY_VERSION));
+        return Err(transit_version::refused(
+            EntryKind::KIND,
+            found as u32,
+            ENTRY_VERSION,
+        ));
     }
     let entry: Entry = serde_json::from_value(value).map_err(|e| format!("not an entry: {e}"))?;
     if entry.log != log {
         return Err(format!("an entry of the {} log, not the {log} log", entry.log).into());
     }
     if entry.seq != stored.seq {
-        return Err(format!("the entry says seq {}, and its key says {}", entry.seq, stored.seq).into());
+        return Err(format!(
+            "the entry says seq {}, and its key says {}",
+            entry.seq, stored.seq
+        )
+        .into());
     }
     Ok(entry)
 }
@@ -330,12 +356,19 @@ pub fn fold(start: Checkpoint, entries: &[Stored], hash: Hash) -> Result<Folded,
     let mut quarantined = Vec::new();
     for stored in entries {
         if stored.seq <= fold.seq {
-            return Err(format!("entry {} comes after entry {}: the entries are not in order", stored.seq, fold.seq));
+            return Err(format!(
+                "entry {} comes after entry {}: the entries are not in order",
+                stored.seq, fold.seq
+            ));
         }
         let log = fold.log.clone();
-        match read_entry(&log, stored).and_then(|e| apply(&mut fold, &e, hash).map_err(Into::into)) {
+        match read_entry(&log, stored).and_then(|e| apply(&mut fold, &e, hash).map_err(Into::into))
+        {
             Ok(()) => {}
-            Err(reason) => quarantined.push(Quarantined { seq: stored.seq, reason: reason.message }),
+            Err(reason) => quarantined.push(Quarantined {
+                seq: stored.seq,
+                reason: reason.message,
+            }),
         }
         fold.seq = stored.seq;
     }
@@ -365,32 +398,58 @@ pub struct Written {
     pub after: Option<Value>,
 }
 
-pub fn revert_states(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<RevertState>, String> {
+pub fn revert_states(
+    before: &Checkpoint,
+    head: &Checkpoint,
+    entry: &Entry,
+    hash: Hash,
+) -> Result<Vec<RevertState>, String> {
     let mut out = Vec::new();
     for c in &entry.changes {
         let now = head.get(&c.kind, &c.id);
         if now.map(|h| hash(&h.value)) != c.after.as_ref().map(|v| hash(v)) {
-            return Err(format!("{} {} changed after entry {}: a person decides what it becomes", c.kind, c.id, entry.seq));
+            return Err(format!(
+                "{} {} changed after entry {}: a person decides what it becomes",
+                c.kind, c.id, entry.seq
+            ));
         }
         let prior = before.get(&c.kind, &c.id);
         if prior.map(|h| hash(&h.value)) != c.before {
-            return Err(format!("{} {}: the fold before entry {} does not match the entry", c.kind, c.id, entry.seq));
+            return Err(format!(
+                "{} {}: the fold before entry {} does not match the entry",
+                c.kind, c.id, entry.seq
+            ));
         }
-        out.push(RevertState { kind: c.kind.clone(), id: c.id.clone(), now: now.cloned(), prior: prior.cloned() });
+        out.push(RevertState {
+            kind: c.kind.clone(),
+            id: c.id.clone(),
+            now: now.cloned(),
+            prior: prior.cloned(),
+        });
     }
     Ok(out)
 }
 
-pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> Result<Vec<Change>, String> {
+pub fn revert_with(
+    states: &[RevertState],
+    written: &[Written],
+    hash: Hash,
+) -> Result<Vec<Change>, String> {
     for w in written {
         if !states.iter().any(|s| s.kind == w.kind && s.id == w.id) {
-            return Err(format!("{} {} is not a record the revert writes back", w.kind, w.id));
+            return Err(format!(
+                "{} {} is not a record the revert writes back",
+                w.kind, w.id
+            ));
         }
     }
     let mut out = Vec::new();
     for s in states {
         let to = match written.iter().find(|w| w.kind == s.kind && w.id == s.id) {
-            Some(w) => w.after.clone().map(|value| Held { version: w.version, value }),
+            Some(w) => w.after.clone().map(|value| Held {
+                version: w.version,
+                value,
+            }),
             None => s.prior.clone(),
         };
         let same = match (&to, &s.now) {
@@ -414,7 +473,12 @@ pub fn revert_with(states: &[RevertState], written: &[Written], hash: Hash) -> R
 }
 
 /// A record that the entry created leaves the fold.
-pub fn revert(before: &Checkpoint, head: &Checkpoint, entry: &Entry, hash: Hash) -> Result<Vec<Change>, String> {
+pub fn revert(
+    before: &Checkpoint,
+    head: &Checkpoint,
+    entry: &Entry,
+    hash: Hash,
+) -> Result<Vec<Change>, String> {
     revert_with(&revert_states(before, head, entry, hash)?, &[], hash)
 }
 
@@ -433,12 +497,22 @@ pub fn split(document: &Value, field: &str) -> Result<BTreeMap<String, Value>, S
     }
 }
 
-pub fn join(template: Value, field: &str, records: &BTreeMap<String, Value>, as_array: bool) -> Value {
+pub fn join(
+    template: Value,
+    field: &str,
+    records: &BTreeMap<String, Value>,
+    as_array: bool,
+) -> Value {
     let mut doc = template;
     let collection = if as_array {
         Value::Array(records.values().cloned().collect())
     } else {
-        Value::Object(records.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        Value::Object(
+            records
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
     };
     if let Value::Object(map) = &mut doc {
         map.insert(field.into(), collection);
@@ -450,7 +524,13 @@ pub fn join(template: Value, field: &str, records: &BTreeMap<String, Value>, as_
 /// fields this build does not know, is recorded under this id.
 pub const DOCUMENT_ID: &str = "document";
 
-pub fn document_records(document: &Value, field: &str, record_kind: &str, document_kind: &str, version: u32) -> Result<Vec<KindRecords>, String> {
+pub fn document_records(
+    document: &Value,
+    field: &str,
+    record_kind: &str,
+    document_kind: &str,
+    version: u32,
+) -> Result<Vec<KindRecords>, String> {
     let records = split(document, field)?;
     let mut rest = document.clone();
     if let Value::Object(map) = &mut rest {
@@ -461,29 +541,53 @@ pub fn document_records(document: &Value, field: &str, record_kind: &str, docume
         map.insert(field.into(), empty);
     }
     Ok(vec![
-        KindRecords { kind: record_kind.into(), version, records },
-        KindRecords { kind: document_kind.into(), version, records: [(DOCUMENT_ID.to_string(), rest)].into() },
+        KindRecords {
+            kind: record_kind.into(),
+            version,
+            records,
+        },
+        KindRecords {
+            kind: document_kind.into(),
+            version,
+            records: [(DOCUMENT_ID.to_string(), rest)].into(),
+        },
     ])
 }
 
-pub fn assemble<T>(template: Value, document: Option<&Held>, field: &str, records: &BTreeMap<String, Held>, as_array: bool) -> Result<T, String>
+pub fn assemble<T>(
+    template: Value,
+    document: Option<&Held>,
+    field: &str,
+    records: &BTreeMap<String, Held>,
+    as_array: bool,
+) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
     let template = match document {
         Some(held) if held.version != T::READS => {
-            return Err(format!("the document's own record: {}", transit_version::refused(T::KIND, held.version, T::READS)))
+            return Err(format!(
+                "the document's own record: {}",
+                transit_version::refused(T::KIND, held.version, T::READS)
+            ))
         }
         Some(held) => held.value.clone(),
         None => template,
     };
     for (id, held) in records {
         if held.version != T::READS {
-            return Err(format!("record {id}: {}", transit_version::refused(T::KIND, held.version, T::READS)));
+            return Err(format!(
+                "record {id}: {}",
+                transit_version::refused(T::KIND, held.version, T::READS)
+            ));
         }
     }
-    let values: BTreeMap<String, Value> = records.iter().map(|(k, h)| (k.clone(), h.value.clone())).collect();
-    serde_json::from_value(join(template, field, &values, as_array)).map_err(|e| format!("the records do not make a {} document: {e}", T::KIND))
+    let values: BTreeMap<String, Value> = records
+        .iter()
+        .map(|(k, h)| (k.clone(), h.value.clone()))
+        .collect();
+    serde_json::from_value(join(template, field, &values, as_array))
+        .map_err(|e| format!("the records do not make a {} document: {e}", T::KIND))
 }
 
 #[cfg(test)]
@@ -522,20 +626,41 @@ mod tests {
             writer: "w".into(),
             at_ms: seq,
             module: "cap-log@test".into(),
-            intent: Intent { op: "test".into(), key: key.map(String::from), ..Default::default() },
+            intent: Intent {
+                op: "test".into(),
+                key: key.map(String::from),
+                ..Default::default()
+            },
         }
     }
 
     fn stops(records: &[(&str, Value)]) -> KindRecords {
-        KindRecords { kind: "stop".into(), version: 1, records: records.iter().map(|(k, v)| (k.to_string(), v.clone())).collect() }
+        KindRecords {
+            kind: "stop".into(),
+            version: 1,
+            records: records
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
     }
 
     fn requests(records: &[(&str, Value)]) -> KindRecords {
-        KindRecords { kind: "stop_request".into(), version: 1, records: records.iter().map(|(k, v)| (k.to_string(), v.clone())).collect() }
+        KindRecords {
+            kind: "stop_request".into(),
+            version: 1,
+            records: records
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
     }
 
     fn stored(e: &Entry) -> Stored {
-        Stored { seq: e.seq, text: serde_json::to_string(e).unwrap() }
+        Stored {
+            seq: e.seq,
+            text: serde_json::to_string(e).unwrap(),
+        }
     }
 
     fn write(fold: &mut Checkpoint, next: &[KindRecords], key: Option<&str>) -> Option<Entry> {
@@ -549,7 +674,14 @@ mod tests {
     }
 
     fn records_of(fold: &Checkpoint, kind: &str) -> BTreeMap<String, Value> {
-        fold.records.get(kind).map(|m| m.iter().map(|(k, h)| (k.clone(), h.value.clone())).collect()).unwrap_or_default()
+        fold.records
+            .get(kind)
+            .map(|m| {
+                m.iter()
+                    .map(|(k, h)| (k.clone(), h.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn doc() -> impl Strategy<Value = BTreeMap<String, Value>> {
@@ -626,29 +758,63 @@ mod tests {
         let mut fold = Checkpoint::empty("stops");
         let next = [stops(&[("A", json!({"e": 1}))])];
         let first = write(&mut fold, &next, Some("device-1/42")).expect("an entry");
-        assert_eq!(compose(&fold, header(2, None), &next, &hash), Composed::Unchanged);
+        assert_eq!(
+            compose(&fold, header(2, None), &next, &hash),
+            Composed::Unchanged
+        );
         let other = [stops(&[("A", json!({"e": 2}))])];
-        assert_eq!(compose(&fold, header(2, Some("device-1/42")), &other, &hash), Composed::Landed(first.seq), "the resend lands once");
-        assert!(matches!(compose(&fold, header(2, Some("device-1/43")), &other, &hash), Composed::Entry(_)));
+        assert_eq!(
+            compose(&fold, header(2, Some("device-1/42")), &other, &hash),
+            Composed::Landed(first.seq),
+            "the resend lands once"
+        );
+        assert!(matches!(
+            compose(&fold, header(2, Some("device-1/43")), &other, &hash),
+            Composed::Entry(_)
+        ));
     }
 
     #[test]
     fn another_record_changed_meanwhile_is_no_overlap() {
         let mut fold = Checkpoint::empty("stops");
-        write(&mut fold, &[stops(&[("A", json!(1)), ("B", json!(1))])], None);
+        write(
+            &mut fold,
+            &[stops(&[("A", json!(1)), ("B", json!(1))])],
+            None,
+        );
         let read = fold.clone();
-        let theirs = write(&mut fold, &[stops(&[("A", json!(1)), ("B", json!(2))])], None).unwrap();
+        let theirs = write(
+            &mut fold,
+            &[stops(&[("A", json!(1)), ("B", json!(2))])],
+            None,
+        )
+        .unwrap();
         let mine = changes(&read, &[stops(&[("A", json!(5)), ("B", json!(1))])], &hash);
-        assert_eq!(overlap(&mine, std::slice::from_ref(&theirs)), None, "B changed, the write changes A");
+        assert_eq!(
+            overlap(&mine, std::slice::from_ref(&theirs)),
+            None,
+            "B changed, the write changes A"
+        );
         let same = changes(&read, &[stops(&[("A", json!(1)), ("B", json!(7))])], &hash);
-        assert_eq!(overlap(&same, std::slice::from_ref(&theirs)), Some(Overlap { kind: "stop".into(), id: "B".into(), seq: 2 }));
+        assert_eq!(
+            overlap(&same, std::slice::from_ref(&theirs)),
+            Some(Overlap {
+                kind: "stop".into(),
+                id: "B".into(),
+                seq: 2
+            })
+        );
     }
 
     #[test]
     fn a_stale_before_applies_nothing() {
         let mut fold = Checkpoint::empty("stops");
         write(&mut fold, &[stops(&[("A", json!(1))])], None);
-        let Composed::Entry(e) = compose(&fold, header(2, None), &[stops(&[("A", json!(2))])], &hash) else { panic!() };
+        let Composed::Entry(e) =
+            compose(&fold, header(2, None), &[stops(&[("A", json!(2))])], &hash)
+        else {
+            panic!()
+        };
         write(&mut fold, &[stops(&[("A", json!(3))])], None);
         let held = fold.clone();
         let refused = apply(&mut fold, &e, &hash).unwrap_err();
@@ -659,29 +825,70 @@ mod tests {
     #[test]
     fn one_entry_changes_two_kinds() {
         let mut fold = Checkpoint::empty("stops");
-        write(&mut fold, &[stops(&[("B", json!({"events": 1}))]), requests(&[("B-1", json!({"status": "ordered"}))])], None);
+        write(
+            &mut fold,
+            &[
+                stops(&[("B", json!({"events": 1}))]),
+                requests(&[("B-1", json!({"status": "ordered"}))]),
+            ],
+            None,
+        );
         let e = write(
             &mut fold,
-            &[stops(&[("B", json!({"events": 2}))]), requests(&[("B-1", json!({"status": "completed"}))])],
+            &[
+                stops(&[("B", json!({"events": 2}))]),
+                requests(&[("B-1", json!({"status": "completed"}))]),
+            ],
             Some("complete-B-1"),
         )
         .unwrap();
         let kinds: Vec<&str> = e.changes.iter().map(|c| c.kind.as_str()).collect();
-        assert_eq!(kinds, vec!["stop", "stop_request"], "one entry, both kinds, in kind order");
+        assert_eq!(
+            kinds,
+            vec!["stop", "stop_request"],
+            "one entry, both kinds, in kind order"
+        );
         write(&mut fold, &[stops(&[("B", json!({"events": 3}))])], None);
-        assert_eq!(records_of(&fold, "stop_request")["B-1"], json!({"status": "completed"}));
+        assert_eq!(
+            records_of(&fold, "stop_request")["B-1"],
+            json!({"status": "completed"})
+        );
     }
 
     #[test]
     fn a_bad_entry_is_quarantined_and_the_fold_goes_on() {
         let mut live = Checkpoint::empty("stops");
         let e1 = write(&mut live, &[stops(&[("A", json!(1))])], None).unwrap();
-        let e3 = write(&mut live, &[stops(&[("A", json!(1)), ("B", json!(2))])], None).unwrap();
+        let e3 = write(
+            &mut live,
+            &[stops(&[("A", json!(1)), ("B", json!(2))])],
+            None,
+        )
+        .unwrap();
         let e3 = Entry { seq: 4, ..e3 };
-        let garbage = Stored { seq: 2, text: "{".into() };
-        let other_log = Stored { seq: 3, text: serde_json::to_string(&Entry { log: "plans".into(), seq: 3, ..e1.clone() }).unwrap() };
-        let folded = fold(Checkpoint::empty("stops"), &[stored(&e1), garbage, other_log, stored(&e3)], &hash).unwrap();
-        assert_eq!(folded.quarantined.iter().map(|q| q.seq).collect::<Vec<_>>(), vec![2, 3]);
+        let garbage = Stored {
+            seq: 2,
+            text: "{".into(),
+        };
+        let other_log = Stored {
+            seq: 3,
+            text: serde_json::to_string(&Entry {
+                log: "plans".into(),
+                seq: 3,
+                ..e1.clone()
+            })
+            .unwrap(),
+        };
+        let folded = fold(
+            Checkpoint::empty("stops"),
+            &[stored(&e1), garbage, other_log, stored(&e3)],
+            &hash,
+        )
+        .unwrap();
+        assert_eq!(
+            folded.quarantined.iter().map(|q| q.seq).collect::<Vec<_>>(),
+            vec![2, 3]
+        );
         assert!(folded.quarantined[1].reason.contains("plans log"));
         assert_eq!(records_of(&folded.fold, "stop").len(), 2, "entry 4 applied");
         assert_eq!(folded.fold.seq, 4);
@@ -692,15 +899,32 @@ mod tests {
         let mut fold = Checkpoint::empty("stops");
         write(&mut fold, &[stops(&[("A", json!(1))])], None);
         let before = fold.clone();
-        let e = write(&mut fold, &[stops(&[("A", json!(2)), ("B", json!(9))])], None).unwrap();
+        let e = write(
+            &mut fold,
+            &[stops(&[("A", json!(2)), ("B", json!(9))])],
+            None,
+        )
+        .unwrap();
         let back = revert(&before, &fold, &e, &hash).unwrap();
         let mut after = fold.clone();
-        apply(&mut after, &Entry::new(header(3, None), back, Some(2)), &hash).unwrap();
-        assert_eq!(records_of(&after, "stop"), records_of(&before, "stop"), "A back to 1, B out of the fold");
+        apply(
+            &mut after,
+            &Entry::new(header(3, None), back, Some(2)),
+            &hash,
+        )
+        .unwrap();
+        assert_eq!(
+            records_of(&after, "stop"),
+            records_of(&before, "stop"),
+            "A back to 1, B out of the fold"
+        );
 
         // A later entry changed A, so a second revert of entry 2 is refused.
         let refused = revert(&before, &after, &e, &hash).unwrap_err();
-        assert!(refused.contains("stop A") && refused.contains("a person decides"), "{refused}");
+        assert!(
+            refused.contains("stop A") && refused.contains("a person decides"),
+            "{refused}"
+        );
     }
 
     /// Property 6, for a kind that writes back its own records.
@@ -709,16 +933,41 @@ mod tests {
         let mut fold = Checkpoint::empty("stops");
         write(&mut fold, &[stops(&[("A", json!(1))])], None);
         let before = fold.clone();
-        let e = write(&mut fold, &[stops(&[("A", json!(2)), ("B", json!(9))])], None).unwrap();
+        let e = write(
+            &mut fold,
+            &[stops(&[("A", json!(2)), ("B", json!(9))])],
+            None,
+        )
+        .unwrap();
         let states = revert_states(&before, &fold, &e, &hash).unwrap();
         assert_eq!(states.len(), 2);
-        let retired = Written { kind: "stop".into(), id: "B".into(), version: 1, after: Some(json!("retired")) };
+        let retired = Written {
+            kind: "stop".into(),
+            id: "B".into(),
+            version: 1,
+            after: Some(json!("retired")),
+        };
         let back = revert_with(&states, std::slice::from_ref(&retired), &hash).unwrap();
         let mut after = fold.clone();
-        apply(&mut after, &Entry::new(header(3, None), back, Some(2)), &hash).unwrap();
-        assert_eq!(records_of(&after, "stop"), BTreeMap::from([("A".into(), json!(1)), ("B".into(), json!("retired"))]));
-        let stranger = Written { kind: "stop".into(), id: "C".into(), version: 1, after: None };
-        assert!(revert_with(&states, &[stranger], &hash).unwrap_err().contains("stop C"));
+        apply(
+            &mut after,
+            &Entry::new(header(3, None), back, Some(2)),
+            &hash,
+        )
+        .unwrap();
+        assert_eq!(
+            records_of(&after, "stop"),
+            BTreeMap::from([("A".into(), json!(1)), ("B".into(), json!("retired"))])
+        );
+        let stranger = Written {
+            kind: "stop".into(),
+            id: "C".into(),
+            version: 1,
+            after: None,
+        };
+        assert!(revert_with(&states, &[stranger], &hash)
+            .unwrap_err()
+            .contains("stop C"));
     }
 
     #[test]
@@ -727,8 +976,17 @@ mod tests {
         let e = write(&mut fold, &[stops(&[("A", json!(1))])], Some("k")).unwrap();
         assert_eq!(read_entry("stops", &stored(&e)).unwrap(), e);
         assert!(read_entry("plans", &stored(&e)).is_err());
-        let newer = stored(&e).text.replace("\"schema_version\":1", "\"schema_version\":2");
-        assert!(read_entry("stops", &Stored { seq: 1, text: newer }).is_err());
+        let newer = stored(&e)
+            .text
+            .replace("\"schema_version\":1", "\"schema_version\":2");
+        assert!(read_entry(
+            "stops",
+            &Stored {
+                seq: 1,
+                text: newer
+            }
+        )
+        .is_err());
     }
 
     /// Property 8, for a field outside the collection that this build does
@@ -754,9 +1012,26 @@ mod tests {
         let next = document_records(&doc, "stops", "stop", "stops", 1).unwrap();
         let mut fold = Checkpoint::empty("stops");
         write(&mut fold, &next, None);
-        let back: Doc = assemble(json!({}), fold.get("stops", DOCUMENT_ID), "stops", &fold.records["stop"], false).unwrap();
+        let back: Doc = assemble(
+            json!({}),
+            fold.get("stops", DOCUMENT_ID),
+            "stops",
+            &fold.records["stop"],
+            false,
+        )
+        .unwrap();
         assert_eq!(serde_json::to_value(back).unwrap(), doc);
-        let newer = Held { version: 2, value: json!({}) };
-        assert!(assemble::<Doc>(json!({}), Some(&newer), "stops", &fold.records["stop"], false).is_err());
+        let newer = Held {
+            version: 2,
+            value: json!({}),
+        };
+        assert!(assemble::<Doc>(
+            json!({}),
+            Some(&newer),
+            "stops",
+            &fold.records["stop"],
+            false
+        )
+        .is_err());
     }
 }

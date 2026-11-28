@@ -12,9 +12,7 @@ use crate::model::Network;
 
 pub const PLAN_SET_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    PlanSetKind = "plan_set"
-);
+transit_version::kind_tag!(PlanSetKind = "plan_set");
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
@@ -53,7 +51,9 @@ pub fn stored_plans(doc: serde_json::Value) -> Result<BTreeMap<String, serde_jso
     if kind.as_str() != Some(<PlanSet as transit_version::Versioned>::KIND) {
         return Err(format!("a {kind} document is not a plan set"));
     }
-    let version = root.get("schema_version").map_or(Some(1), |v| v.as_u64().and_then(|n| u32::try_from(n).ok()));
+    let version = root
+        .get("schema_version")
+        .map_or(Some(1), |v| v.as_u64().and_then(|n| u32::try_from(n).ok()));
     match version {
         Some(PLAN_SET_VERSION) => {}
         Some(v) if v > PLAN_SET_VERSION => {

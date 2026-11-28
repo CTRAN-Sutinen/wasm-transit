@@ -97,7 +97,11 @@ pub(crate) fn parse_time(text: &str) -> Option<u32> {
     Some(h.parse::<u32>().ok()? * 3600 + m.parse::<u32>().ok()? * 60 + s.parse::<u32>().ok()?)
 }
 
-pub fn resolve_instance(network: &Network, trip_id: &str, start_time: Option<&str>) -> Option<MaterializedTrip> {
+pub fn resolve_instance(
+    network: &Network,
+    trip_id: &str,
+    start_time: Option<&str>,
+) -> Option<MaterializedTrip> {
     let (_, _, trip) = network.trip(trip_id)?;
     let start = match trip.departs {
         Departs::At { start_secs } => start_secs,
@@ -115,7 +119,12 @@ fn sequences(boundary: &Boundary, trip: &str, n: usize) -> Vec<u32> {
         .unwrap_or_else(|| (1..=n as u32).collect())
 }
 
-pub(crate) fn progress_of(network: &Network, boundary: &Boundary, update: &TripUpdateView, instance: &MaterializedTrip) -> TripProgress {
+pub(crate) fn progress_of(
+    network: &Network,
+    boundary: &Boundary,
+    update: &TripUpdateView,
+    instance: &MaterializedTrip,
+) -> TripProgress {
     let seqs = sequences(boundary, &instance.trip, instance.stop_times.len());
     let mut stops = Vec::with_capacity(instance.stop_times.len());
     let mut worst = 0i32;
@@ -160,13 +169,33 @@ pub(crate) fn progress_of(network: &Network, boundary: &Boundary, update: &TripU
 }
 
 fn block_of(network: &Network, trip: &str) -> Option<String> {
-    network.blocks.iter().find(|(_, b)| b.trips.iter().any(|r| r.trip == trip)).map(|(id, _)| id.clone())
+    network
+        .blocks
+        .iter()
+        .find(|(_, b)| b.trips.iter().any(|r| r.trip == trip))
+        .map(|(id, _)| id.clone())
 }
 
 /// A trip with no update answers its schedule alone, with no delay.
-pub fn trip_progress(network: &Network, boundary: &Boundary, overview: &RtOverview, trip_id: &str) -> Option<TripProgress> {
-    let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, start_date: None, canceled: false, stop_updates: vec![] };
-    let update = overview.trips.iter().find(|t| t.trip_id.as_deref() == Some(trip_id)).unwrap_or(&quiet);
+pub fn trip_progress(
+    network: &Network,
+    boundary: &Boundary,
+    overview: &RtOverview,
+    trip_id: &str,
+) -> Option<TripProgress> {
+    let quiet = TripUpdateView {
+        trip_id: Some(trip_id.to_string()),
+        route_id: None,
+        start_time: None,
+        start_date: None,
+        canceled: false,
+        stop_updates: vec![],
+    };
+    let update = overview
+        .trips
+        .iter()
+        .find(|t| t.trip_id.as_deref() == Some(trip_id))
+        .unwrap_or(&quiet);
     let instance = resolve_instance(network, trip_id, update.start_time.as_deref())?;
     Some(progress_of(network, boundary, update, &instance))
 }
@@ -179,18 +208,28 @@ pub fn late_trips(
 ) -> Vec<LateTrip> {
     let vehicles = positions.unwrap_or(delays).vehicle_positions.as_slice();
     let position_of = |trip_id: &str, block_id: Option<&str>| -> Option<&VehicleView> {
-        vehicles.iter().find(|v| v.trip_id.as_deref() == Some(trip_id)).or_else(|| {
-            let block_id = block_id?;
-            vehicles
-                .iter()
-                .find(|v| v.trip_id.as_deref().and_then(|t| block_of(network, t)).as_deref() == Some(block_id))
-        })
+        vehicles
+            .iter()
+            .find(|v| v.trip_id.as_deref() == Some(trip_id))
+            .or_else(|| {
+                let block_id = block_id?;
+                vehicles.iter().find(|v| {
+                    v.trip_id
+                        .as_deref()
+                        .and_then(|t| block_of(network, t))
+                        .as_deref()
+                        == Some(block_id)
+                })
+            })
     };
     let route_of = |trip_id: &str| {
         let (_, pt, _) = network.trip(trip_id)?;
         network.patterns.get(&pt.pattern).map(|p| p.route.clone())
     };
-    let stop_name = |id: &str| StopName { id: id.to_string(), name: network.stops.get(id).map(|s| s.name.clone()) };
+    let stop_name = |id: &str| StopName {
+        id: id.to_string(),
+        name: network.stops.get(id).map(|s| s.name.clone()),
+    };
     let stops_of = |trip_id: &str| -> Vec<String> {
         network
             .trip(trip_id)
@@ -203,14 +242,23 @@ pub fn late_trips(
         let scale = lat.to_radians().cos();
         stops_of(trip_id)
             .into_iter()
-            .filter_map(|id| network.stops.get(id.as_str()).map(|s| (((s.lat - lat).powi(2) + ((s.lon - lon) * scale).powi(2)), id)))
+            .filter_map(|id| {
+                network.stops.get(id.as_str()).map(|s| {
+                    (
+                        ((s.lat - lat).powi(2) + ((s.lon - lon) * scale).powi(2)),
+                        id,
+                    )
+                })
+            })
             .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
             .map(|(_, id)| stop_name(&id))
     };
 
     let mut late: Vec<LateTrip> = Vec::new();
     for update in &delays.trips {
-        let Some(trip_id) = update.trip_id.as_deref().filter(|_| !update.canceled) else { continue };
+        let Some(trip_id) = update.trip_id.as_deref().filter(|_| !update.canceled) else {
+            continue;
+        };
         let worst = update
             .stop_updates
             .iter()
@@ -226,14 +274,18 @@ pub fn late_trips(
         let trip = network.trip(trip_id).map(|(_, _, t)| t);
         let route_id = update.route_id.clone().or_else(|| route_of(trip_id));
         late.push(LateTrip {
-            route_name: route_id.as_deref().and_then(|r| network.routes.get(r)).map(|r| r.name.clone()),
+            route_name: route_id
+                .as_deref()
+                .and_then(|r| network.routes.get(r))
+                .map(|r| r.name.clone()),
             start_secs: trip.and_then(|t| match t.departs {
                 transit_network::Departs::At { start_secs } => Some(start_secs),
                 _ => None,
             }),
             first_stop: stops_of(trip_id).first().map(|s| stop_name(s)),
             headsign: trip.and_then(|t| t.headsign.clone()),
-            near_stop: vehicle.and_then(|v| nearest(v.trip_id.as_deref().unwrap_or(trip_id), v.lat, v.lon)),
+            near_stop: vehicle
+                .and_then(|v| nearest(v.trip_id.as_deref().unwrap_or(trip_id), v.lat, v.lon)),
             trip_id: update.trip_id.clone(),
             route_id,
             block_id,
@@ -246,6 +298,10 @@ pub fn late_trips(
             lon: vehicle.map(|v| v.lon),
         });
     }
-    late.sort_by(|a, b| b.worst_delay_secs.cmp(&a.worst_delay_secs).then_with(|| a.trip_id.cmp(&b.trip_id)));
+    late.sort_by(|a, b| {
+        b.worst_delay_secs
+            .cmp(&a.worst_delay_secs)
+            .then_with(|| a.trip_id.cmp(&b.trip_id))
+    });
     late
 }

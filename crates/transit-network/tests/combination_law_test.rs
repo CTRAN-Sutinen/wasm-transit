@@ -11,11 +11,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 use transit_network::{
-    first_service_date, service_combination, service_combinations, CalendarException, CalendarRule, DateRange, DayState, Network, ServiceType,
-    WeekdaySet,
+    first_service_date, service_combination, service_combinations, CalendarException, CalendarRule,
+    DateRange, DayState, Network, ServiceType, WeekdaySet,
 };
 
 const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
@@ -41,7 +41,13 @@ fn gen_type() -> impl Strategy<Value = GenType> {
         proptest::collection::vec((0u16..160, any::<bool>()), 0..4),
         proptest::bool::weighted(0.8),
     )
-        .prop_map(|(days, start, len, exceptions, trips)| GenType { days, start, len, exceptions, trips })
+        .prop_map(|(days, start, len, exceptions, trips)| GenType {
+            days,
+            start,
+            len,
+            exceptions,
+            trips,
+        })
 }
 
 /// Each generated type with trips runs a copy of the base's schedule.
@@ -75,13 +81,24 @@ fn network(types: &[GenType]) -> Network {
                 .filter(|(d, _)| seen.insert(*d))
                 .map(|&(d, added)| CalendarException {
                     date: EPOCH + Days::new(d as i64),
-                    state: if added { DayState::Added } else { DayState::Removed },
+                    state: if added {
+                        DayState::Added
+                    } else {
+                        DayState::Removed
+                    },
                     extra: Default::default(),
                 })
                 .collect(),
-                extra: Default::default(),
+            extra: Default::default(),
         };
-        net.service_types.insert(id.clone(), ServiceType { name: format!("Type {i}"), rule, extra: Default::default() });
+        net.service_types.insert(
+            id.clone(),
+            ServiceType {
+                name: format!("Type {i}"),
+                rule,
+                extra: Default::default(),
+            },
+        );
         if t.trips {
             let mut pt = template.clone();
             pt.service_type = id.clone();
@@ -208,17 +225,45 @@ fn successive_overlays_are_separate_combinations() {
     net.service_types.clear();
     net.pattern_trips.clear();
     net.blocks.clear();
-    let weekdays = WeekdaySet { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false };
+    let weekdays = WeekdaySet {
+        mon: true,
+        tue: true,
+        wed: true,
+        thu: true,
+        fri: true,
+        sat: false,
+        sun: false,
+    };
     let d = |s: &str| Date::parse(s).unwrap();
     let ty = |start: &str, end: &str, exceptions: Vec<CalendarException>| ServiceType {
         name: String::new(),
-        rule: CalendarRule { days: weekdays.clone(), ranges: vec![DateRange { start: d(start), end: d(end), extra: Default::default() }], exceptions, extra: Default::default() },
+        rule: CalendarRule {
+            days: weekdays.clone(),
+            ranges: vec![DateRange {
+                start: d(start),
+                end: d(end),
+                extra: Default::default(),
+            }],
+            exceptions,
+            extra: Default::default(),
+        },
         extra: Default::default(),
     };
-    let holiday = CalendarException { date: d("2026-10-01"), state: DayState::Removed, extra: Default::default() };
-    net.service_types.insert("WKDY".into(), ty("2026-09-14", "2026-10-30", vec![holiday.clone()]));
-    net.service_types.insert("WKDY/30".into(), ty("2026-09-14", "2026-10-09", vec![holiday]));
-    net.service_types.insert("WKDY/31".into(), ty("2026-10-12", "2026-10-30", vec![]));
+    let holiday = CalendarException {
+        date: d("2026-10-01"),
+        state: DayState::Removed,
+        extra: Default::default(),
+    };
+    net.service_types.insert(
+        "WKDY".into(),
+        ty("2026-09-14", "2026-10-30", vec![holiday.clone()]),
+    );
+    net.service_types.insert(
+        "WKDY/30".into(),
+        ty("2026-09-14", "2026-10-09", vec![holiday]),
+    );
+    net.service_types
+        .insert("WKDY/31".into(), ty("2026-10-12", "2026-10-30", vec![]));
     net.service_types.insert(
         "HOL".into(),
         ServiceType {
@@ -226,7 +271,11 @@ fn successive_overlays_are_separate_combinations() {
             rule: CalendarRule {
                 days: WeekdaySet::default(),
                 ranges: vec![],
-                exceptions: vec![CalendarException { date: d("2026-10-01"), state: DayState::Added, extra: Default::default() }],
+                exceptions: vec![CalendarException {
+                    date: d("2026-10-01"),
+                    state: DayState::Added,
+                    extra: Default::default(),
+                }],
                 extra: Default::default(),
             },
             extra: Default::default(),
@@ -239,11 +288,27 @@ fn successive_overlays_are_separate_combinations() {
     }
     let combos = service_combinations(&net);
     let ids: Vec<&str> = combos.iter().map(|c| c.id.as_str()).collect();
-    assert_eq!(ids, ["WKDY + WKDY/30", "WKDY + WKDY/31", "HOL"], "most days first");
-    assert_eq!(combos[0].dates.len(), 19, "Sep 14 – Oct 9 weekdays, less the holiday");
+    assert_eq!(
+        ids,
+        ["WKDY + WKDY/30", "WKDY + WKDY/31", "HOL"],
+        "most days first"
+    );
+    assert_eq!(
+        combos[0].dates.len(),
+        19,
+        "Sep 14 – Oct 9 weekdays, less the holiday"
+    );
     assert_eq!(combos[0].spans.len(), 1);
-    assert_eq!((combos[0].spans[0].start.as_str(), combos[0].spans[0].end.as_str()), ("2026-09-14", "2026-10-09"));
+    assert_eq!(
+        (
+            combos[0].spans[0].start.as_str(),
+            combos[0].spans[0].end.as_str()
+        ),
+        ("2026-09-14", "2026-10-09")
+    );
     assert_eq!(combos[2].dates, ["2026-10-01"]);
     assert!(service_combination(&net, &["WKDY/30".into(), "WKDY/31".into()]).is_none());
-    assert!(service_combination(&net, &["WKDY".into(), "WKDY/30".into(), "WKDY/31".into()]).is_none());
+    assert!(
+        service_combination(&net, &["WKDY".into(), "WKDY/30".into(), "WKDY/31".into()]).is_none()
+    );
 }

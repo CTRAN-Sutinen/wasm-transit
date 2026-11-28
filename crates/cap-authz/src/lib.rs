@@ -39,8 +39,12 @@ pub enum Request {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_authz/"))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    Authorize { decision: transit_authz::Decision },
-    Effective { effective: transit_authz::EffectivePolicy },
+    Authorize {
+        decision: transit_authz::Decision,
+    },
+    Effective {
+        effective: transit_authz::EffectivePolicy,
+    },
     Validate {
         issues: Vec<transit_authz::PolicyIssue>,
         warnings: Vec<transit_authz::PolicyWarning>,
@@ -54,12 +58,21 @@ pub enum Response {
 
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::Authorize { identity, action, pointer, policy } => {
+        Request::Authorize {
+            identity,
+            action,
+            pointer,
+            policy,
+        } => {
             let action = match action.as_str() {
                 "read" => transit_authz::Action::Read,
                 "write" => transit_authz::Action::Write,
                 "audit" => transit_authz::Action::Audit,
-                other => return Err(format!("unknown action {other:?}: want \"read\", \"write\" or \"audit\"")),
+                other => {
+                    return Err(format!(
+                        "unknown action {other:?}: want \"read\", \"write\" or \"audit\""
+                    ))
+                }
             };
             Ok(Response::Authorize {
                 decision: transit_authz::authorize(&policy, &identity, action, &pointer),

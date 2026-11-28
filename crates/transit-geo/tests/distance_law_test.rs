@@ -18,7 +18,10 @@ fn near() -> impl Strategy<Value = (f64, f64)> {
 
 #[test]
 fn one_degree_of_latitude_is_the_mean_radius_arc() {
-    assert!((METERS_PER_DEGREE - 111_194.926_6).abs() < 1e-3, "{METERS_PER_DEGREE}");
+    assert!(
+        (METERS_PER_DEGREE - 111_194.926_6).abs() < 1e-3,
+        "{METERS_PER_DEGREE}"
+    );
     assert!((distance_m(45.0, -122.0, 46.0, -122.0) - METERS_PER_DEGREE).abs() < 1e-6);
 }
 
@@ -27,7 +30,10 @@ fn one_degree_of_latitude_is_the_mean_radius_arc() {
 fn antipodes_are_half_the_circumference() {
     let d = distance_m(10.0, 20.0, -10.0, -160.0);
     assert!(d.is_finite());
-    assert!((d - EARTH_RADIUS_M * std::f64::consts::PI).abs() < 1.0, "{d}");
+    assert!(
+        (d - EARTH_RADIUS_M * std::f64::consts::PI).abs() < 1.0,
+        "{d}"
+    );
 }
 
 #[test]

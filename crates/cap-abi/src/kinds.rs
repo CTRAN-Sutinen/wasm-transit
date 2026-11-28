@@ -160,8 +160,20 @@ pub enum Merge {
 }
 
 impl Declaration {
-    pub const fn new(name: &'static str, tag: &'static str, library: &'static str, owner: &'static str) -> Self {
-        Declaration { name, tag, library, owner, load: None, store: None }
+    pub const fn new(
+        name: &'static str,
+        tag: &'static str,
+        library: &'static str,
+        owner: &'static str,
+    ) -> Self {
+        Declaration {
+            name,
+            tag,
+            library,
+            owner,
+            load: None,
+            store: None,
+        }
     }
 
     pub const fn loaded(mut self, id: &'static str, op: &'static str, code: u32) -> Self {
@@ -178,7 +190,20 @@ impl Declaration {
         merge: Merge,
         read: Read,
     ) -> Self {
-        self.store = Some(Store { kind, write, route, pointers, log: None, post: None, work_order: None, pick: None, feed_events: None, check: None, merge, read });
+        self.store = Some(Store {
+            kind,
+            write,
+            route,
+            pointers,
+            log: None,
+            post: None,
+            work_order: None,
+            pick: None,
+            feed_events: None,
+            check: None,
+            merge,
+            read,
+        });
         self
     }
 
@@ -203,16 +228,38 @@ impl Declaration {
         self
     }
 
-    pub const fn posted(mut self, path: &'static str, op: &'static str, answer: &'static str, echo: &'static [&'static str]) -> Self {
+    pub const fn posted(
+        mut self,
+        path: &'static str,
+        op: &'static str,
+        answer: &'static str,
+        echo: &'static [&'static str],
+    ) -> Self {
         if let Some(store) = &mut self.store {
-            store.post = Some(Post { path, op, answer, echo });
+            store.post = Some(Post {
+                path,
+                op,
+                answer,
+                echo,
+            });
         }
         self
     }
 
-    pub const fn work_orders(mut self, method: &'static str, path: &'static str, call: &'static str, record: &'static str) -> Self {
+    pub const fn work_orders(
+        mut self,
+        method: &'static str,
+        path: &'static str,
+        call: &'static str,
+        record: &'static str,
+    ) -> Self {
         if let Some(store) = &mut self.store {
-            store.work_order = Some(WorkOrder { method, path, call, record });
+            store.work_order = Some(WorkOrder {
+                method,
+                path,
+                call,
+                record,
+            });
         }
         self
     }
@@ -231,9 +278,18 @@ impl Declaration {
         self
     }
 
-    pub const fn logged(mut self, name: &'static str, records: &'static [(&'static str, &'static str)]) -> Self {
+    pub const fn logged(
+        mut self,
+        name: &'static str,
+        records: &'static [(&'static str, &'static str)],
+    ) -> Self {
         if let Some(store) = &mut self.store {
-            store.log = Some(Log { name, receive: None, records, intent: true });
+            store.log = Some(Log {
+                name,
+                receive: None,
+                records,
+                intent: true,
+            });
         }
         self
     }
@@ -246,71 +302,231 @@ use Write::{Pointer, Route, Server};
 /// The load codes are a wire contract, so a code is never reused. The
 /// registry ops are 257 and 258, and `about` is 268.
 pub static KINDS: &[Declaration] = &[
-    Declaration::new("network", "network", "transit_network::Network", "transit-network")
-        .loaded("network", "load_network", 256)
-        .stored("network_document", Route, "POST /plans/freeze, POST /plans; the server's import", &["plan.*", "network"], Replace, Open)
-        .checked("network", "publishable"),
-    Declaration::new("boundary", "boundary", "transit_codec::Boundary", "transit-codec")
-        .loaded("boundary", "load_boundary", 261)
-        .stored("boundary", Server, "the server's import of the GTFS zip", &["boundary"], Merge::None, Open),
+    Declaration::new(
+        "network",
+        "network",
+        "transit_network::Network",
+        "transit-network",
+    )
+    .loaded("network", "load_network", 256)
+    .stored(
+        "network_document",
+        Route,
+        "POST /plans/freeze, POST /plans; the server's import",
+        &["plan.*", "network"],
+        Replace,
+        Open,
+    )
+    .checked("network", "publishable"),
+    Declaration::new(
+        "boundary",
+        "boundary",
+        "transit_codec::Boundary",
+        "transit-codec",
+    )
+    .loaded("boundary", "load_boundary", 261)
+    .stored(
+        "boundary",
+        Server,
+        "the server's import of the GTFS zip",
+        &["boundary"],
+        Merge::None,
+        Open,
+    ),
     Declaration::new("feed", "", "transit_codec::Feed", "")
         .loaded("feed", "load_feed", 266)
-        .stored("gtfs_feed", Server, "the server's -feed", &["source.feed"], Merge::None, Open),
-    Declaration::new("plan_set", "plan_set", "transit_network::PlanSet", "transit-network"),
-    Declaration::new("operator_edits", "edit_records", "transit_sync::EditDocument", "transit-sync")
-        .loaded("edits", "load_edits", 259)
-        .stored("edit_records", Route, "POST /edits", &["edits"], Lww, Open)
-        .checked("sync", "sync_edits")
-        .logged("disruptions", &[("edit_record", "records")])
-        .received("sync")
-        .no_intent(),
-    Declaration::new("live", "live", "transit_live::LiveDay", "transit-live").loaded("live", "load_live", 260),
+        .stored(
+            "gtfs_feed",
+            Server,
+            "the server's -feed",
+            &["source.feed"],
+            Merge::None,
+            Open,
+        ),
+    Declaration::new(
+        "plan_set",
+        "plan_set",
+        "transit_network::PlanSet",
+        "transit-network",
+    ),
+    Declaration::new(
+        "operator_edits",
+        "edit_records",
+        "transit_sync::EditDocument",
+        "transit-sync",
+    )
+    .loaded("edits", "load_edits", 259)
+    .stored("edit_records", Route, "POST /edits", &["edits"], Lww, Open)
+    .checked("sync", "sync_edits")
+    .logged("disruptions", &[("edit_record", "records")])
+    .received("sync")
+    .no_intent(),
+    Declaration::new("live", "live", "transit_live::LiveDay", "transit-live").loaded(
+        "live",
+        "load_live",
+        260,
+    ),
     Declaration::new("rt", "", "transit_rt::RtOverview", "").loaded("rt", "load_rt", 267),
-    Declaration::new("streets", "streets", "transit_streets::Streets", "transit-streets")
-        .loaded("streets", "load_streets", 263)
-        .stored("streets", Server, "the server's import of the street layer", &["streets"], Merge::None, Open),
-    Declaration::new("street_layer", "", "", "").stored("street_layer", Server, "the server's -streets", &["source.streets"], Merge::None, Open),
-    Declaration::new("walks", "walks", "transit_streets::walking::WalkTable", "transit-streets")
-        .loaded("walks", "load_walks", 262)
-        .stored("walks", Server, "the server's walk table", &["walks"], Merge::None, Open),
-    Declaration::new("layer", "", "transit_analysis::WeightedLayer", "").loaded("layer", "load_layer", 265),
-    Declaration::new("watchlist", "watchlist", "transit_rider::watchlist::Watchlist", "transit-rider").loaded("watchlist", "load_watchlist", 264),
-    Declaration::new("recent_places", "recent_places", "transit_rider::device::RecentPlaces", "transit-rider"),
-    Declaration::new("live_feeds", "live_feeds", "transit_rider::device::LiveFeeds", "transit-rider"),
-    Declaration::new("work_rules", "work_rules", "transit_runs::WorkRules", "transit-runs").loaded("work_rules", "load_work_rules", 269),
-    Declaration::new("scheduling_constraints", "scheduling_constraints", "transit_runs::SchedulingConstraints", "transit-runs")
-        .loaded("scheduling_constraints", "load_scheduling_constraints", 275),
+    Declaration::new(
+        "streets",
+        "streets",
+        "transit_streets::Streets",
+        "transit-streets",
+    )
+    .loaded("streets", "load_streets", 263)
+    .stored(
+        "streets",
+        Server,
+        "the server's import of the street layer",
+        &["streets"],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new("street_layer", "", "", "").stored(
+        "street_layer",
+        Server,
+        "the server's -streets",
+        &["source.streets"],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new(
+        "walks",
+        "walks",
+        "transit_streets::walking::WalkTable",
+        "transit-streets",
+    )
+    .loaded("walks", "load_walks", 262)
+    .stored(
+        "walks",
+        Server,
+        "the server's walk table",
+        &["walks"],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new("layer", "", "transit_analysis::WeightedLayer", "").loaded(
+        "layer",
+        "load_layer",
+        265,
+    ),
+    Declaration::new(
+        "watchlist",
+        "watchlist",
+        "transit_rider::watchlist::Watchlist",
+        "transit-rider",
+    )
+    .loaded("watchlist", "load_watchlist", 264),
+    Declaration::new(
+        "recent_places",
+        "recent_places",
+        "transit_rider::device::RecentPlaces",
+        "transit-rider",
+    ),
+    Declaration::new(
+        "live_feeds",
+        "live_feeds",
+        "transit_rider::device::LiveFeeds",
+        "transit-rider",
+    ),
+    Declaration::new(
+        "work_rules",
+        "work_rules",
+        "transit_runs::WorkRules",
+        "transit-runs",
+    )
+    .loaded("work_rules", "load_work_rules", 269),
+    Declaration::new(
+        "scheduling_constraints",
+        "scheduling_constraints",
+        "transit_runs::SchedulingConstraints",
+        "transit-runs",
+    )
+    .loaded("scheduling_constraints", "load_scheduling_constraints", 275),
     Declaration::new("stops", "stops", "transit_stops::Stops", "transit-stops")
         .loaded("stops", "load_stops", 270)
-        .stored("stops", Route, "POST /stops, POST /logs/stops", &["stops"], Merge::Log, Open)
+        .stored(
+            "stops",
+            Route,
+            "POST /stops, POST /logs/stops",
+            &["stops"],
+            Merge::Log,
+            Open,
+        )
         .checked("stops", "validate")
         .logged("stops", &[("stop", "stops")])
         .received("stops")
         .posted("/stops", "validate", "stops_hash", &[])
         .picked("stops_seq", "export_pick")
         .feed_events("import_events"),
-    Declaration::new("stop_requests", "stop_requests", "transit_requests::StopRequests", "transit-requests")
-        .loaded("stop_requests", "load_stop_requests", 271)
-        .stored("stop_requests", Route, "POST /stop-requests, POST /logs/stops", &["stop_requests"], Merge::Log, Open)
-        .checked("requests", "validate")
-        .logged("stops", &[("stop_request", "requests")])
-        .received("stops")
-        .posted("/stop-requests", "validate", "requests_hash", &[])
-        .work_orders("POST", "/stop-requests/work-order", "work_order_call", "record_work_order"),
-    Declaration::new("service_alerts", "service_alerts", "transit_alerts::ServiceAlerts", "transit-alerts")
-        .loaded("service_alerts", "load_service_alerts", 272)
-        .stored("service_alerts", Route, "POST /service-alerts", &[], Merge::Log, Open)
-        .checked("alerts", "validate")
-        .logged("alerts", &[("service_alert", "alerts")])
-        .received("alerts")
-        .posted("/service-alerts", "validate", "alerts_hash", &[]),
-    Declaration::new("alert_templates", "alert_templates", "transit_alerts::AlertTemplates", "transit-alerts")
-        .loaded("alert_templates", "load_alert_templates", 273)
-        .stored("alert_templates", Route, "POST /alert-templates", &[], Merge::Log, Open)
-        .checked("alerts", "validate_templates")
-        .logged("alerts", &[("alert_template", "templates")])
-        .received("alerts")
-        .posted("/alert-templates", "validate_templates", "templates_hash", &[]),
+    Declaration::new(
+        "stop_requests",
+        "stop_requests",
+        "transit_requests::StopRequests",
+        "transit-requests",
+    )
+    .loaded("stop_requests", "load_stop_requests", 271)
+    .stored(
+        "stop_requests",
+        Route,
+        "POST /stop-requests, POST /logs/stops",
+        &["stop_requests"],
+        Merge::Log,
+        Open,
+    )
+    .checked("requests", "validate")
+    .logged("stops", &[("stop_request", "requests")])
+    .received("stops")
+    .posted("/stop-requests", "validate", "requests_hash", &[])
+    .work_orders(
+        "POST",
+        "/stop-requests/work-order",
+        "work_order_call",
+        "record_work_order",
+    ),
+    Declaration::new(
+        "service_alerts",
+        "service_alerts",
+        "transit_alerts::ServiceAlerts",
+        "transit-alerts",
+    )
+    .loaded("service_alerts", "load_service_alerts", 272)
+    .stored(
+        "service_alerts",
+        Route,
+        "POST /service-alerts",
+        &[],
+        Merge::Log,
+        Open,
+    )
+    .checked("alerts", "validate")
+    .logged("alerts", &[("service_alert", "alerts")])
+    .received("alerts")
+    .posted("/service-alerts", "validate", "alerts_hash", &[]),
+    Declaration::new(
+        "alert_templates",
+        "alert_templates",
+        "transit_alerts::AlertTemplates",
+        "transit-alerts",
+    )
+    .loaded("alert_templates", "load_alert_templates", 273)
+    .stored(
+        "alert_templates",
+        Route,
+        "POST /alert-templates",
+        &[],
+        Merge::Log,
+        Open,
+    )
+    .checked("alerts", "validate_templates")
+    .logged("alerts", &[("alert_template", "templates")])
+    .received("alerts")
+    .posted(
+        "/alert-templates",
+        "validate_templates",
+        "templates_hash",
+        &[],
+    ),
     Declaration::new("notes", "notes", "transit_notes::Notes", "transit-notes")
         .loaded("notes", "load_notes", 274)
         .stored("notes", Route, "POST /notes", &[], Merge::Log, Open)
@@ -318,31 +534,134 @@ pub static KINDS: &[Declaration] = &[
         .logged("notes", &[("note", "notes")])
         .received("notes")
         .posted("/notes", "write", "notes_hash", &["id"]),
-    Declaration::new("plans", "plans", "transit_plans::PublishedPlans", "transit-plans")
-        .stored("plans", Route, "POST /plans, POST /plans/adopt, POST /plans/retire", &["plans"], Merge::Log, Open)
-        .checked("plans", "adopt")
-        .logged("plans", &[("pick", "plans")])
-        .received("plans")
-        .no_intent(),
-    Declaration::new("frozen_versions", "frozen_versions", "transit_plans::FrozenVersions", "transit-plans")
-        .stored("frozen_versions", Route, "POST /plans/freeze, POST /plans", &[], Merge::Log, Open)
-        .checked("plans", "freeze")
-        .logged("plans", &[("frozen_version", "versions")])
-        .received("plans")
-        .no_intent(),
-    Declaration::new("log_entry", "log_entry", "transit_log::Entry", "transit-log").stored("log_entry", Route, "the log's own writes", &[], Merge::None, Audit),
-    Declaration::new("log_checkpoint", "log_checkpoint", "transit_log::Checkpoint", "transit-log")
-        .stored("log_checkpoint", Server, "the server's fold", &[], Merge::None, Audit),
+    Declaration::new(
+        "plans",
+        "plans",
+        "transit_plans::PublishedPlans",
+        "transit-plans",
+    )
+    .stored(
+        "plans",
+        Route,
+        "POST /plans, POST /plans/adopt, POST /plans/retire",
+        &["plans"],
+        Merge::Log,
+        Open,
+    )
+    .checked("plans", "adopt")
+    .logged("plans", &[("pick", "plans")])
+    .received("plans")
+    .no_intent(),
+    Declaration::new(
+        "frozen_versions",
+        "frozen_versions",
+        "transit_plans::FrozenVersions",
+        "transit-plans",
+    )
+    .stored(
+        "frozen_versions",
+        Route,
+        "POST /plans/freeze, POST /plans",
+        &[],
+        Merge::Log,
+        Open,
+    )
+    .checked("plans", "freeze")
+    .logged("plans", &[("frozen_version", "versions")])
+    .received("plans")
+    .no_intent(),
+    Declaration::new(
+        "log_entry",
+        "log_entry",
+        "transit_log::Entry",
+        "transit-log",
+    )
+    .stored(
+        "log_entry",
+        Route,
+        "the log's own writes",
+        &[],
+        Merge::None,
+        Audit,
+    ),
+    Declaration::new(
+        "log_checkpoint",
+        "log_checkpoint",
+        "transit_log::Checkpoint",
+        "transit-log",
+    )
+    .stored(
+        "log_checkpoint",
+        Server,
+        "the server's fold",
+        &[],
+        Merge::None,
+        Audit,
+    ),
     Declaration::new("policy", "policy", "transit_authz::Policy", "transit-authz")
-        .stored("policy", Pointer, "POST /pointers/policy", &["policy"], Replace, Restricted)
+        .stored(
+            "policy",
+            Pointer,
+            "POST /pointers/policy",
+            &["policy"],
+            Replace,
+            Restricted,
+        )
         .checked("authz", "validate"),
-    Declaration::new("derivation", "derivation", "", "server").stored("derivation", Server, "the server's imports", &["derived.*"], Merge::None, Open),
-    Declaration::new("manifest", "", "", "").stored("manifest", Server, "the server's publishing", &["manifest"], Merge::None, Open),
-    Declaration::new("build", "build", "", "server").stored("build", Route, "the server's -dist, and POST /builds", &["build", "build.*"], Replace, Open),
-    Declaration::new("build_file", "", "", "").stored("build_file", Route, "the server's -dist", &[], Merge::None, Open),
-    Declaration::new("kind_table", "kind_table", "kind_table::KindTable", "cap-abi")
-        .stored("kind_table", Server, "the server's setup of the store", &[], Merge::None, Open),
-    Declaration::new("store_layout", "store_layout", "", "server").stored("store_layout", Server, "the server's setup of the store", &[], Merge::None, Open),
+    Declaration::new("derivation", "derivation", "", "server").stored(
+        "derivation",
+        Server,
+        "the server's imports",
+        &["derived.*"],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new("manifest", "", "", "").stored(
+        "manifest",
+        Server,
+        "the server's publishing",
+        &["manifest"],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new("build", "build", "", "server").stored(
+        "build",
+        Route,
+        "the server's -dist, and POST /builds",
+        &["build", "build.*"],
+        Replace,
+        Open,
+    ),
+    Declaration::new("build_file", "", "", "").stored(
+        "build_file",
+        Route,
+        "the server's -dist",
+        &[],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new(
+        "kind_table",
+        "kind_table",
+        "kind_table::KindTable",
+        "cap-abi",
+    )
+    .stored(
+        "kind_table",
+        Server,
+        "the server's setup of the store",
+        &[],
+        Merge::None,
+        Open,
+    ),
+    Declaration::new("store_layout", "store_layout", "", "server").stored(
+        "store_layout",
+        Server,
+        "the server's setup of the store",
+        &[],
+        Merge::None,
+        Open,
+    ),
 ];
 
 pub fn by_tag(tag: &str) -> Option<&'static Declaration> {
@@ -381,8 +700,13 @@ pub fn problems(kinds: &[Declaration]) -> Vec<String> {
     }
     for k in kinds {
         if let Some(l) = k.load {
-            if l.code < crate::kernel::KERNEL_OPS || [257, 258, crate::kernel::OP_ABOUT].contains(&l.code) {
-                out.push(format!("{}: the load code {} is not a free kernel op", k.name, l.code));
+            if l.code < crate::kernel::KERNEL_OPS
+                || [257, 258, crate::kernel::OP_ABOUT].contains(&l.code)
+            {
+                out.push(format!(
+                    "{}: the load code {} is not a free kernel op",
+                    k.name, l.code
+                ));
             }
         }
         let Some(s) = k.store else { continue };
@@ -391,20 +715,36 @@ pub fn problems(kinds: &[Declaration]) -> Vec<String> {
                 out.push(format!("{}: {} needs a receive op", k.name, post.path));
             }
             if !s.route.contains(post.path) {
-                out.push(format!("{}: the route's words do not name {}", k.name, post.path));
+                out.push(format!(
+                    "{}: the route's words do not name {}",
+                    k.name, post.path
+                ));
             }
         }
         if s.write == Pointer && s.check.is_none() {
-            out.push(format!("{}: the server refuses a pointer write that no module checks", k.name));
+            out.push(format!(
+                "{}: the server refuses a pointer write that no module checks",
+                k.name
+            ));
         }
         if let Some(log) = s.log {
             if !matches!(s.merge, Merge::Log | Lww) {
                 out.push(format!("{}: a log's records merge one by one", k.name));
             }
             // One entry can change records of each kind (D-232).
-            let others: Vec<Log> = kinds.iter().filter_map(|o| o.store?.log).filter(|o| o.name == log.name).collect();
-            if !others.iter().all(|o| o.receive == log.receive && o.intent == log.intent) {
-                out.push(format!("the {} log's kinds disagree on its receive op or its intent", log.name));
+            let others: Vec<Log> = kinds
+                .iter()
+                .filter_map(|o| o.store?.log)
+                .filter(|o| o.name == log.name)
+                .collect();
+            if !others
+                .iter()
+                .all(|o| o.receive == log.receive && o.intent == log.intent)
+            {
+                out.push(format!(
+                    "the {} log's kinds disagree on its receive op or its intent",
+                    log.name
+                ));
             }
         }
     }
@@ -425,12 +765,28 @@ mod tests {
     #[test]
     fn a_broken_list_has_each_problem() {
         let broken = [
-            Declaration::new("a", "a", "", "").loaded("a", "load_a", 12).stored("a", Pointer, "POST /x", &["a"], Replace, Open),
-            Declaration::new("a", "b", "", "").stored("b", Route, "POST /b", &[], Merge::Log, Open).logged("l", &[]).posted("/c", "v", "b_hash", &[]),
-            Declaration::new("c", "c", "", "").stored("c", Route, "", &[], Replace, Open).logged("l", &[]).received("x"),
+            Declaration::new("a", "a", "", "")
+                .loaded("a", "load_a", 12)
+                .stored("a", Pointer, "POST /x", &["a"], Replace, Open),
+            Declaration::new("a", "b", "", "")
+                .stored("b", Route, "POST /b", &[], Merge::Log, Open)
+                .logged("l", &[])
+                .posted("/c", "v", "b_hash", &[]),
+            Declaration::new("c", "c", "", "")
+                .stored("c", Route, "", &[], Replace, Open)
+                .logged("l", &[])
+                .received("x"),
         ];
         let found = problems(&broken);
-        for want in ["another line has the name a", "not a free kernel op", "needs a receive op", "do not name /c", "no module checks", "merge one by one", "disagree"] {
+        for want in [
+            "another line has the name a",
+            "not a free kernel op",
+            "needs a receive op",
+            "do not name /c",
+            "no module checks",
+            "merge one by one",
+            "disagree",
+        ] {
             assert!(found.iter().any(|p| p.contains(want)), "{want}: {found:?}");
         }
     }

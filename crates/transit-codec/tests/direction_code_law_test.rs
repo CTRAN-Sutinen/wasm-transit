@@ -9,9 +9,20 @@ use transit_network::{Direction, Route};
 fn route(ids: &[&str]) -> Route {
     let directions: BTreeMap<String, Direction> = ids
         .iter()
-        .map(|id| (id.to_string(), Direction { name: format!("To {id}"), extra: Default::default() }))
+        .map(|id| {
+            (
+                id.to_string(),
+                Direction {
+                    name: format!("To {id}"),
+                    extra: Default::default(),
+                },
+            )
+        })
         .collect();
-    Route { directions, ..Default::default() }
+    Route {
+        directions,
+        ..Default::default()
+    }
 }
 
 #[test]

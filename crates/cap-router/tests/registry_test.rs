@@ -3,7 +3,7 @@
 //! every date. The registries are process-global and eviction would race the
 //! dispatch tests, so this file is its own test binary.
 
-use cap_abi::kernel::{kind, derived_len, GRAPH};
+use cap_abi::kernel::{derived_len, kind, GRAPH};
 use cap_abi::registry::OP_EVICT;
 use cap_router::{dispatch, invoke_bytes, Request, Response};
 
@@ -27,11 +27,17 @@ fn plan(network_hash: &str, date: &str) -> Result<Response, cap_abi::Refusal> {
 #[test]
 fn graphs_are_bounded_and_follow_their_documents_out() {
     let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).unwrap();
-    let (network_hash, _) = kind::<transit_network::Network>().register(transit_codec::import(&feed).network).unwrap();
+    let (network_hash, _) = kind::<transit_network::Network>()
+        .register(transit_codec::import(&feed).network)
+        .unwrap();
 
     for day in 1..=30 {
         plan(&network_hash, &format!("2026-10-{day:02}")).unwrap();
-        assert!(derived_len(&GRAPH) <= 8, "day {day}: {} graphs held", derived_len(&GRAPH));
+        assert!(
+            derived_len(&GRAPH) <= 8,
+            "day {day}: {} graphs held",
+            derived_len(&GRAPH)
+        );
     }
     assert_eq!(derived_len(&GRAPH), 8);
 

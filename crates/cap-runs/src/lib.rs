@@ -109,7 +109,12 @@ impl transit_runs::Roads for Graph<'_> {
 impl Loaded {
     fn blocks(&self) -> transit_runs::DayBlocks {
         let graph = self.graph.as_deref().map(Graph);
-        transit_runs::DayBlocks::new(&self.network, &self.day.trips, self.constraints.as_deref(), graph.as_ref().map(|g| g as &dyn transit_runs::Roads))
+        transit_runs::DayBlocks::new(
+            &self.network,
+            &self.day.trips,
+            self.constraints.as_deref(),
+            graph.as_ref().map(|g| g as &dyn transit_runs::Roads),
+        )
     }
 }
 
@@ -124,7 +129,9 @@ fn load(
     let on = transit_dispatch::day_date(&date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
     let rules = kind::<transit_runs::WorkRules>().require(work_rules_hash)?;
-    let constraints = scheduling_constraints_hash.map(|h| kind::<transit_runs::SchedulingConstraints>().require(h)).transpose()?;
+    let constraints = scheduling_constraints_hash
+        .map(|h| kind::<transit_runs::SchedulingConstraints>().require(h))
+        .transpose()?;
     let day = day(network_hash, edits_hash, &date)?;
     let graph = streets_hash
         .map(|h| {
@@ -134,52 +141,150 @@ fn load(
             })
         })
         .transpose()?;
-    Ok(Loaded { weekday: on.weekday().into(), date, network, rules, constraints, day, graph })
+    Ok(Loaded {
+        weekday: on.weekday().into(),
+        date,
+        network,
+        rules,
+        constraints,
+        day,
+        graph,
+    })
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::Cut { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash, streets_hash } => {
-            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref(), streets_hash.as_deref())?;
+        Request::Cut {
+            network_hash,
+            edits_hash,
+            date,
+            work_rules_hash,
+            scheduling_constraints_hash,
+            streets_hash,
+        } => {
+            let l = load(
+                &network_hash,
+                edits_hash.as_deref(),
+                date,
+                &work_rules_hash,
+                scheduling_constraints_hash.as_deref(),
+                streets_hash.as_deref(),
+            )?;
             let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
-            let cut =
-                transit_runs::cut_runs(&l.blocks(), &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places);
+            let cut = transit_runs::cut_runs(
+                &l.blocks(),
+                &l.rules,
+                l.constraints.as_deref(),
+                &l.date,
+                l.weekday,
+                &places,
+            );
             Ok(Response::Cut { cut })
         }
-        Request::Pieces { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash, streets_hash } => {
-            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref(), streets_hash.as_deref())?;
+        Request::Pieces {
+            network_hash,
+            edits_hash,
+            date,
+            work_rules_hash,
+            scheduling_constraints_hash,
+            streets_hash,
+        } => {
+            let l = load(
+                &network_hash,
+                edits_hash.as_deref(),
+                date,
+                &work_rules_hash,
+                scheduling_constraints_hash.as_deref(),
+                streets_hash.as_deref(),
+            )?;
             let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
-            let pieces =
-                transit_runs::cut_pieces(&l.blocks(), &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places);
+            let pieces = transit_runs::cut_pieces(
+                &l.blocks(),
+                &l.rules,
+                l.constraints.as_deref(),
+                &l.date,
+                l.weekday,
+                &places,
+            );
             Ok(Response::Pieces { pieces })
         }
-        Request::Compose { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash, streets_hash, pieces } => {
-            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref(), streets_hash.as_deref())?;
+        Request::Compose {
+            network_hash,
+            edits_hash,
+            date,
+            work_rules_hash,
+            scheduling_constraints_hash,
+            streets_hash,
+            pieces,
+        } => {
+            let l = load(
+                &network_hash,
+                edits_hash.as_deref(),
+                date,
+                &work_rules_hash,
+                scheduling_constraints_hash.as_deref(),
+                streets_hash.as_deref(),
+            )?;
             let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
             let blocks = l.blocks();
-            let composed = transit_runs::compose_refs(&blocks, &pieces, &l.rules, &l.date, l.weekday, &places)
-                .map_err(cap_abi::Refusal::from)?;
+            let composed =
+                transit_runs::compose_refs(&blocks, &pieces, &l.rules, &l.date, l.weekday, &places)
+                    .map_err(cap_abi::Refusal::from)?;
             Ok(Response::Compose { composed })
         }
-        Request::Judge { network_hash, edits_hash, date, work_rules_hash, scheduling_constraints_hash, streets_hash, runs } => {
-            let l = load(&network_hash, edits_hash.as_deref(), date, &work_rules_hash, scheduling_constraints_hash.as_deref(), streets_hash.as_deref())?;
+        Request::Judge {
+            network_hash,
+            edits_hash,
+            date,
+            work_rules_hash,
+            scheduling_constraints_hash,
+            streets_hash,
+            runs,
+        } => {
+            let l = load(
+                &network_hash,
+                edits_hash.as_deref(),
+                date,
+                &work_rules_hash,
+                scheduling_constraints_hash.as_deref(),
+                streets_hash.as_deref(),
+            )?;
             let places = transit_runs::NetworkPlaces::new(&l.network, &l.day.trips);
             let blocks = l.blocks();
-            let judged = transit_runs::judge_runs(&blocks, &runs, &l.rules, l.constraints.as_deref(), &l.date, l.weekday, &places)
-                .map_err(cap_abi::Refusal::from)?;
+            let judged = transit_runs::judge_runs(
+                &blocks,
+                &runs,
+                &l.rules,
+                l.constraints.as_deref(),
+                &l.date,
+                l.weekday,
+                &places,
+            )
+            .map_err(cap_abi::Refusal::from)?;
             Ok(Response::Judge { judged })
         }
     }
 }
 
-fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
+fn day(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date: &str,
+) -> Result<std::sync::Arc<transit_dispatch::Day>, cap_abi::Refusal> {
     let on = transit_dispatch::day_date(date)?;
     let network = kind::<transit_network::Network>().require(network_hash)?;
-    let edits = edits_hash.map(|hash| kind::<transit_sync::EditDocument>().require(hash)).transpose()?;
-    let records = edits.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
+    let edits = edits_hash
+        .map(|hash| kind::<transit_sync::EditDocument>().require(hash))
+        .transpose()?;
+    let records = edits
+        .as_deref()
+        .map(|d| d.records.as_slice())
+        .unwrap_or(&[]);
     let inputs: Vec<&str> = std::iter::once(network_hash).chain(edits_hash).collect();
     let key = transit_dispatch::day_key(network_hash, edits_hash, date);
-    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || transit_dispatch::day_of(&network, records, on))
+    cap_abi::kernel::derive(&cap_abi::kernel::DAY, &key, &inputs, || {
+        transit_dispatch::day_of(&network, records, on)
+    })
 }
 
 pub fn dispatch_json(text: &str) -> String {
@@ -187,7 +292,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: runs has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: runs has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]

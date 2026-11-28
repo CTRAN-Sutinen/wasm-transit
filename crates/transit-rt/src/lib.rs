@@ -6,19 +6,24 @@ pub mod gtfs_rt {
     include!(concat!(env!("OUT_DIR"), "/transit_realtime.rs"));
 }
 
+pub mod encode;
+pub mod live;
+pub mod load;
 pub mod overview;
 pub mod progress;
-pub mod live;
-pub mod encode;
-pub mod load;
 
-pub use overview::{
-    AlertView, InformedView,
-    decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
+pub use encode::{
+    encode_alerts, entity_reading, read_alerts, DroppedAlert, EncodedAlerts, EntityNames,
+    EntityReading, EntityRoute, EntityStop, EntityTrip, ReadAlerts, SkippedEntity,
 };
-pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, StopName, TripProgress};
 pub use live::live_day;
-pub use encode::{encode_alerts, entity_reading, read_alerts, DroppedAlert, EncodedAlerts, EntityNames, EntityReading, EntityRoute, EntityStop, EntityTrip, ReadAlerts, SkippedEntity};
+pub use overview::{
+    decode_overview, AlertView, InformedView, RtOverview, StopUpdateView, TripUpdateView,
+    VehicleView,
+};
+pub use progress::{
+    late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, StopName, TripProgress,
+};
 
 use prost::Message;
 

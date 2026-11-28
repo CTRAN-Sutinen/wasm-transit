@@ -3,7 +3,9 @@
 //! panic. The streets' hash is the same for the import, the document handed
 //! back, and a reordered file. A non-canonical document is refused.
 
-use cap_streets::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response, OP_IMPORT};
+use cap_streets::{
+    dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response, OP_IMPORT,
+};
 use serde_json::{json, Value};
 
 /// One horizontal street and one vertical, so a route bends at the corner.
@@ -13,8 +15,17 @@ const ELBOW: &str = r#"{"type":"FeatureCollection","features":[
 ]}"#;
 
 fn load_elbow() -> (String, u32, u32) {
-    match dispatch(Request::Import { bytes: ELBOW.as_bytes().to_vec() }).unwrap() {
-        Response::Import { streets_hash, segments, nodes, .. } => (streets_hash, segments, nodes),
+    match dispatch(Request::Import {
+        bytes: ELBOW.as_bytes().to_vec(),
+    })
+    .unwrap()
+    {
+        Response::Import {
+            streets_hash,
+            segments,
+            nodes,
+            ..
+        } => (streets_hash, segments, nodes),
         _ => panic!("import"),
     }
 }
@@ -22,12 +33,29 @@ fn load_elbow() -> (String, u32, u32) {
 #[test]
 fn load_registers_and_reports_the_graph() {
     let (streets_hash, segments, nodes) = load_elbow();
-    assert_eq!((segments, nodes), (2, 3), "two segments, three nodes (the corner welds)");
-    let again = match dispatch(Request::Import { bytes: ELBOW.as_bytes().to_vec() }).unwrap() {
-        Response::Import { streets_hash: hash, segments, nodes, .. } => (hash, segments, nodes),
+    assert_eq!(
+        (segments, nodes),
+        (2, 3),
+        "two segments, three nodes (the corner welds)"
+    );
+    let again = match dispatch(Request::Import {
+        bytes: ELBOW.as_bytes().to_vec(),
+    })
+    .unwrap()
+    {
+        Response::Import {
+            streets_hash: hash,
+            segments,
+            nodes,
+            ..
+        } => (hash, segments, nodes),
         _ => panic!("reimport"),
     };
-    assert_eq!(again, (streets_hash.clone(), segments, nodes), "same streets, same hash");
+    assert_eq!(
+        again,
+        (streets_hash.clone(), segments, nodes),
+        "same streets, same hash"
+    );
     assert!(streets_hash.starts_with("sha256:"), "content-hash identity");
 }
 
@@ -55,16 +83,37 @@ fn snap_and_route_follow_street_geometry() {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap b"),
     };
-    match dispatch(Request::Route { streets_hash, from: a, to: b, confirm: None }).unwrap() {
-        Response::Route { points, length_m, .. } => {
+    match dispatch(Request::Route {
+        streets_hash,
+        from: a,
+        to: b,
+        confirm: None,
+    })
+    .unwrap()
+    {
+        Response::Route {
+            points, length_m, ..
+        } => {
             // 0.005 degrees of longitude (about 390 m) plus 0.004 of latitude
             // (about 445 m). The diagonal is about 592 m.
             let length = length_m.expect("a path has a length");
-            assert!((800.0..870.0).contains(&length), "the street length, not the diagonal: {length} m");
+            assert!(
+                (800.0..870.0).contains(&length),
+                "the street length, not the diagonal: {length} m"
+            );
             assert_eq!(points.len(), 2, "the corner, then the target");
-            assert!((points[0].lat - 45.5040).abs() < 1e-9, "first bend is the corner");
-            assert!((points[0].lon + 73.5080).abs() < 1e-9, "the corner, not the diagonal");
-            assert!((points[1].lat - 45.5080).abs() < 1e-9, "ends exactly at the target");
+            assert!(
+                (points[0].lat - 45.5040).abs() < 1e-9,
+                "first bend is the corner"
+            );
+            assert!(
+                (points[0].lon + 73.5080).abs() < 1e-9,
+                "the corner, not the diagonal"
+            );
+            assert!(
+                (points[1].lat - 45.5080).abs() < 1e-9,
+                "ends exactly at the target"
+            );
         }
         _ => panic!("route"),
     }
@@ -73,7 +122,13 @@ fn snap_and_route_follow_street_geometry() {
 #[test]
 fn snap_far_from_the_network_answers_null() {
     let (streets_hash, _, _) = load_elbow();
-    match dispatch(Request::Snap { streets_hash, lat: 44.0, lon: -70.0 }).unwrap() {
+    match dispatch(Request::Snap {
+        streets_hash,
+        lat: 44.0,
+        lon: -70.0,
+    })
+    .unwrap()
+    {
         Response::Snap { position: None } => {}
         _ => panic!("no street nearby answers null, not an error"),
     }
@@ -88,22 +143,45 @@ fn route_between_disconnected_parts_answers_empty() {
         {"type":"Feature","geometry":{"type":"LineString",
             "coordinates":[[-73.6000,45.6000],[-73.6100,45.6100]]}}
     ]}"#;
-    let streets_hash = match dispatch(Request::Import { bytes: ISLANDS.as_bytes().to_vec() })
-        .unwrap()
+    let streets_hash = match dispatch(Request::Import {
+        bytes: ISLANDS.as_bytes().to_vec(),
+    })
+    .unwrap()
     {
         Response::Import { streets_hash, .. } => streets_hash,
         _ => panic!("import"),
     };
-    let a = match dispatch(Request::Snap { streets_hash: streets_hash.clone(), lat: 45.5040, lon: -73.5030 }).unwrap() {
+    let a = match dispatch(Request::Snap {
+        streets_hash: streets_hash.clone(),
+        lat: 45.5040,
+        lon: -73.5030,
+    })
+    .unwrap()
+    {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap a"),
     };
-    let b = match dispatch(Request::Snap { streets_hash: streets_hash.clone(), lat: 45.6000, lon: -73.6000 }).unwrap() {
+    let b = match dispatch(Request::Snap {
+        streets_hash: streets_hash.clone(),
+        lat: 45.6000,
+        lon: -73.6000,
+    })
+    .unwrap()
+    {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap b"),
     };
-    match dispatch(Request::Route { streets_hash, from: a, to: b, confirm: None }).unwrap() {
-        Response::Route { points, length_m, .. } => {
+    match dispatch(Request::Route {
+        streets_hash,
+        from: a,
+        to: b,
+        confirm: None,
+    })
+    .unwrap()
+    {
+        Response::Route {
+            points, length_m, ..
+        } => {
             assert!(points.is_empty(), "no path: empty, the caller falls back");
             assert_eq!(length_m, None, "no path, no length");
         }
@@ -114,14 +192,17 @@ fn route_between_disconnected_parts_answers_empty() {
 #[test]
 fn the_json_seam_round_trips_and_errors_totally() {
     let (streets_hash, _, _) = load_elbow();
-    let text = format!(
-        r#"{{"op":"snap","streets_hash":"{streets_hash}","lat":45.5040,"lon":-73.5030}}"#
-    );
+    let text =
+        format!(r#"{{"op":"snap","streets_hash":"{streets_hash}","lat":45.5040,"lon":-73.5030}}"#);
     let outcome = dispatch_json(&text);
     assert!(outcome.contains(r#""ok":{"op":"snap""#), "{outcome}");
-    assert!(outcome.contains(r#""dist_m":0.0"#), "the snapped position serializes: {outcome}");
+    assert!(
+        outcome.contains(r#""dist_m":0.0"#),
+        "the snapped position serializes: {outcome}"
+    );
 
-    let missing = dispatch_json(r#"{"op":"snap","streets_hash":"sha256:missing","lat":0.0,"lon":0.0}"#);
+    let missing =
+        dispatch_json(r#"{"op":"snap","streets_hash":"sha256:missing","lat":0.0,"lon":0.0}"#);
     assert!(missing.contains("unknown street network"), "{missing}");
 
     let bad = dispatch_bytes(0, b"not geojson");
@@ -142,7 +223,10 @@ fn ok(outcome: String) -> Value {
 
 fn err(outcome: String) -> String {
     let v: Value = serde_json::from_str(&outcome).unwrap();
-    v["error"]["message"].as_str().unwrap_or_else(|| panic!("expected an error, got {v}")).to_string()
+    v["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected an error, got {v}"))
+        .to_string()
 }
 
 #[test]
@@ -151,12 +235,20 @@ fn the_document_handed_back_is_the_same_hash() {
     assert_eq!(imported["op"], "import");
     let hash = imported["streets_hash"].as_str().unwrap().to_string();
     assert!(hash.starts_with("sha256:"));
-    assert_eq!(imported["ways"], imported["streets"]["ways"].as_array().unwrap().len());
+    assert_eq!(
+        imported["ways"],
+        imported["streets"]["ways"].as_array().unwrap().len()
+    );
 
     let streets = imported["streets"].clone();
-    let by_json = ok(dispatch_json(&json!({ "op": "load_streets", "streets": streets }).to_string()));
+    let by_json = ok(dispatch_json(
+        &json!({ "op": "load_streets", "streets": streets }).to_string(),
+    ));
     assert_eq!(by_json["streets_hash"], hash.as_str());
-    let by_bytes = ok(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, streets.to_string().as_bytes()));
+    let by_bytes = ok(dispatch_bytes(
+        <transit_streets::Streets as cap_abi::kernel::Load>::CODE,
+        streets.to_string().as_bytes(),
+    ));
     assert_eq!(by_bytes["streets_hash"], hash.as_str());
     assert_eq!(by_bytes["segments"], imported["segments"]);
     assert_eq!(by_bytes["nodes"], imported["nodes"]);
@@ -179,10 +271,15 @@ fn the_same_streets_from_another_file_are_the_same_hash() {
 fn queries_answer_over_a_loaded_document() {
     let imported = ok(dispatch_bytes(OP_IMPORT, FIXTURE.as_bytes()));
     let hash = imported["streets_hash"].as_str().unwrap();
-    let a = ok(dispatch_json(&json!({ "op": "snap", "streets_hash": hash, "lat": 45.504, "lon": -73.503 }).to_string()));
-    let b = ok(dispatch_json(&json!({ "op": "snap", "streets_hash": hash, "lat": 45.508, "lon": -73.508 }).to_string()));
+    let a = ok(dispatch_json(
+        &json!({ "op": "snap", "streets_hash": hash, "lat": 45.504, "lon": -73.503 }).to_string(),
+    ));
+    let b = ok(dispatch_json(
+        &json!({ "op": "snap", "streets_hash": hash, "lat": 45.508, "lon": -73.508 }).to_string(),
+    ));
     let routed = ok(dispatch_json(
-        &json!({ "op": "route", "streets_hash": hash, "from": a["position"], "to": b["position"] }).to_string(),
+        &json!({ "op": "route", "streets_hash": hash, "from": a["position"], "to": b["position"] })
+            .to_string(),
     ));
     assert!(!routed["points"].as_array().unwrap().is_empty());
     assert!(routed["length_m"].as_f64().unwrap() > 0.0);
@@ -194,8 +291,16 @@ fn what_is_not_canonical_or_not_streets_is_an_error() {
         { "points": [[45601000, -122600000], [45601000, -122599000]], "class": "local" },
         { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
     ]});
-    assert!(err(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, unsorted.to_string().as_bytes())).contains("streets document"));
-    assert!(err(dispatch_bytes(<transit_streets::Streets as cap_abi::kernel::Load>::CODE, b"\xff\xfe")).contains("streets document"));
+    assert!(err(dispatch_bytes(
+        <transit_streets::Streets as cap_abi::kernel::Load>::CODE,
+        unsorted.to_string().as_bytes()
+    ))
+    .contains("streets document"));
+    assert!(err(dispatch_bytes(
+        <transit_streets::Streets as cap_abi::kernel::Load>::CODE,
+        b"\xff\xfe"
+    ))
+    .contains("streets document"));
     assert!(err(dispatch_bytes(OP_IMPORT, b"\xff\xfe")).contains("street layer"));
     let rails = json!({ "type": "FeatureCollection", "features": [
         { "type": "Feature", "properties": { "CFCC": "B10" },
@@ -203,7 +308,9 @@ fn what_is_not_canonical_or_not_streets_is_an_error() {
     ]});
     assert!(err(dispatch_bytes(OP_IMPORT, rails.to_string().as_bytes())).contains("no streets"));
     assert!(err(dispatch_bytes(9, b"{}")).contains("unknown bulk op"));
-    let unknown = dispatch_json(&json!({ "op": "snap", "streets_hash": "sha256:missing", "lat": 0, "lon": 0 }).to_string());
+    let unknown = dispatch_json(
+        &json!({ "op": "snap", "streets_hash": "sha256:missing", "lat": 0, "lon": 0 }).to_string(),
+    );
     assert!(err(unknown).contains("unknown street network"));
 }
 
@@ -211,37 +318,62 @@ const NETWORK_LOAD: &str = include_str!("../../../web/public/caps/sample-network
 
 fn load_network() -> String {
     let network: Value = serde_json::from_str::<Value>(NETWORK_LOAD).unwrap()["network"].clone();
-    let by_bytes = ok(dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, network.to_string().as_bytes()));
-    let by_json = ok(dispatch_json(&json!({ "op": "load_network", "network": network }).to_string()));
-    assert_eq!(by_bytes["network_hash"], by_json["network_hash"], "either lane, one identity");
+    let by_bytes = ok(dispatch_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        network.to_string().as_bytes(),
+    ));
+    let by_json = ok(dispatch_json(
+        &json!({ "op": "load_network", "network": network }).to_string(),
+    ));
+    assert_eq!(
+        by_bytes["network_hash"], by_json["network_hash"],
+        "either lane, one identity"
+    );
     by_bytes["network_hash"].as_str().unwrap().to_string()
 }
 
 #[test]
 fn the_walk_table_names_what_it_walks_and_is_its_hash() {
     let network_hash = load_network();
-    let streets_hash = ok(dispatch_bytes(OP_IMPORT, FIXTURE.as_bytes()))["streets_hash"].as_str().unwrap().to_string();
+    let streets_hash = ok(dispatch_bytes(OP_IMPORT, FIXTURE.as_bytes()))["streets_hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let answer = ok(dispatch_json(
-        &json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash }).to_string(),
+        &json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash })
+            .to_string(),
     ));
     let table = &answer["walks"];
     assert_eq!(table["streets_hash"], streets_hash.as_str());
     assert_eq!(table["network_hash"], network_hash.as_str());
     assert_eq!(table["speed_mps"], 1.3, "the default speed");
-    assert_eq!(table["max_walk_secs"], 600, "the default limit: ten minutes");
+    assert_eq!(
+        table["max_walk_secs"], 600,
+        "the default limit: ten minutes"
+    );
     let typed: transit_streets::walking::WalkTable = serde_json::from_value(table.clone()).unwrap();
-    assert_eq!(answer["walks_hash"], cap_abi::canonical_hash(&typed).unwrap().as_str());
+    assert_eq!(
+        answer["walks_hash"],
+        cap_abi::canonical_hash(&typed).unwrap().as_str()
+    );
 
     let slower = ok(dispatch_json(
         &json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash,
-                 "speed_mps": 0.9, "max_walk_secs": 900 }).to_string(),
+                 "speed_mps": 0.9, "max_walk_secs": 900 })
+        .to_string(),
     ));
     assert_eq!(slower["walks"]["speed_mps"], 0.9);
-    assert_ne!(slower["walks_hash"], answer["walks_hash"], "the parameters are part of the document");
+    assert_ne!(
+        slower["walks_hash"], answer["walks_hash"],
+        "the parameters are part of the document"
+    );
 
     let walks = |extra: Value| {
-        let mut req = json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash });
-        req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let mut req =
+            json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash });
+        req.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         err(dispatch_json(&req.to_string()))
     };
     assert!(walks(json!({ "speed_mps": 0.0 })).contains("walking speed"));
@@ -257,19 +389,32 @@ const WALK_STREETS: &str = include_str!("../../../web/e2e/fixtures/walk-streets.
 #[test]
 fn a_point_walks_to_the_stops_near_it_nearest_first() {
     let network_hash = load_network();
-    let streets_hash =
-        ok(dispatch_bytes(OP_IMPORT, WALK_STREETS.as_bytes()))["streets_hash"].as_str().unwrap().to_string();
+    let streets_hash = ok(dispatch_bytes(OP_IMPORT, WALK_STREETS.as_bytes()))["streets_hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let point = json!({ "lat": 45.5152, "lon": -73.5165 });
     let to = json!({ "lat": 45.5148, "lon": -73.5135 });
     let answer = ok(dispatch_json(
         &json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash,
-                 "point": point, "to": to }).to_string(),
+                 "point": point, "to": to })
+        .to_string(),
     ));
     assert_eq!(answer["op"], "access");
     let walks = answer["walks"].as_array().unwrap();
-    let order: Vec<_> = walks.iter().map(|w| w["stop_id"].as_str().unwrap()).collect();
-    assert_eq!(order, ["SA", "STN", "SB"], "the bays and the station, nearest first; A, B, C are kilometers off");
-    let secs: Vec<_> = walks.iter().map(|w| w["walk_secs"].as_u64().unwrap()).collect();
+    let order: Vec<_> = walks
+        .iter()
+        .map(|w| w["stop_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        order,
+        ["SA", "STN", "SB"],
+        "the bays and the station, nearest first; A, B, C are kilometers off"
+    );
+    let secs: Vec<_> = walks
+        .iter()
+        .map(|w| w["walk_secs"].as_u64().unwrap())
+        .collect();
     assert!(secs.windows(2).all(|p| p[0] <= p[1]), "{secs:?}");
     // 22 m to the street and 78 m along it is 77 s at 1.3 m/s.
     assert!(secs[0].abs_diff(77) <= 1, "{secs:?}");
@@ -279,24 +424,33 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
         assert_eq!(path.last().unwrap()["lat"], 45.515, "and ends at the stop");
     }
     let direct = &answer["direct"];
-    assert!(direct["walk_secs"].as_u64().unwrap().abs_diff(214) <= 1, "{direct}");
+    assert!(
+        direct["walk_secs"].as_u64().unwrap().abs_diff(214) <= 1,
+        "{direct}"
+    );
     assert_eq!(direct["path"].as_array().unwrap().last().unwrap(), &to);
 
     let far = ok(dispatch_json(
         &json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash,
-                 "point": { "lat": 45.6, "lon": -73.6 } }).to_string(),
+                 "point": { "lat": 45.6, "lon": -73.6 } })
+        .to_string(),
     ));
     assert_eq!(far["walks"], json!([]));
     assert_eq!(far["direct"], Value::Null);
 
     let access = |point: Value, extra: Value| {
         let mut req = json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash, "point": point });
-        req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        req.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         err(dispatch_json(&req.to_string()))
     };
     assert!(access(json!({ "lat": 91.0, "lon": 0.0 }), json!({})).contains("not on the globe"));
     assert!(access(point.clone(), json!({ "max_walk_secs": 7200 })).contains("at most an hour"));
-    assert!(access(point.clone(), json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
+    assert!(
+        access(point.clone(), json!({ "network_hash": "sha256:missing" }))
+            .contains("load_network first")
+    );
 }
 
 /// The Elbow carries no class, so it is `unknown` and the default profile
@@ -304,30 +458,54 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
 #[test]
 fn a_route_names_its_streets_and_the_ones_to_confirm() {
     let (streets_hash, _, _) = load_elbow();
-    let snap = |lat: f64, lon: f64| match dispatch(Request::Snap { streets_hash: streets_hash.clone(), lat, lon }).unwrap() {
+    let snap = |lat: f64, lon: f64| match dispatch(Request::Snap {
+        streets_hash: streets_hash.clone(),
+        lat,
+        lon,
+    })
+    .unwrap()
+    {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap"),
     };
     let (a, b) = (snap(45.5040, -73.5030), snap(45.5080, -73.5080));
-    let route = |confirm: Option<Vec<transit_streets::StreetClass>>| {
-        match dispatch(Request::Route { streets_hash: streets_hash.clone(), from: a, to: b, confirm }).unwrap() {
-            Response::Route { points, length_m, streets, to_confirm } => (points, length_m, streets, to_confirm),
+    let route =
+        |confirm: Option<Vec<transit_streets::StreetClass>>| match dispatch(Request::Route {
+            streets_hash: streets_hash.clone(),
+            from: a,
+            to: b,
+            confirm,
+        })
+        .unwrap()
+        {
+            Response::Route {
+                points,
+                length_m,
+                streets,
+                to_confirm,
+            } => (points, length_m, streets, to_confirm),
             _ => panic!("route"),
-        }
-    };
+        };
     let (points, length_m, streets, to_confirm) = route(None);
     assert_eq!(points.len(), 2, "drawn, never refused");
     assert_eq!(streets.len(), 1, "one street, however many segments");
     assert_eq!(streets[0].class, transit_streets::StreetClass::Unknown);
     assert!((streets[0].length_m - length_m.unwrap()).abs() < 1e-9);
-    assert_eq!(to_confirm, streets, "the default profile confirms an unknown class");
+    assert_eq!(
+        to_confirm, streets,
+        "the default profile confirms an unknown class"
+    );
     let (same, _, _, none) = route(Some(vec![]));
     assert_eq!(same, points);
     assert!(none.is_empty());
     let (_, _, _, local) = route(Some(vec![transit_streets::StreetClass::Local]));
     assert!(local.is_empty(), "only the classes asked are confirmed");
-    let wire: Value = serde_json::from_str(&dispatch_json(&json!({
-        "op": "route", "streets_hash": streets_hash, "from": a, "to": b
-    }).to_string())).unwrap();
+    let wire: Value = serde_json::from_str(&dispatch_json(
+        &json!({
+            "op": "route", "streets_hash": streets_hash, "from": a, "to": b
+        })
+        .to_string(),
+    ))
+    .unwrap();
     assert_eq!(wire["ok"]["to_confirm"][0]["class"], "unknown");
 }

@@ -9,30 +9,36 @@ pub fn examples() -> Vec<Example> {
     let date = transit_date::Date::from_ymd_opt(2026, 10, 23).expect("a date");
     let day = transit_network::materialize(&net.network, date).expect("the fixture day");
     let graph = transit_router::RouterNetwork::build_from_day(&net.network, &day, date);
-    let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4).expect("query").expect("A→B on the fixture Friday");
+    let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4)
+        .expect("query")
+        .expect("A→B on the fixture Friday");
     vec![
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "plan",
             loads: vec![network(), fixtures::load("load_live", "live", &live)],
             request: json!({ "op": "plan", "network_hash": net.network_hash, "from": "A", "to": "B",
                              "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4, "live_hash": live_hash }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "plan_arrive_by",
             loads: vec![network()],
             request: json!({ "op": "plan_arrive_by", "network_hash": net.network_hash, "from": "A", "to": "B", "date": "2026-10-23", "max_legs": 4 }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "plan_compare",
             loads: vec![network(), fixtures::load("load_edits", "edits", &edits)],
             request: json!({ "op": "plan_compare", "network_hash": net.network_hash, "edits_hash": cap_abi::canonical_hash(&edits).expect("a hash"),
                              "from": "A", "to": "B", "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "itinerary_paths",
             loads: vec![network()],
             request: json!({ "op": "itinerary_paths", "network_hash": net.network_hash, "date": "2026-10-23", "itinerary": itinerary }),

@@ -8,7 +8,11 @@
 use sha2::{Digest as _, Sha256};
 
 pub fn fixture_watchlist() -> transit_rider::watchlist::Watchlist {
-    let stop = |id: &str, label: &str| transit_rider::watchlist::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
+    let stop = |id: &str, label: &str| transit_rider::watchlist::WatchStop {
+        id: id.into(),
+        label: label.into(),
+        extra: Default::default(),
+    };
     transit_rider::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
@@ -33,14 +37,14 @@ impl NetworkExampleContext {
 /// The fixture as the fall 2026 pick (from 2026-10-19), and a published
 /// set: that pick, a retired pick on 2026-11-30, and the winter pick on
 /// 2027-01-04.
-pub fn pick_example(net: &NetworkExampleContext) -> Option<(transit_network::Network, transit_plans::PublishedPlans)> {
+pub fn pick_example(
+    net: &NetworkExampleContext,
+) -> Option<(transit_network::Network, transit_plans::PublishedPlans)> {
     let mut pick = net.derived_network().clone();
     pick.plan.id = "fall-2026".into();
     pick.plan.name = "Fall 2026".into();
     pick.plan.effective_from = transit_date::Date::from_ymd_opt(2026, 10, 19);
-    let entry = |id: &str, name: &str, from: &str, status: &str| {
-        serde_json::json!({ "id": id, "name": name, "effective_from": from, "network_hash": "sha256:…", "status": status })
-    };
+    let entry = |id: &str, name: &str, from: &str, status: &str| serde_json::json!({ "id": id, "name": name, "effective_from": from, "network_hash": "sha256:…", "status": status });
     let published = serde_json::from_value(serde_json::json!({
         "kind": "plans", "schema_version": 1,
         "plans": [entry("fall-2026", "Fall 2026", "2026-10-19", "published"), entry("holiday-2026", "Holiday 2026", "2026-11-30", "retired"), entry("winter-2027", "Winter 2027", "2027-01-04", "published")],
@@ -82,7 +86,10 @@ pub fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContex
 }
 
 pub fn fixture_gtfs() -> Option<transit_codec::Feed> {
-    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-gtfs.zip"
+    );
     let bytes = std::fs::read(fixture).ok()?;
     transit_codec::Feed::from_zip_bytes(&bytes).ok()
 }
@@ -117,7 +124,17 @@ pub fn streets_example_context() -> Option<StreetsExampleContext> {
         Some(route) => (route.points, Some(route.length_m), route.streets),
         None => (vec![], None, vec![]),
     };
-    Some(StreetsExampleContext { streets, streets_hash, segments, nodes, pos_a, pos_b, points, length_m, streets_along })
+    Some(StreetsExampleContext {
+        streets,
+        streets_hash,
+        segments,
+        nodes,
+        pos_a,
+        pos_b,
+        points,
+        length_m,
+        streets_along,
+    })
 }
 
 pub struct RtExampleContext {
@@ -149,7 +166,14 @@ pub fn rt_example_context() -> Option<RtExampleContext> {
 
 pub fn live_example() -> Option<(transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
-    let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, None, transit_live::OnTimeWindow::default());
+    let live = transit_rt::live_day(
+        &ctx.network,
+        &ctx.boundary,
+        Some(&ctx.overview),
+        None,
+        None,
+        transit_live::OnTimeWindow::default(),
+    );
     let live_hash = cap_abi::canonical_hash(&live).ok()?;
     Some((live, live_hash))
 }
@@ -221,9 +245,21 @@ pub fn receive_write(log: &str, writer: &str, at_ms: u64) -> transit_log::Write 
         writer: writer.into(),
         at_ms,
         module: format!("cap-{log}@sha256:…"),
-        intent: transit_log::Intent { op: format!("POST /logs/{log}"), key: Some("device-1/1".into()), ..Default::default() },
+        intent: transit_log::Intent {
+            op: format!("POST /logs/{log}"),
+            key: Some("device-1/1".into()),
+            ..Default::default()
+        },
     };
-    transit_log::Write { checkpoint: None, header, unread: vec![], references: None, read: None, now: None, today: None }
+    transit_log::Write {
+        checkpoint: None,
+        header,
+        unread: vec![],
+        references: None,
+        read: None,
+        now: None,
+        today: None,
+    }
 }
 
 pub fn receive_answer(received: &transit_log::Received) -> Option<serde_json::Value> {
@@ -311,16 +347,39 @@ pub fn fixture_work_rules() -> transit_runs::WorkRules {
 /// Five minutes or a tenth of the run after every trip, route 10's own rule,
 /// routes 10 and 20 interlined, and one garage, with deadheads at 30 km/h.
 pub fn fixture_scheduling_constraints() -> transit_runs::SchedulingConstraints {
-    transit_runs::SchedulingConstraints { kind: Default::default(),
+    transit_runs::SchedulingConstraints {
+        kind: Default::default(),
         schema_version: Default::default(),
         name: "Fixture constraints".into(),
         recovery: vec![
-            transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(300), pct_of_run: Some(10), extra: Default::default() },
-            transit_runs::RecoveryRule { route: Some("10".into()), service_type: None, min_secs: Some(240), pct_of_run: None, extra: Default::default() },
+            transit_runs::RecoveryRule {
+                route: None,
+                service_type: None,
+                min_secs: Some(300),
+                pct_of_run: Some(10),
+                extra: Default::default(),
+            },
+            transit_runs::RecoveryRule {
+                route: Some("10".into()),
+                service_type: None,
+                min_secs: Some(240),
+                pct_of_run: None,
+                extra: Default::default(),
+            },
         ],
-        interline: vec![transit_runs::RoutePair { a: "10".into(), b: "20".into(), extra: Default::default() }],
+        interline: vec![transit_runs::RoutePair {
+            a: "10".into(),
+            b: "20".into(),
+            extra: Default::default(),
+        }],
         relief_points: vec![],
-        garages: vec![transit_runs::Garage { id: "yard".into(), name: "Fixture yard".into(), lat: 45.69, lon: -122.65, extra: Default::default() }],
+        garages: vec![transit_runs::Garage {
+            id: "yard".into(),
+            name: "Fixture yard".into(),
+            lat: 45.69,
+            lon: -122.65,
+            extra: Default::default(),
+        }],
         deadhead_kph: Some(30),
         extra: Default::default(),
     }
@@ -353,7 +412,9 @@ pub fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
 
 /// Route 10 kept end to end on its default pattern, five minutes added, on
 /// the fixture Friday.
-pub fn divert_example_draft(network: &transit_network::Network) -> Option<transit_dispatch::DiversionDraft> {
+pub fn divert_example_draft(
+    network: &transit_network::Network,
+) -> Option<transit_dispatch::DiversionDraft> {
     let mut draft = transit_dispatch::DiversionDraft {
         route_id: "10".into(),
         pattern: None,
@@ -375,23 +436,57 @@ pub fn log_record_hash(value: &serde_json::Value) -> String {
     cap_abi::canonical_hash(value).unwrap_or_else(|e| format!("unhashable: {e}"))
 }
 
-pub fn fixture_log_header(seq: u64, at_ms: u64, op: &str, key: Option<&str>) -> transit_log::Header {
+pub fn fixture_log_header(
+    seq: u64,
+    at_ms: u64,
+    op: &str,
+    key: Option<&str>,
+) -> transit_log::Header {
     transit_log::Header {
         log: "stops".into(),
         seq,
         writer: "planner-3".into(),
         at_ms,
-        module: "cap-log@sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
-        intent: transit_log::Intent { op: op.into(), key: key.map(String::from), ..Default::default() },
+        module: "cap-log@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .into(),
+        intent: transit_log::Intent {
+            op: op.into(),
+            key: key.map(String::from),
+            ..Default::default()
+        },
     }
 }
 
 pub fn fixture_log_records() -> (Vec<transit_log::KindRecords>, Vec<transit_log::KindRecords>) {
-    let stops = serde_json::to_value(fixture_stops().checked().expect("the fixture stops are valid")).unwrap();
-    let requests = serde_json::to_value(fixture_requests().checked().expect("the fixture requests are valid")).unwrap();
+    let stops = serde_json::to_value(
+        fixture_stops()
+            .checked()
+            .expect("the fixture stops are valid"),
+    )
+    .unwrap();
+    let requests = serde_json::to_value(
+        fixture_requests()
+            .checked()
+            .expect("the fixture requests are valid"),
+    )
+    .unwrap();
     (
-        transit_log::document_records(&stops, "stops", "stop", "stops", transit_stops::SCHEMA_VERSION).unwrap(),
-        transit_log::document_records(&requests, "requests", "stop_request", "stop_requests", transit_requests::SCHEMA_VERSION).unwrap(),
+        transit_log::document_records(
+            &stops,
+            "stops",
+            "stop",
+            "stops",
+            transit_stops::SCHEMA_VERSION,
+        )
+        .unwrap(),
+        transit_log::document_records(
+            &requests,
+            "requests",
+            "stop_request",
+            "stop_requests",
+            transit_requests::SCHEMA_VERSION,
+        )
+        .unwrap(),
     )
 }
 
@@ -401,15 +496,27 @@ pub fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>)
     let (stops, requests) = fixture_log_records();
     let mut fold = transit_log::Checkpoint::empty("stops");
     let mut entries = Vec::new();
-    let mut write = |fold: &mut transit_log::Checkpoint, header, next: &[transit_log::KindRecords]| {
-        if let transit_log::Composed::Entry(e) = transit_log::compose(fold, header, next, &log_record_hash) {
-            transit_log::apply(fold, &e, &log_record_hash).expect("the fixture entry applies");
-            entries.push(e);
-        }
-    };
-    write(&mut fold, fixture_log_header(1, 1_770_000_000_000, "migrate", None), &[stops.clone(), requests.clone()].concat());
+    let mut write =
+        |fold: &mut transit_log::Checkpoint, header, next: &[transit_log::KindRecords]| {
+            if let transit_log::Composed::Entry(e) =
+                transit_log::compose(fold, header, next, &log_record_hash)
+            {
+                transit_log::apply(fold, &e, &log_record_hash).expect("the fixture entry applies");
+                entries.push(e);
+            }
+        };
+    write(
+        &mut fold,
+        fixture_log_header(1, 1_770_000_000_000, "migrate", None),
+        &[stops.clone(), requests.clone()].concat(),
+    );
     let (mut stops2, mut requests2) = (stops[0].clone(), requests[0].clone());
-    let id = stops2.records.keys().next().expect("a fixture stop").clone();
+    let id = stops2
+        .records
+        .keys()
+        .next()
+        .expect("a fixture stop")
+        .clone();
     if let Some(events) = stops2.records.get_mut(&id).and_then(|v| v.as_array_mut()) {
         events.push(serde_json::json!({"id": "e-repair", "on": "2027-02-20", "event": "changed", "note": "pad replaced"}));
     }
@@ -417,7 +524,16 @@ pub fn fixture_stops_log() -> (transit_log::Checkpoint, Vec<transit_log::Entry>)
         r["status"] = serde_json::json!("completed");
         r["completed_on"] = serde_json::json!("2027-02-20");
     }
-    write(&mut fold, fixture_log_header(2, 1_770_000_060_000, "POST /logs/stops", Some("tablet-4/17")), &[stops2, requests2]);
+    write(
+        &mut fold,
+        fixture_log_header(
+            2,
+            1_770_000_060_000,
+            "POST /logs/stops",
+            Some("tablet-4/17"),
+        ),
+        &[stops2, requests2],
+    );
     (fold, entries)
 }
 
@@ -447,7 +563,11 @@ pub fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
 }
 
 pub fn feed_bytes() -> Vec<u8> {
-    std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).expect("the fixture feed")
+    std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .expect("the fixture feed")
 }
 
 pub fn feed_hash() -> String {
@@ -480,14 +600,23 @@ pub mod new_names {
     use cap_abi::kinds::{Declaration, Merge, Read, Write};
 
     pub const KIND: Declaration = Declaration::new("test_kind", "test_kind", "", "fixtures")
-        .stored("test_kind", Write::Route, "POST /test-kind, POST /logs/test_log", &["test_kind"], Merge::Log, Read::Open)
+        .stored(
+            "test_kind",
+            Write::Route,
+            "POST /test-kind, POST /logs/test_log",
+            &["test_kind"],
+            Merge::Log,
+            Read::Open,
+        )
         .checked("testcap", "validate")
         .logged("test_log", &[("test_record", "records")])
         .received("testcap")
         .posted("/test-kind", "validate", "test_kind_hash", &[]);
 
     fn json(text: &str) -> String {
-        let op = serde_json::from_str::<serde_json::Value>(text).ok().and_then(|v| v["op"].as_str().map(str::to_string));
+        let op = serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .and_then(|v| v["op"].as_str().map(str::to_string));
         match op.as_deref() {
             Some(op @ ("validate" | "receive")) => format!(r#"{{"ok":{{"op":"{op}"}}}}"#),
             _ => r#"{"error":{"message":"unknown op"}}"#.to_string(),
@@ -498,7 +627,12 @@ pub mod new_names {
         r#"{"error":{"message":"no bulk ops"}}"#.to_string()
     }
 
-    pub static CAP: Cap = Cap { id: "testcap", json, bytes, documents: &[] };
+    pub static CAP: Cap = Cap {
+        id: "testcap",
+        json,
+        bytes,
+        documents: &[],
+    };
 
     pub fn declared() -> Declared {
         Declared {

@@ -9,10 +9,12 @@ use proptest::prelude::*;
 use transit_codec::Boundary;
 use transit_live::OnTimeWindow;
 use transit_network::{
-    trip_instance, CalendarRule, DateRange, Departs, HeadwayBand, Mode, Network, Pattern, PatternStop,
-    PatternTrips, Route, ServiceType, Stop, StopOffset, Trip, WeekdaySet,
+    trip_instance, CalendarRule, DateRange, Departs, HeadwayBand, Mode, Network, Pattern,
+    PatternStop, PatternTrips, Route, ServiceType, Stop, StopOffset, Trip, WeekdaySet,
 };
-use transit_rt::{live_day, trip_progress, RtOverview, StopUpdateView, TripUpdateView, VehicleView};
+use transit_rt::{
+    live_day, trip_progress, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
+};
 
 #[derive(Clone, Debug)]
 enum GenDeparts {
@@ -52,8 +54,9 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
             proptest::collection::vec((60u32..600, 0u32..90), n),
             prop_oneof![
                 (6u32 * 3600..20 * 3600).prop_map(|s| GenDeparts::At(s - s % 60)),
-                (6u32 * 3600..9 * 3600, 1u32..3, 600u32..1800, any::<bool>())
-                    .prop_map(|(s, h, w, exact)| GenDeparts::Every(s - s % 60, h * 3600, w - w % 60, exact)),
+                (6u32 * 3600..9 * 3600, 1u32..3, 600u32..1800, any::<bool>()).prop_map(
+                    |(s, h, w, exact)| GenDeparts::Every(s - s % 60, h * 3600, w - w % 60, exact)
+                ),
             ],
             proptest::option::of(proptest::collection::vec(1u32..20, n)),
         )
@@ -65,13 +68,19 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
                 }
                 let sequences = gaps.map(|g| {
                     let mut seq = 0;
-                    g.iter().map(|d| {
-                        seq += d;
-                        seq
-                    })
-                    .collect()
+                    g.iter()
+                        .map(|d| {
+                            seq += d;
+                            seq
+                        })
+                        .collect()
                 });
-                GenTrip { stops, legs, departs, sequences }
+                GenTrip {
+                    stops,
+                    legs,
+                    departs,
+                    sequences,
+                }
             })
     })
 }
@@ -85,8 +94,14 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
             any::<u32>(),
             proptest::collection::vec((0usize..5, -120i32..900, any::<bool>()), 0..=3),
         )
-            .prop_map(|(trip, start_kind, start_pick, stops)| GenUpdate { trip, start_kind, start_pick, stops });
-        (Just(trips), proptest::collection::vec(update, 0..=4)).prop_map(|(trips, updates)| Spec { trips, updates })
+            .prop_map(|(trip, start_kind, start_pick, stops)| GenUpdate {
+                trip,
+                start_kind,
+                start_pick,
+                stops,
+            });
+        (Just(trips), proptest::collection::vec(update, 0..=4))
+            .prop_map(|(trips, updates)| Spec { trips, updates })
     })
 }
 
@@ -107,11 +122,29 @@ fn offsets(t: &GenTrip) -> Vec<(u32, u32)> {
 }
 
 fn build(spec: &Spec) -> (Network, Boundary) {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for i in 0..5 {
-        net.stops.insert(format!("s{i}"), Stop { name: format!("Stop {i}"), lat: 45.5, lon: -122.6 + i as f64 * 0.01, ..Default::default() });
+        net.stops.insert(
+            format!("s{i}"),
+            Stop {
+                name: format!("Stop {i}"),
+                lat: 45.5,
+                lon: -122.6 + i as f64 * 0.01,
+                ..Default::default()
+            },
+        );
     }
-    net.routes.insert("r".into(), Route { name: "R".into(), mode: Mode::Bus, ..Default::default() });
+    net.routes.insert(
+        "r".into(),
+        Route {
+            name: "R".into(),
+            mode: Mode::Bus,
+            ..Default::default()
+        },
+    );
     net.service_types.insert(
         "wk".into(),
         ServiceType {
@@ -141,7 +174,12 @@ fn build(spec: &Spec) -> (Network, Boundary) {
                     .stops
                     .iter()
                     .enumerate()
-                    .map(|(k, s)| PatternStop { stop: format!("s{s}"), timepoint: true, distance_m: k as f64 * 300.0, ..Default::default() })
+                    .map(|(k, s)| PatternStop {
+                        stop: format!("s{s}"),
+                        timepoint: true,
+                        distance_m: k as f64 * 300.0,
+                        ..Default::default()
+                    })
                     .collect(),
                 ..Default::default()
             },
@@ -149,7 +187,12 @@ fn build(spec: &Spec) -> (Network, Boundary) {
         let departs = match t.departs {
             GenDeparts::At(start_secs) => Departs::At { start_secs },
             GenDeparts::Every(s, len, h, exact) => Departs::Every {
-                bands: vec![HeadwayBand { start_secs: s, end_secs: s + len, headway_secs: h, extra: Default::default() }],
+                bands: vec![HeadwayBand {
+                    start_secs: s,
+                    end_secs: s + len,
+                    headway_secs: h,
+                    extra: Default::default(),
+                }],
                 exact,
             },
         };
@@ -163,7 +206,10 @@ fn build(spec: &Spec) -> (Network, Boundary) {
                     departs,
                     times: offsets(t)
                         .into_iter()
-                        .map(|(a, d)| StopOffset { arrival_secs: Some(a), departure_secs: Some(d) })
+                        .map(|(a, d)| StopOffset {
+                            arrival_secs: Some(a),
+                            departure_secs: Some(d),
+                        })
                         .collect(),
                     ..Default::default()
                 }],
@@ -171,7 +217,9 @@ fn build(spec: &Spec) -> (Network, Boundary) {
             },
         );
         if let Some(seq) = &t.sequences {
-            boundary.stop_sequences.insert(format!("trip {i}"), seq.clone());
+            boundary
+                .stop_sequences
+                .insert(format!("trip {i}"), seq.clone());
         }
     }
     (net, boundary)
@@ -195,7 +243,9 @@ fn expected_start(spec: &Spec, u: &GenUpdate) -> Option<u32> {
 }
 
 fn picked_start(t: &GenTrip, u: &GenUpdate) -> Option<u32> {
-    let GenDeparts::Every(s, len, h, _) = t.departs else { return None };
+    let GenDeparts::Every(s, len, h, _) = t.departs else {
+        return None;
+    };
     let slots = len.div_ceil(h);
     Some(match u.start_kind {
         0 => s + (u.start_pick % slots) * h,
@@ -214,7 +264,8 @@ fn overview(spec: &Spec) -> RtOverview {
         .iter()
         .map(|u| {
             let t = spec.trips.get(u.trip);
-            TripUpdateView { start_date: None,
+            TripUpdateView {
+                start_date: None,
                 trip_id: Some(match t {
                     Some(_) => format!("trip {}", u.trip),
                     None => "nobody's trip".into(),
@@ -224,8 +275,12 @@ fn overview(spec: &Spec) -> RtOverview {
                 canceled: false,
                 stop_updates: t
                     .map(|t| {
-                        let mut named: Vec<(usize, i32, bool)> =
-                            u.stops.iter().filter(|(k, ..)| *k < t.stops.len()).cloned().collect();
+                        let mut named: Vec<(usize, i32, bool)> = u
+                            .stops
+                            .iter()
+                            .filter(|(k, ..)| *k < t.stops.len())
+                            .cloned()
+                            .collect();
                         named.sort_by_key(|(k, ..)| *k);
                         named.dedup_by_key(|(k, ..)| *k);
                         named
@@ -233,7 +288,8 @@ fn overview(spec: &Spec) -> RtOverview {
                             .map(|(k, delay, by_sequence)| {
                                 // A stop the trip visits twice can only be
                                 // named by its sequence.
-                                let unique = t.stops.iter().filter(|s| **s == t.stops[k]).count() == 1;
+                                let unique =
+                                    t.stops.iter().filter(|s| **s == t.stops[k]).count() == 1;
                                 let by_sequence = by_sequence || !unique;
                                 StopUpdateView {
                                     stop_id: (!by_sequence).then(|| format!("s{}", t.stops[k])),

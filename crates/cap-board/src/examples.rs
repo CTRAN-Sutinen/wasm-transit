@@ -14,29 +14,36 @@ pub fn examples() -> Vec<Example> {
     .expect("the example alert reads");
     vec![
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "stop_board",
             loads: with_live(),
             request: json!({ "op": "stop_board", "network_hash": net.network_hash, "stop_id": "A", "date": "2026-10-23",
                              "from_secs": 28860, "limit": 5, "live_hash": live_hash }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "alert_reach",
             loads: vec![network()],
             request: json!({ "op": "alert_reach", "network_hash": net.network_hash, "date": "2026-10-23", "alert": alert }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "grouped_board",
             loads: with_live(),
             request: json!({ "op": "grouped_board", "network_hash": net.network_hash, "stop_id": "A", "date": "2026-10-23",
                              "from_secs": 28860, "per_group": 3, "live_hash": live_hash }),
         },
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "watchlist_board",
-            loads: vec![network(), fixtures::load("load_watchlist", "document", &watchlist)],
+            loads: vec![
+                network(),
+                fixtures::load("load_watchlist", "document", &watchlist),
+            ],
             request: json!({ "op": "watchlist_board", "watchlist_hash": cap_abi::canonical_hash(&watchlist).expect("a hash"),
                              "network_hash": net.network_hash, "date": "2026-10-23", "from_secs": 25200, "limit": 3 }),
         },

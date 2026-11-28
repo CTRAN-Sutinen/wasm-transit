@@ -1,4 +1,3 @@
-
 use transit_network::{Coord, Network};
 use transit_streets::walking::DirectWalk;
 use transit_streets::StreetPoint;
@@ -19,9 +18,14 @@ pub fn walk_path(
             _ => None,
         })
     };
-    let hops: Vec<&str> =
-        std::iter::once(from_stop_id).chain(via_stop_ids.iter().map(String::as_str)).chain([to_stop_id]).collect();
-    let coord = |p: &StreetPoint| Coord { lat: p.lat, lon: p.lon };
+    let hops: Vec<&str> = std::iter::once(from_stop_id)
+        .chain(via_stop_ids.iter().map(String::as_str))
+        .chain([to_stop_id])
+        .collect();
+    let coord = |p: &StreetPoint| Coord {
+        lat: p.lat,
+        lon: p.lon,
+    };
     let mut out: Vec<Coord> = Vec::new();
     if hops.len() == 2 && place(hops[0]).is_some() && place(hops[1]).is_some() {
         out.extend(direct.iter().flat_map(|d| d.path.iter().map(coord)));
@@ -30,7 +34,11 @@ pub fn walk_path(
             match place(hop) {
                 Some(p) => {
                     let neighbor = if i == 0 { hops[1] } else { hops[i - 1] };
-                    let walk = p.walks.iter().filter(|w| w.stop_id == neighbor).min_by_key(|w| w.walk_secs);
+                    let walk = p
+                        .walks
+                        .iter()
+                        .filter(|w| w.stop_id == neighbor)
+                        .min_by_key(|w| w.walk_secs);
                     let path = walk.map(|w| w.path.as_slice()).unwrap_or_default();
                     if i == 0 {
                         out.extend(path.iter().map(coord));

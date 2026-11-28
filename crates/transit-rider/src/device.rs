@@ -6,13 +6,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-transit_version::kind_tag!(
-    RecentPlacesKind = "recent_places"
-);
+transit_version::kind_tag!(RecentPlacesKind = "recent_places");
 
-transit_version::kind_tag!(
-    LiveFeedsKind = "live_feeds"
-);
+transit_version::kind_tag!(LiveFeedsKind = "live_feeds");
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]

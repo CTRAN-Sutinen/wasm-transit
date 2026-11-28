@@ -28,7 +28,9 @@ impl<'de> Deserialize<'de> for EditsKind {
         if kind == KIND {
             Ok(EditsKind)
         } else {
-            Err(serde::de::Error::custom(format!("a {kind:?} document is not an edit document")))
+            Err(serde::de::Error::custom(format!(
+                "a {kind:?} document is not an edit document"
+            )))
         }
     }
 }
@@ -66,7 +68,12 @@ impl transit_version::Versioned for EditDocument {
 
 impl EditDocument {
     pub fn new(records: Vec<EditRecord>) -> Self {
-        EditDocument { kind: EditsKind, schema_version: SCHEMA_VERSION, records, extra: Default::default() }
+        EditDocument {
+            kind: EditsKind,
+            schema_version: SCHEMA_VERSION,
+            records,
+            extra: Default::default(),
+        }
     }
 }
 
@@ -90,7 +97,9 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     if doc.is_array() {
         return Ok(1);
     }
-    let root = doc.as_object().ok_or("an edit document is a JSON object (or, in v1, an array)")?;
+    let root = doc
+        .as_object()
+        .ok_or("an edit document is a JSON object (or, in v1, an array)")?;
     if let Some(kind) = root.get("kind") {
         if kind.as_str() != Some(KIND) {
             return Err(format!("a {kind} document is not an edit document"));
@@ -106,7 +115,9 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
 pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let found = schema_version_of(&doc)?;
     if found != from {
-        return Err(format!("the edit document v{from} step was given a v{found} document"));
+        return Err(format!(
+            "the edit document v{from} step was given a v{found} document"
+        ));
     }
     match from {
         1 => {
@@ -116,17 +127,23 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>)
             tagged.insert("records".into(), doc);
             Ok((Value::Object(tagged), Vec::new()))
         }
-        n => Err(format!("no edit document step from v{n} (this build reads up to v{SCHEMA_VERSION})")),
+        n => Err(format!(
+            "no edit document step from v{n} (this build reads up to v{SCHEMA_VERSION})"
+        )),
     }
 }
 
 pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let from = schema_version_of(&doc)?;
     if to > SCHEMA_VERSION {
-        return Err(format!("edit document v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"));
+        return Err(format!(
+            "edit document v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"
+        ));
     }
     if from >= to {
-        return Err(format!("edit document v{from} is not older than v{to}: nothing to migrate"));
+        return Err(format!(
+            "edit document v{from} is not older than v{to}: nothing to migrate"
+        ));
     }
     let mut doc = doc;
     let mut notes = Vec::new();

@@ -9,12 +9,13 @@
 //!    untouched.
 
 use transit_network::{
-    apply_edits, apply_edits_reporting, Day, DayState, Departs, HeadwayBand, Network, NetworkEdit, StopOffset,
-    TripRef,
+    apply_edits, apply_edits_reporting, Day, DayState, Departs, HeadwayBand, Network, NetworkEdit,
+    StopOffset, TripRef,
 };
 
 fn network() -> Network {
-    serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
+    serde_json::from_str(include_str!("../../../testdata/network.json"))
+        .expect("testdata network parses")
 }
 
 fn apply(net: &Network, edits: Vec<NetworkEdit>) -> Network {
@@ -22,7 +23,9 @@ fn apply(net: &Network, edits: Vec<NetworkEdit>) -> Network {
 }
 
 fn refused(net: &Network, edit: NetworkEdit) -> String {
-    apply_edits(net, &[edit]).expect_err("the edit is refused").reason
+    apply_edits(net, &[edit])
+        .expect_err("the edit is refused")
+        .reason
 }
 
 /// Every profile has one time per timepoint, and every trip one time per stop.
@@ -30,31 +33,68 @@ fn aligned(net: &Network, pattern: &str) -> bool {
     let p = &net.patterns[pattern];
     let n = p.stops.iter().filter(|s| s.timepoint).count();
     p.timing.iter().all(|t| t.at_timepoints.len() == n)
-        && net.trips().filter(|(_, pt, _)| pt.pattern == pattern).all(|(_, _, t)| t.times.len() == p.stops.len())
+        && net
+            .trips()
+            .filter(|(_, pt, _)| pt.pattern == pattern)
+            .all(|(_, _, t)| t.times.len() == p.stops.len())
 }
 
 fn starts(net: &Network, pattern_trips: &str) -> Vec<u32> {
-    net.pattern_trips[pattern_trips].trips.iter().filter_map(|t| t.departs.first_start()).collect()
+    net.pattern_trips[pattern_trips]
+        .trips
+        .iter()
+        .filter_map(|t| t.departs.first_start())
+        .collect()
 }
 
 #[test]
 fn creation_mints_ids_and_reports_them() {
     let net = network();
-    let transit_network::Applied { network: next, created, touched } = apply_edits_reporting(
+    let transit_network::Applied {
+        network: next,
+        created,
+        touched,
+    } = apply_edits_reporting(
         &net,
         &[
-            NetworkEdit::AddStop { id: None, lat: None, lon: None },
-            NetworkEdit::AddStop { id: None, lat: Some(45.6), lon: Some(-122.5) },
-            NetworkEdit::AddRoute { id: Some("20".into()) },
-            NetworkEdit::AddPattern { id: None, route: Some("20".into()) },
-            NetworkEdit::AddServiceType { id: None, from: "2026-09-07".into() },
-            NetworkEdit::AddPatternTrips { id: None, pattern: Some("pat1".into()), service_type: Some("cal1".into()) },
+            NetworkEdit::AddStop {
+                id: None,
+                lat: None,
+                lon: None,
+            },
+            NetworkEdit::AddStop {
+                id: None,
+                lat: Some(45.6),
+                lon: Some(-122.5),
+            },
+            NetworkEdit::AddRoute {
+                id: Some("20".into()),
+            },
+            NetworkEdit::AddPattern {
+                id: None,
+                route: Some("20".into()),
+            },
+            NetworkEdit::AddServiceType {
+                id: None,
+                from: "2026-09-07".into(),
+            },
+            NetworkEdit::AddPatternTrips {
+                id: None,
+                pattern: Some("pat1".into()),
+                service_type: Some("cal1".into()),
+            },
             NetworkEdit::AddBlock { id: None },
         ],
     )
     .unwrap();
-    assert!(touched.is_empty(), "creation touches nothing beyond what it creates");
-    let ids: Vec<(&str, &str)> = created.iter().map(|c| (c.kind.as_str(), c.id.as_str())).collect();
+    assert!(
+        touched.is_empty(),
+        "creation touches nothing beyond what it creates"
+    );
+    let ids: Vec<(&str, &str)> = created
+        .iter()
+        .map(|c| (c.kind.as_str(), c.id.as_str()))
+        .collect();
     assert_eq!(
         ids,
         vec![
@@ -73,64 +113,205 @@ fn creation_mints_ids_and_reports_them() {
     assert!(aligned(&next, "pat1"));
     assert_eq!(next.patterns["pat1"].route, "20");
     let range = &next.service_types["cal1"].rule.ranges[0];
-    assert_eq!((range.start.to_string(), range.end.to_string()), ("2026-09-07".into(), "2027-09-06".into()));
+    assert_eq!(
+        (range.start.to_string(), range.end.to_string()),
+        ("2026-09-07".into(), "2027-09-06".into())
+    );
     assert_eq!(starts(&next, "svc1"), vec![8 * 3600]);
 
-    assert!(refused(&net, NetworkEdit::AddStop { id: Some("A".into()), lat: None, lon: None }).contains("already exists"));
-    let empty = Network { routes: Default::default(), ..net.clone() };
-    assert!(refused(&empty, NetworkEdit::AddPattern { id: None, route: None }).contains("add a route first"));
+    assert!(refused(
+        &net,
+        NetworkEdit::AddStop {
+            id: Some("A".into()),
+            lat: None,
+            lon: None
+        }
+    )
+    .contains("already exists"));
+    let empty = Network {
+        routes: Default::default(),
+        ..net.clone()
+    };
+    assert!(refused(
+        &empty,
+        NetworkEdit::AddPattern {
+            id: None,
+            route: None
+        }
+    )
+    .contains("add a route first"));
 }
 
 #[test]
 fn pattern_gestures_keep_timing_aligned() {
     let net = network();
-    let on = apply(&net, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
+    let on = apply(
+        &net,
+        vec![NetworkEdit::ToggleTimepoint {
+            pattern: "10-inbound".into(),
+            index: 1,
+        }],
+    );
     assert!(on.patterns["10-inbound"].stops[1].timepoint);
-    assert_eq!(on.patterns["10-inbound"].timing[0].at_timepoints, vec![0, 300, 600]);
+    assert_eq!(
+        on.patterns["10-inbound"].timing[0].at_timepoints,
+        vec![0, 300, 600]
+    );
     for (_, _, t) in on.trips() {
-        assert_eq!(t.times[1], StopOffset { arrival_secs: Some(300), departure_secs: Some(300) });
+        assert_eq!(
+            t.times[1],
+            StopOffset {
+                arrival_secs: Some(300),
+                departure_secs: Some(300)
+            }
+        );
     }
     assert!(transit_network::validation_issues(&on).is_empty());
-    let off = apply(&on, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
+    let off = apply(
+        &on,
+        vec![NetworkEdit::ToggleTimepoint {
+            pattern: "10-inbound".into(),
+            index: 1,
+        }],
+    );
     assert_eq!(off.patterns["10-inbound"], net.patterns["10-inbound"]);
     assert_eq!(off.pattern_trips, on.pattern_trips);
 
-    let inserted = apply(&net, vec![NetworkEdit::InsertPatternStop { pattern: "10-inbound".into(), stop: "A".into(), index: None }]);
+    let inserted = apply(
+        &net,
+        vec![NetworkEdit::InsertPatternStop {
+            pattern: "10-inbound".into(),
+            stop: "A".into(),
+            index: None,
+        }],
+    );
     let stops = &inserted.patterns["10-inbound"].stops;
     assert_eq!(stops.len(), 4);
     assert_eq!(stops[2].stop, "A");
     assert!(!stops[2].timepoint);
-    assert_eq!(stops[2].distance_m, (stops[1].distance_m + stops[3].distance_m) / 2.0);
+    assert_eq!(
+        stops[2].distance_m,
+        (stops[1].distance_m + stops[3].distance_m) / 2.0
+    );
     assert!(aligned(&inserted, "10-inbound"));
-    assert!(inserted.trips().all(|(_, _, t)| t.times[2] == StopOffset::default()), "unscheduled on every trip");
+    assert!(
+        inserted
+            .trips()
+            .all(|(_, _, t)| t.times[2] == StopOffset::default()),
+        "unscheduled on every trip"
+    );
     assert!(transit_network::validation_issues(&inserted).is_empty());
 
-    let with_profile = apply(&on, vec![NetworkEdit::AddTimingProfile { pattern: "10-inbound".into() }]);
+    let with_profile = apply(
+        &on,
+        vec![NetworkEdit::AddTimingProfile {
+            pattern: "10-inbound".into(),
+        }],
+    );
     assert_eq!(with_profile.patterns["10-inbound"].timing.len(), 2);
-    let removed = apply(&with_profile, vec![NetworkEdit::RemovePatternStop { pattern: "10-inbound".into(), index: 1 }]);
+    let removed = apply(
+        &with_profile,
+        vec![NetworkEdit::RemovePatternStop {
+            pattern: "10-inbound".into(),
+            index: 1,
+        }],
+    );
     assert!(aligned(&removed, "10-inbound"));
-    assert_eq!(removed.patterns["10-inbound"].timing[1].at_timepoints, vec![0, 600]);
+    assert_eq!(
+        removed.patterns["10-inbound"].timing[1].at_timepoints,
+        vec![0, 600]
+    );
 
-    assert!(refused(&net, NetworkEdit::RemovePatternStop { pattern: "10-inbound".into(), index: 0 }).contains("endpoint"));
-    assert!(refused(&net, NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 2 }).contains("endpoint"));
-    assert!(refused(&net, NetworkEdit::RemoveTimingProfile { pattern: "10-inbound".into(), index: 0 }).contains("at least one"));
-    assert!(refused(&net, NetworkEdit::SetTimepointTime { pattern: "10-inbound".into(), profile: 0, timepoint: 5, secs: 1 }).contains("no timepoint 5"));
+    assert!(refused(
+        &net,
+        NetworkEdit::RemovePatternStop {
+            pattern: "10-inbound".into(),
+            index: 0
+        }
+    )
+    .contains("endpoint"));
+    assert!(refused(
+        &net,
+        NetworkEdit::ToggleTimepoint {
+            pattern: "10-inbound".into(),
+            index: 2
+        }
+    )
+    .contains("endpoint"));
+    assert!(refused(
+        &net,
+        NetworkEdit::RemoveTimingProfile {
+            pattern: "10-inbound".into(),
+            index: 0
+        }
+    )
+    .contains("at least one"));
+    assert!(refused(
+        &net,
+        NetworkEdit::SetTimepointTime {
+            pattern: "10-inbound".into(),
+            profile: 0,
+            timepoint: 5,
+            secs: 1
+        }
+    )
+    .contains("no timepoint 5"));
 }
 
 #[test]
 fn bands_belong_to_frequency_trips() {
     let net = network();
-    assert!(refused(&net, NetworkEdit::AddBand { trip: "10-weekday@91800".into() }).contains("runs once"));
+    assert!(refused(
+        &net,
+        NetworkEdit::AddBand {
+            trip: "10-weekday@91800".into()
+        }
+    )
+    .contains("runs once"));
     let mut every = net.clone();
     every.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
-        bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 900, extra: Default::default() }],
+        bands: vec![HeadwayBand {
+            start_secs: 6 * 3600,
+            end_secs: 9 * 3600,
+            headway_secs: 900,
+            extra: Default::default(),
+        }],
         exact: true,
     };
-    let added = apply(&every, vec![NetworkEdit::AddBand { trip: "10-weekday@91800".into() }]);
-    let Departs::Every { bands, .. } = &added.trip("10-weekday@91800").unwrap().2.departs else { panic!("every") };
-    assert_eq!(bands[1], HeadwayBand { start_secs: 9 * 3600, end_secs: 12 * 3600, headway_secs: 900, extra: Default::default() });
-    assert!(refused(&every, NetworkEdit::RemoveBand { trip: "10-weekday@91800".into(), index: 0 }).contains("at least one"));
-    assert!(refused(&every, NetworkEdit::RetimeTrip { trip: "10-weekday@91800".into(), to_secs: 1 }).contains("frequency"));
+    let added = apply(
+        &every,
+        vec![NetworkEdit::AddBand {
+            trip: "10-weekday@91800".into(),
+        }],
+    );
+    let Departs::Every { bands, .. } = &added.trip("10-weekday@91800").unwrap().2.departs else {
+        panic!("every")
+    };
+    assert_eq!(
+        bands[1],
+        HeadwayBand {
+            start_secs: 9 * 3600,
+            end_secs: 12 * 3600,
+            headway_secs: 900,
+            extra: Default::default()
+        }
+    );
+    assert!(refused(
+        &every,
+        NetworkEdit::RemoveBand {
+            trip: "10-weekday@91800".into(),
+            index: 0
+        }
+    )
+    .contains("at least one"));
+    assert!(refused(
+        &every,
+        NetworkEdit::RetimeTrip {
+            trip: "10-weekday@91800".into(),
+            to_secs: 1
+        }
+    )
+    .contains("frequency"));
     assert_eq!(starts(&net, "10-weekday"), vec![28_800, 30_600, 91_800]);
 }
 
@@ -139,20 +320,71 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     let net = network();
     let early = apply(
         &net,
-        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "10-weekday@91800".into(), extra: Default::default() } }],
+        vec![NetworkEdit::AddBlockTrip {
+            block: "400".into(),
+            trip: TripRef {
+                trip: "10-weekday@91800".into(),
+                extra: Default::default(),
+            },
+        }],
     );
-    let order: Vec<&str> = early.blocks["400"].trips.iter().map(|t| t.trip.as_str()).collect();
-    assert_eq!(order, vec!["10-weekday@28800", "10-weekday@30600", "10-weekday@91800"]);
-    let set = apply(&early, vec![NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(600) }]);
+    let order: Vec<&str> = early.blocks["400"]
+        .trips
+        .iter()
+        .map(|t| t.trip.as_str())
+        .collect();
+    assert_eq!(
+        order,
+        vec!["10-weekday@28800", "10-weekday@30600", "10-weekday@91800"]
+    );
+    let set = apply(
+        &early,
+        vec![NetworkEdit::SetLayover {
+            block: "400".into(),
+            after_trip: 1,
+            secs: Some(600),
+        }],
+    );
     assert_eq!(set.blocks["400"].layovers.len(), 2);
-    let cut = apply(&set, vec![NetworkEdit::RemoveBlockTrip { block: "400".into(), index: 2 }]);
-    assert_eq!(cut.blocks["400"].layovers.len(), 1, "the layover after the new last trip goes with it");
-    let cleared = apply(&net, vec![NetworkEdit::SetLayover { block: "400".into(), after_trip: 0, secs: None }]);
+    let cut = apply(
+        &set,
+        vec![NetworkEdit::RemoveBlockTrip {
+            block: "400".into(),
+            index: 2,
+        }],
+    );
+    assert_eq!(
+        cut.blocks["400"].layovers.len(),
+        1,
+        "the layover after the new last trip goes with it"
+    );
+    let cleared = apply(
+        &net,
+        vec![NetworkEdit::SetLayover {
+            block: "400".into(),
+            after_trip: 0,
+            secs: None,
+        }],
+    );
     assert!(cleared.blocks["400"].layovers.is_empty());
-    assert!(refused(&net, NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(60) }).contains("between two"));
     assert!(refused(
         &net,
-        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "ghost".into(), extra: Default::default() } }
+        NetworkEdit::SetLayover {
+            block: "400".into(),
+            after_trip: 1,
+            secs: Some(60)
+        }
+    )
+    .contains("between two"));
+    assert!(refused(
+        &net,
+        NetworkEdit::AddBlockTrip {
+            block: "400".into(),
+            trip: TripRef {
+                trip: "ghost".into(),
+                extra: Default::default()
+            }
+        }
     )
     .contains("unknown trip"));
 }
@@ -163,23 +395,69 @@ fn calendars_edit_in_place_with_exceptions_in_date_order() {
     let next = apply(
         &net,
         vec![
-            NetworkEdit::ToggleServiceDay { id: "weekday".into(), day: Day::Sat },
-            NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-12-25".into(), state: DayState::Removed },
-            NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-11-26".into(), state: DayState::Removed },
-            NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-12-25".into(), state: DayState::Added },
-            NetworkEdit::AddServiceRange { id: "weekday".into(), start: None, end: None },
+            NetworkEdit::ToggleServiceDay {
+                id: "weekday".into(),
+                day: Day::Sat,
+            },
+            NetworkEdit::SetServiceException {
+                id: "weekday".into(),
+                date: "2026-12-25".into(),
+                state: DayState::Removed,
+            },
+            NetworkEdit::SetServiceException {
+                id: "weekday".into(),
+                date: "2026-11-26".into(),
+                state: DayState::Removed,
+            },
+            NetworkEdit::SetServiceException {
+                id: "weekday".into(),
+                date: "2026-12-25".into(),
+                state: DayState::Added,
+            },
+            NetworkEdit::AddServiceRange {
+                id: "weekday".into(),
+                start: None,
+                end: None,
+            },
         ],
     );
     let rule = &next.service_types["weekday"].rule;
     assert!(rule.days.sat);
     let dates: Vec<String> = rule.exceptions.iter().map(|e| e.date.to_string()).collect();
-    assert_eq!(dates, vec!["2026-11-26", "2026-12-25"], "one per date, in date order");
-    assert_eq!(rule.exceptions[1].state, DayState::Added, "a second exception for a date replaces the first");
+    assert_eq!(
+        dates,
+        vec!["2026-11-26", "2026-12-25"],
+        "one per date, in date order"
+    );
+    assert_eq!(
+        rule.exceptions[1].state,
+        DayState::Added,
+        "a second exception for a date replaces the first"
+    );
     let n = rule.ranges.len();
-    assert_eq!(rule.ranges[n - 1].start, rule.ranges[n - 2].end, "a new range continues the last");
-    let removed = apply(&next, vec![NetworkEdit::RemoveServiceException { id: "weekday".into(), date: "2026-11-26".into() }]);
+    assert_eq!(
+        rule.ranges[n - 1].start,
+        rule.ranges[n - 2].end,
+        "a new range continues the last"
+    );
+    let removed = apply(
+        &next,
+        vec![NetworkEdit::RemoveServiceException {
+            id: "weekday".into(),
+            date: "2026-11-26".into(),
+        }],
+    );
     assert_eq!(removed.service_types["weekday"].rule.exceptions.len(), 1);
-    assert!(refused(&net, NetworkEdit::SetServiceRange { id: "weekday".into(), index: 0, start: Some("2026-13-01".into()), end: None }).contains("invalid date"));
+    assert!(refused(
+        &net,
+        NetworkEdit::SetServiceRange {
+            id: "weekday".into(),
+            index: 0,
+            start: Some("2026-13-01".into()),
+            end: None
+        }
+    )
+    .contains("invalid date"));
 }
 
 /// A date left out continues the last range. A range never ends before it
@@ -188,7 +466,15 @@ fn calendars_edit_in_place_with_exceptions_in_date_order() {
 fn a_range_is_added_with_its_dates_or_continues_the_last() {
     let net = network();
     let n = net.service_types["weekday"].rule.ranges.len();
-    let empty = apply(&net, (0..n).map(|_| NetworkEdit::RemoveServiceRange { id: "weekday".into(), index: 0 }).collect());
+    let empty = apply(
+        &net,
+        (0..n)
+            .map(|_| NetworkEdit::RemoveServiceRange {
+                id: "weekday".into(),
+                index: 0,
+            })
+            .collect(),
+    );
     assert!(empty.service_types["weekday"].rule.ranges.is_empty());
     let add = |start: Option<&str>, end: Option<&str>| NetworkEdit::AddServiceRange {
         id: "weekday".into(),
@@ -199,12 +485,25 @@ fn a_range_is_added_with_its_dates_or_continues_the_last() {
     assert!(refused(&empty, add(None, Some("2027-05-31"))).contains("no range to continue"));
     let first = apply(&empty, vec![add(Some("2027-01-10"), Some("2027-05-31"))]);
     let r = &first.service_types["weekday"].rule.ranges;
-    assert_eq!((r.len(), r[0].start.to_string(), r[0].end.to_string()), (1, "2027-01-10".into(), "2027-05-31".into()));
+    assert_eq!(
+        (r.len(), r[0].start.to_string(), r[0].end.to_string()),
+        (1, "2027-01-10".into(), "2027-05-31".into())
+    );
     let one_day = apply(&empty, vec![add(Some("2027-01-10"), None)]);
-    assert_eq!(one_day.service_types["weekday"].rule.ranges[0].end.to_string(), "2027-01-10", "an end left out is the start");
+    assert_eq!(
+        one_day.service_types["weekday"].rule.ranges[0]
+            .end
+            .to_string(),
+        "2027-01-10",
+        "an end left out is the start"
+    );
     let next = apply(&first, vec![add(None, Some("2027-08-31"))]);
     let r = &next.service_types["weekday"].rule.ranges;
-    assert_eq!((r[1].start, r[1].end.to_string()), (r[0].end, "2027-08-31".into()), "a start left out continues the last");
+    assert_eq!(
+        (r[1].start, r[1].end.to_string()),
+        (r[0].end, "2027-08-31".into()),
+        "a start left out continues the last"
+    );
     assert!(refused(&empty, add(Some("2027-05-31"), Some("2027-01-10"))).contains("before"));
     assert!(refused(&empty, add(Some("2027-13-01"), None)).contains("invalid date"));
 }
@@ -215,15 +514,44 @@ fn field_updates_check_their_references() {
     let next = apply(
         &net,
         vec![
-            NetworkEdit::UpdateStop { id: "A".into(), name: Some("Main & 1st".into()), lat: Some(f64::NAN), lon: None, transfer: Some(true) },
-            NetworkEdit::UpdateServiceType { id: "weekday".into(), name: "Weekdays".into() },
+            NetworkEdit::UpdateStop {
+                id: "A".into(),
+                name: Some("Main & 1st".into()),
+                lat: Some(f64::NAN),
+                lon: None,
+                transfer: Some(true),
+            },
+            NetworkEdit::UpdateServiceType {
+                id: "weekday".into(),
+                name: "Weekdays".into(),
+            },
         ],
     );
     assert_eq!(next.stops["A"].name, "Main & 1st");
-    assert_eq!(next.stops["A"].lat, net.stops["A"].lat, "a non-finite coordinate is ignored, never stored");
+    assert_eq!(
+        next.stops["A"].lat, net.stops["A"].lat,
+        "a non-finite coordinate is ignored, never stored"
+    );
     assert!(next.stops["A"].transfer);
-    assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("ghost".into()), direction: None }).contains("unknown route"));
-    assert!(refused(&net, NetworkEdit::SetPatternTripsRefs { id: "10-weekday".into(), pattern: Some("ghost".into()), service_type: None }).contains("unknown pattern"));
+    assert!(refused(
+        &net,
+        NetworkEdit::UpdatePattern {
+            id: "10-inbound".into(),
+            name: None,
+            route: Some("ghost".into()),
+            direction: None
+        }
+    )
+    .contains("unknown route"));
+    assert!(refused(
+        &net,
+        NetworkEdit::SetPatternTripsRefs {
+            id: "10-weekday".into(),
+            pattern: Some("ghost".into()),
+            service_type: None
+        }
+    )
+    .contains("unknown pattern"));
 }
 
 #[test]
@@ -232,39 +560,111 @@ fn a_pattern_runs_in_one_of_its_routes_directions() {
     let placed = apply(
         &net,
         vec![
-            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To C".into() },
-            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) },
-            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To Downtown".into() },
+            NetworkEdit::SetDirection {
+                route: "10".into(),
+                id: "in".into(),
+                name: "To C".into(),
+            },
+            NetworkEdit::UpdatePattern {
+                id: "10-inbound".into(),
+                name: None,
+                route: None,
+                direction: Some("in".into()),
+            },
+            NetworkEdit::SetDirection {
+                route: "10".into(),
+                id: "in".into(),
+                name: "To Downtown".into(),
+            },
         ],
     );
-    assert_eq!(placed.routes["10"].directions["in"].name, "To Downtown", "setting an existing id renames it");
-    assert_eq!(placed.patterns["10-inbound"].direction.as_deref(), Some("in"));
+    assert_eq!(
+        placed.routes["10"].directions["in"].name, "To Downtown",
+        "setting an existing id renames it"
+    );
+    assert_eq!(
+        placed.patterns["10-inbound"].direction.as_deref(),
+        Some("in")
+    );
     assert!(transit_network::validation_issues(&placed).is_empty());
 
-    assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) })
-        .contains("route 10 has no direction in"));
-    assert!(refused(&placed, NetworkEdit::RemoveDirection { route: "10".into(), id: "in".into() }).contains("carries pattern 10-inbound"));
+    assert!(refused(
+        &net,
+        NetworkEdit::UpdatePattern {
+            id: "10-inbound".into(),
+            name: None,
+            route: None,
+            direction: Some("in".into())
+        }
+    )
+    .contains("route 10 has no direction in"));
+    assert!(refused(
+        &placed,
+        NetworkEdit::RemoveDirection {
+            route: "10".into(),
+            id: "in".into()
+        }
+    )
+    .contains("carries pattern 10-inbound"));
     let cleared = apply(
         &placed,
         vec![
-            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some(String::new()) },
-            NetworkEdit::RemoveDirection { route: "10".into(), id: "in".into() },
+            NetworkEdit::UpdatePattern {
+                id: "10-inbound".into(),
+                name: None,
+                route: None,
+                direction: Some(String::new()),
+            },
+            NetworkEdit::RemoveDirection {
+                route: "10".into(),
+                id: "in".into(),
+            },
         ],
     );
-    assert_eq!(cleared.patterns["10-inbound"].direction, None, "\"\" leaves the pattern in no direction");
+    assert_eq!(
+        cleared.patterns["10-inbound"].direction, None,
+        "\"\" leaves the pattern in no direction"
+    );
     assert!(cleared.routes["10"].directions.is_empty());
 
     // Direction ids are per route, so moving a pattern to another route clears
     // its direction, unless the same edit places it.
-    let two = apply(&placed, vec![NetworkEdit::AddRoute { id: Some("20".into()) }]);
-    let moved = apply(&two, vec![NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: None }]);
+    let two = apply(
+        &placed,
+        vec![NetworkEdit::AddRoute {
+            id: Some("20".into()),
+        }],
+    );
+    let moved = apply(
+        &two,
+        vec![NetworkEdit::UpdatePattern {
+            id: "10-inbound".into(),
+            name: None,
+            route: Some("20".into()),
+            direction: None,
+        }],
+    );
     assert_eq!(moved.patterns["10-inbound"].direction, None);
-    assert!(refused(&two, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: Some("in".into()) })
-        .contains("route 20 has no direction in"));
+    assert!(refused(
+        &two,
+        NetworkEdit::UpdatePattern {
+            id: "10-inbound".into(),
+            name: None,
+            route: Some("20".into()),
+            direction: Some("in".into())
+        }
+    )
+    .contains("route 20 has no direction in"));
 
     let mut route = placed.routes["10"].clone();
     route.directions.clear();
-    let stranded = apply(&placed, vec![NetworkEdit::UpsertRoute { id: "10".into(), route }]);
+    let stranded = apply(
+        &placed,
+        vec![NetworkEdit::UpsertRoute {
+            id: "10".into(),
+            route,
+        }],
+    );
     assert!(transit_network::validation_issues(&stranded)
         .iter()
         .any(|i| matches!(i, transit_network::NetworkError::UnknownDirection { direction, .. } if direction == "in")));
@@ -276,14 +676,42 @@ fn the_plan_frame_updates_field_wise() {
     let named = apply(
         &net,
         vec![
-            NetworkEdit::UpdatePlan { name: Some("Spring".into()), effective_from: None, id: Some("p1".into()) },
-            NetworkEdit::UpdatePlan { name: None, effective_from: Some("2026-03-01".into()), id: Some("p2".into()) },
+            NetworkEdit::UpdatePlan {
+                name: Some("Spring".into()),
+                effective_from: None,
+                id: Some("p1".into()),
+            },
+            NetworkEdit::UpdatePlan {
+                name: None,
+                effective_from: Some("2026-03-01".into()),
+                id: Some("p2".into()),
+            },
         ],
     );
-    assert_eq!(named.plan.name, "Spring", "a later field update keeps the earlier one");
-    assert_eq!(named.plan.effective_from.map(|d| d.to_string()), Some("2026-03-01".into()));
-    let expected_id = if net.plan.id.is_empty() { "p1".to_string() } else { net.plan.id.clone() };
-    assert_eq!(named.plan.id, expected_id, "only an unversioned plan is stamped, and only once");
-    let cleared = apply(&named, vec![NetworkEdit::UpdatePlan { name: None, effective_from: Some("".into()), id: None }]);
+    assert_eq!(
+        named.plan.name, "Spring",
+        "a later field update keeps the earlier one"
+    );
+    assert_eq!(
+        named.plan.effective_from.map(|d| d.to_string()),
+        Some("2026-03-01".into())
+    );
+    let expected_id = if net.plan.id.is_empty() {
+        "p1".to_string()
+    } else {
+        net.plan.id.clone()
+    };
+    assert_eq!(
+        named.plan.id, expected_id,
+        "only an unversioned plan is stamped, and only once"
+    );
+    let cleared = apply(
+        &named,
+        vec![NetworkEdit::UpdatePlan {
+            name: None,
+            effective_from: Some("".into()),
+            id: None,
+        }],
+    );
     assert_eq!(cleared.plan.effective_from, None);
 }

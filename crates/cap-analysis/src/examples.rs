@@ -24,31 +24,85 @@ pub fn examples() -> Vec<Example> {
         if let Some(layer) = layer {
             loads.push(fixtures::load("load_layer", "bytes", layer.as_bytes()));
         }
-        Example { bytes: None, kinds: vec![], op, loads, request }
+        Example {
+            bytes: None,
+            kinds: vec![],
+            op,
+            loads,
+            request,
+        }
     };
     let window = json!({ "min_secs": 60, "max_secs": 1500 });
     vec![
-        ask("network_stats", None, json!({ "date": "2026-01-05", "include_routes": false, "include_stops": false, "include_service_types": false })),
+        ask(
+            "network_stats",
+            None,
+            json!({ "date": "2026-01-05", "include_routes": false, "include_stops": false, "include_service_types": false }),
+        ),
         ask("service_types_overview", None, json!({})),
         ask("service_groups", None, json!({})),
         ask("service_type_detail", None, json!({ "members": ["WK"] })),
-        ask("service_type_compare", None, json!({ "base_hash": hash, "members": ["WK"] })),
-        ask("stop_gaps", None, json!({ "date": "2026-01-05", "stop_id": "A" })),
+        ask(
+            "service_type_compare",
+            None,
+            json!({ "base_hash": hash, "members": ["WK"] }),
+        ),
+        ask(
+            "stop_gaps",
+            None,
+            json!({ "date": "2026-01-05", "stop_id": "A" }),
+        ),
         ask("hourly_trips", None, json!({ "date": "2026-01-05" })),
         ask("schedule_texture", None, json!({ "members": ["WK"] })),
         ask("route_overlap", None, json!({ "date": "2026-01-05" })),
-        ask("timed_transfers", None, json!({ "date": "2026-01-05", "stop_id": "A", "window": window })),
-        ask("hub_connections", None, json!({ "date": "2026-01-05", "stop_id": "A", "window": window })),
-        ask("missed_connections", None, json!({ "date": "2026-01-05", "stop_id": "A", "miss_secs": 1500 })),
-        ask("longest_waits", None, json!({ "date": "2026-01-05", "window": { "start_secs": 25200, "end_secs": 36000 }, "limit": 5 })),
+        ask(
+            "timed_transfers",
+            None,
+            json!({ "date": "2026-01-05", "stop_id": "A", "window": window }),
+        ),
+        ask(
+            "hub_connections",
+            None,
+            json!({ "date": "2026-01-05", "stop_id": "A", "window": window }),
+        ),
+        ask(
+            "missed_connections",
+            None,
+            json!({ "date": "2026-01-05", "stop_id": "A", "miss_secs": 1500 }),
+        ),
+        ask(
+            "longest_waits",
+            None,
+            json!({ "date": "2026-01-05", "window": { "start_secs": 25200, "end_secs": 36000 }, "limit": 5 }),
+        ),
         ask("day_types", None, json!({ "from": "2026-01-01" })),
-        ask("plan_compare", None, json!({ "base_hash": hash, "from": "2026-01-01" })),
-        ask("network_findings", None, json!({ "base_hash": hash, "members": ["WK"], "params": { "wait_secs": 900, "limit": 5 } })),
+        ask(
+            "plan_compare",
+            None,
+            json!({ "base_hash": hash, "from": "2026-01-01" }),
+        ),
+        ask(
+            "network_findings",
+            None,
+            json!({ "base_hash": hash, "members": ["WK"], "params": { "wait_secs": 900, "limit": 5 } }),
+        ),
         ask("route_frequency", None, json!({ "members": ["WK"] })),
-        ask("type_coverage", Some(PEOPLE), json!({ "layer_hash": layer_hash(PEOPLE), "members": ["WK"], "field": "pop", "label": "people",
-            "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 })),
-        ask("unserved_points", Some(PEOPLE), json!({ "layer_hash": layer_hash(PEOPLE), "radius_m": 500, "members": ["WK"] })),
-        ask("coverage_compare", Some(JOBS), json!({ "base_hash": hash, "layer_hash": layer_hash(JOBS), "field": "jobs", "label": "jobs",
-            "base_members": ["WK"], "members": ["WK"], "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 })),
+        ask(
+            "type_coverage",
+            Some(PEOPLE),
+            json!({ "layer_hash": layer_hash(PEOPLE), "members": ["WK"], "field": "pop", "label": "people",
+            "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 }),
+        ),
+        ask(
+            "unserved_points",
+            Some(PEOPLE),
+            json!({ "layer_hash": layer_hash(PEOPLE), "radius_m": 500, "members": ["WK"] }),
+        ),
+        ask(
+            "coverage_compare",
+            Some(JOBS),
+            json!({ "base_hash": hash, "layer_hash": layer_hash(JOBS), "field": "jobs", "label": "jobs",
+            "base_members": ["WK"], "members": ["WK"], "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 }),
+        ),
     ]
 }

@@ -14,18 +14,29 @@ fn date() -> transit_date::Date {
 fn destinations(net: &Network) -> Vec<String> {
     let day = materialize(net, date()).unwrap();
     let trip = day.iter().find(|t| t.trip == "10-weekday@28800").unwrap();
-    (0..trip.stop_times.len()).map(|i| visit_destination(net, trip, i)).collect()
+    (0..trip.stop_times.len())
+        .map(|i| visit_destination(net, trip, i))
+        .collect()
 }
 
 #[test]
 fn an_unsigned_trip_is_going_to_its_final_stop() {
-    assert_eq!(destinations(&network()), ["Main & 3rd", "Main & 3rd", "Main & 3rd"]);
+    assert_eq!(
+        destinations(&network()),
+        ["Main & 3rd", "Main & 3rd", "Main & 3rd"]
+    );
 }
 
 #[test]
 fn a_final_bay_is_named_by_its_station() {
     let mut net = network();
-    net.stops.insert("STN".into(), Stop { name: "Main Transit Center".into(), ..Default::default() });
+    net.stops.insert(
+        "STN".into(),
+        Stop {
+            name: "Main Transit Center".into(),
+            ..Default::default()
+        },
+    );
     net.stops.get_mut("C").unwrap().parent = Some("STN".into());
     net.stops.get_mut("C").unwrap().name = "Main Transit Center: Bay D".into();
     assert_eq!(destinations(&net)[0], "Main Transit Center");
@@ -42,8 +53,12 @@ fn the_trip_headsign_beats_the_final_stop() {
 fn a_visit_headsign_overrides_the_trip_at_that_visit_only() {
     let mut net = network();
     net.pattern_trips.get_mut("10-weekday").unwrap().trips[0].headsign = Some("Downtown".into());
-    net.patterns.get_mut("10-inbound").unwrap().stops[0].headsign = Some("Downtown via Main".into());
-    assert_eq!(destinations(&net), ["Downtown via Main", "Downtown", "Downtown"]);
+    net.patterns.get_mut("10-inbound").unwrap().stops[0].headsign =
+        Some("Downtown via Main".into());
+    assert_eq!(
+        destinations(&net),
+        ["Downtown via Main", "Downtown", "Downtown"]
+    );
 }
 
 #[test]

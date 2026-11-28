@@ -5,7 +5,12 @@
 use transit_network::{operators::Operator, Network};
 
 fn operator(timezone: &str) -> Operator {
-    Operator { name: "Op".into(), url: "https://example.com".into(), timezone: timezone.into(), ..Operator::default() }
+    Operator {
+        name: "Op".into(),
+        url: "https://example.com".into(),
+        timezone: timezone.into(),
+        ..Operator::default()
+    }
 }
 
 fn network(zones: &[&str]) -> Network {
@@ -18,12 +23,18 @@ fn network(zones: &[&str]) -> Network {
 
 #[test]
 fn one_operator_names_the_networks_zone() {
-    assert_eq!(network(&["America/Los_Angeles"]).timezone(), Some("America/Los_Angeles"));
+    assert_eq!(
+        network(&["America/Los_Angeles"]).timezone(),
+        Some("America/Los_Angeles")
+    );
 }
 
 #[test]
 fn operators_that_agree_name_one_zone() {
-    assert_eq!(network(&["America/Los_Angeles", "America/Los_Angeles"]).timezone(), Some("America/Los_Angeles"));
+    assert_eq!(
+        network(&["America/Los_Angeles", "America/Los_Angeles"]).timezone(),
+        Some("America/Los_Angeles")
+    );
 }
 
 #[test]
@@ -34,6 +45,9 @@ fn no_operator_or_an_empty_zone_names_none() {
 
 #[test]
 fn operators_that_disagree_name_none() {
-    assert_eq!(network(&["America/Los_Angeles", "America/New_York"]).timezone(), None);
+    assert_eq!(
+        network(&["America/Los_Angeles", "America/New_York"]).timezone(),
+        None
+    );
     assert_eq!(network(&["America/Los_Angeles", ""]).timezone(), None);
 }

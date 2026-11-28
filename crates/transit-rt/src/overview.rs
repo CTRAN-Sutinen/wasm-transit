@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use serde::{Deserialize, Serialize};
 
 use crate::gtfs_rt::trip_descriptor::ScheduleRelationship as TripRelationship;
 use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopRelationship;
@@ -127,7 +127,10 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                     route_id: tu.trip.route_id.clone(),
                     start_time: tu.trip.start_time.clone(),
                     start_date: tu.trip.start_date.clone(),
-                    canceled: matches!(tu.trip.schedule_relationship(), TripRelationship::Canceled | TripRelationship::Deleted),
+                    canceled: matches!(
+                        tu.trip.schedule_relationship(),
+                        TripRelationship::Canceled | TripRelationship::Deleted
+                    ),
                     stop_updates: tu
                         .stop_time_update
                         .iter()
@@ -172,7 +175,13 @@ pub(crate) fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> Aler
     use crate::gtfs_rt::alert::{Cause, Effect, SeverityLevel};
     use transit_alerts::{AlertCause as C, AlertEffect as E, AlertPeriod, AlertSeverity as S};
     let periods = |ranges: &[crate::gtfs_rt::TimeRange]| {
-        ranges.iter().map(|r| AlertPeriod { start: r.start, end: r.end }).collect::<Vec<_>>()
+        ranges
+            .iter()
+            .map(|r| AlertPeriod {
+                start: r.start,
+                end: r.end,
+            })
+            .collect::<Vec<_>>()
     };
     let cause = match alert.cause() {
         Cause::UnknownCause => C::Unknown,

@@ -32,25 +32,46 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(type = "number"))]
         horizon_ms: u64,
     },
-    LogRecords { document: transit_sync::EditDocument },
+    LogRecords {
+        document: transit_sync::EditDocument,
+    },
     LogDocument {
-        #[cfg_attr(feature = "bindings", ts(type = "Record<string, { version: number, value: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Record<string, { version: number, value: unknown }>")
+        )]
         records: std::collections::BTreeMap<String, transit_log::Held>,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "{ version: number, value: unknown }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(optional, type = "{ version: number, value: unknown }")
+        )]
         document: Option<transit_log::Held>,
     },
     Receive {
-        #[cfg_attr(feature = "bindings", ts(type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "{ checkpoint?: unknown, header: unknown, unread?: Array<{ seq: number, text: string }> }"
+            )
+        )]
         write: transit_log::Write,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(type = "Record<string, unknown>"))]
         documents: std::collections::BTreeMap<String, serde_json::Value>,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ cap: string, op: string, args?: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ cap: string, op: string, args?: unknown }>")
+        )]
         ops: Vec<transit_log::OpCall>,
     },
     LogRevert {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"
+            )
+        )]
         states: Vec<transit_log::RevertState>,
         #[cfg_attr(feature = "bindings", ts(type = "number"))]
         now_ms: u64,
@@ -84,7 +105,12 @@ pub enum Response {
         dropped: usize,
     },
     LogRecords {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ kind: string, version: number, records: Record<string, unknown> }>"
+            )
+        )]
         next: Vec<transit_log::KindRecords>,
     },
     LogDocument {
@@ -93,19 +119,31 @@ pub enum Response {
     },
     Receive(transit_log::Received),
     LogRevert {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, version: number, after?: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ kind: string, id: string, version: number, after?: unknown }>")
+        )]
         written: Vec<transit_log::Written>,
     },
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::SyncEdits { client, server, now_ms } => {
+        Request::SyncEdits {
+            client,
+            server,
+            now_ms,
+        } => {
             let unknown_fields = transit_sync::unknown_fields(&client);
             let client = transit_sync::clamp_timestamps(&client, now_ms);
             let records = transit_sync::submit(transit_sync::merge(&client, &server), now_ms);
             let (document, document_hash) = canonical(&records)?;
-            Ok(Response::SyncEdits { records, document, document_hash, unknown_fields })
+            Ok(Response::SyncEdits {
+                records,
+                document,
+                document_hash,
+                unknown_fields,
+            })
         }
         Request::ReadEdits { document } => {
             let (read, dropped) = transit_sync::read_document(&document)?;
@@ -118,36 +156,81 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 document_hash: hash,
             })
         }
-        Request::CompactEdits { records, now_ms, horizon_ms } => {
+        Request::CompactEdits {
+            records,
+            now_ms,
+            horizon_ms,
+        } => {
             let (records, dropped) = transit_sync::compact(&records, now_ms, horizon_ms);
             let (document, document_hash) = canonical(&records)?;
-            Ok(Response::CompactEdits { records, document, document_hash, dropped })
+            Ok(Response::CompactEdits {
+                records,
+                document,
+                document_hash,
+                dropped,
+            })
         }
         Request::LogRecords { document } => {
             let doc = serde_json::to_value(&document).map_err(|e| e.to_string())?;
-            Ok(Response::LogRecords { next: transit_log::document_records(&doc, "records", RECORD_KIND, transit_sync::KIND, transit_sync::SCHEMA_VERSION)? })
+            Ok(Response::LogRecords {
+                next: transit_log::document_records(
+                    &doc,
+                    "records",
+                    RECORD_KIND,
+                    transit_sync::KIND,
+                    transit_sync::SCHEMA_VERSION,
+                )?,
+            })
         }
         Request::LogDocument { records, document } => {
             let template = serde_json::json!({"kind": transit_sync::KIND, "schema_version": transit_sync::SCHEMA_VERSION});
-            let doc: transit_sync::EditDocument = transit_log::assemble(template, document.as_ref(), "records", &records, true)?;
-            Ok(Response::LogDocument { document: cap_abi::canonical_bytes(&doc)?, document_hash: cap_abi::canonical_hash(&doc)? })
+            let doc: transit_sync::EditDocument =
+                transit_log::assemble(template, document.as_ref(), "records", &records, true)?;
+            Ok(Response::LogDocument {
+                document: cap_abi::canonical_bytes(&doc)?,
+                document_hash: cap_abi::canonical_hash(&doc)?,
+            })
         }
-        Request::Receive { write, documents, ops } => receive(write, documents, ops),
+        Request::Receive {
+            write,
+            documents,
+            ops,
+        } => receive(write, documents, ops),
         Request::LogRevert { states, now_ms } => {
-            let record = |held: &Option<transit_log::Held>, id: &str| -> Result<Option<transit_sync::EditRecord>, String> {
+            let record = |held: &Option<transit_log::Held>,
+                          id: &str|
+             -> Result<Option<transit_sync::EditRecord>, String> {
                 match held {
                     None => Ok(None),
-                    Some(h) if h.version != transit_sync::SCHEMA_VERSION => {
-                        Err(format!("record {id}: {}", transit_version::refused(transit_sync::KIND, h.version, transit_sync::SCHEMA_VERSION)))
-                    }
-                    Some(h) => serde_json::from_value(h.value.clone()).map(Some).map_err(|e| format!("record {id}: {e}")),
+                    Some(h) if h.version != transit_sync::SCHEMA_VERSION => Err(format!(
+                        "record {id}: {}",
+                        transit_version::refused(
+                            transit_sync::KIND,
+                            h.version,
+                            transit_sync::SCHEMA_VERSION
+                        )
+                    )),
+                    Some(h) => serde_json::from_value(h.value.clone())
+                        .map(Some)
+                        .map_err(|e| format!("record {id}: {e}")),
                 }
             };
             let mut written = Vec::new();
             for s in states.iter().filter(|s| s.kind == RECORD_KIND) {
-                let back = transit_sync::revert_record(record(&s.prior, &s.id)?.as_ref(), record(&s.now, &s.id)?.as_ref(), now_ms);
-                let after = back.map(|r| serde_json::to_value(r).map_err(|e| e.to_string())).transpose()?;
-                written.push(transit_log::Written { kind: RECORD_KIND.into(), id: s.id.clone(), version: transit_sync::SCHEMA_VERSION, after });
+                let back = transit_sync::revert_record(
+                    record(&s.prior, &s.id)?.as_ref(),
+                    record(&s.now, &s.id)?.as_ref(),
+                    now_ms,
+                );
+                let after = back
+                    .map(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                    .transpose()?;
+                written.push(transit_log::Written {
+                    kind: RECORD_KIND.into(),
+                    id: s.id.clone(),
+                    version: transit_sync::SCHEMA_VERSION,
+                    after,
+                });
             }
             Ok(Response::LogRevert { written })
         }
@@ -169,14 +252,24 @@ enum Intent {
 }
 
 /// Brings an older document forward first. `read_document` refuses it.
-fn read(doc: &serde_json::Value) -> Result<(Vec<transit_sync::EditRecord>, usize), cap_abi::Refusal> {
+fn read(
+    doc: &serde_json::Value,
+) -> Result<(Vec<transit_sync::EditRecord>, usize), cap_abi::Refusal> {
     let older = transit_sync::version::schema_version_of(doc)? < transit_sync::SCHEMA_VERSION;
-    let doc = if older { transit_sync::version::migrate_to(doc.clone(), transit_sync::SCHEMA_VERSION)?.0 } else { doc.clone() };
+    let doc = if older {
+        transit_sync::version::migrate_to(doc.clone(), transit_sync::SCHEMA_VERSION)?.0
+    } else {
+        doc.clone()
+    };
     let (read, dropped) = transit_sync::read_document(&doc)?;
     Ok((read.records, dropped))
 }
 
-fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<String, serde_json::Value>, ops: Vec<transit_log::OpCall>) -> Result<Response, cap_abi::Refusal> {
+fn receive(
+    write: transit_log::Write,
+    documents: std::collections::BTreeMap<String, serde_json::Value>,
+    ops: Vec<transit_log::OpCall>,
+) -> Result<Response, cap_abi::Refusal> {
     let answer = |received| Ok(Response::Receive(received));
     if let Some(seq) = write.landed()? {
         return answer(transit_log::Received::landed(seq));
@@ -187,12 +280,21 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
         Some(doc) => read(doc)?.0,
         None => Vec::new(),
     };
-    let head_hash = head.map(|_| canonical(&records)).transpose()?.map(|(_, h)| h);
+    let head_hash = head
+        .map(|_| canonical(&records))
+        .transpose()?
+        .map(|(_, h)| h);
     let mut wrote = false;
     let mut unknown_fields = Vec::new();
     for (i, call) in ops.iter().enumerate() {
         if call.cap != "sync" {
-            return answer(transit_log::Received::failed(i, format!("{} {} is not a write to the disruptions log (sync: sync, compact, migrate)", call.cap, call.op)));
+            return answer(transit_log::Received::failed(
+                i,
+                format!(
+                    "{} {} is not a write to the disruptions log (sync: sync, compact, migrate)",
+                    call.cap, call.op
+                ),
+            ));
         }
         let intent = match call.request::<Intent>() {
             Ok(intent) => intent,
@@ -203,7 +305,9 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
                 // An empty log has read nothing, so `from` may be empty.
                 let empty_log = write.header.seq == 1;
                 if let Some(from) = from {
-                    if from != head_hash.clone().unwrap_or_default() && !(empty_log && from.is_empty()) {
+                    if from != head_hash.clone().unwrap_or_default()
+                        && !(empty_log && from.is_empty())
+                    {
                         return answer(transit_log::Received::moved(head_hash));
                     }
                 }
@@ -216,7 +320,10 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
                 records = transit_sync::submit(transit_sync::merge(&client, &records), now_ms);
             }
             Intent::Compact { horizon_ms } => {
-                let keep = match (&write.references, write.now.as_ref().or(write.read.as_ref())) {
+                let keep = match (
+                    &write.references,
+                    write.now.as_ref().or(write.read.as_ref()),
+                ) {
                     (Some(kinds), Some(now)) => transit_log::named(kinds, now, RECORD_KIND),
                     _ => Default::default(),
                 };
@@ -232,10 +339,18 @@ fn receive(write: transit_log::Write, documents: std::collections::BTreeMap<Stri
     if wrote {
         let document = transit_sync::EditDocument::new(records.clone());
         let doc = serde_json::to_value(&document).map_err(|e| e.to_string())?;
-        next = transit_log::document_records(&doc, "records", RECORD_KIND, transit_sync::KIND, transit_sync::SCHEMA_VERSION)?;
+        next = transit_log::document_records(
+            &doc,
+            "records",
+            RECORD_KIND,
+            transit_sync::KIND,
+            transit_sync::SCHEMA_VERSION,
+        )?;
         heads.insert(transit_sync::KIND.to_string(), canonical(&records)?.1);
     }
-    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| cap_abi::canonical_bytes(e))?;
+    let mut received = transit_log::receive(&write, &next, &cap_abi::record_hash, &|e| {
+        cap_abi::canonical_bytes(e)
+    })?;
     received.heads = heads;
     unknown_fields.sort();
     unknown_fields.dedup();
@@ -247,7 +362,10 @@ pub const RECORD_KIND: &str = "edit_record";
 
 fn canonical(records: &[transit_sync::EditRecord]) -> Result<(String, String), String> {
     let document = transit_sync::EditDocument::new(records.to_vec());
-    Ok((cap_abi::canonical_bytes(&document)?, cap_abi::canonical_hash(&document)?))
+    Ok((
+        cap_abi::canonical_bytes(&document)?,
+        cap_abi::canonical_hash(&document)?,
+    ))
 }
 
 pub fn dispatch_json(text: &str) -> String {

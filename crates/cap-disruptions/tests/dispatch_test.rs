@@ -9,16 +9,28 @@ fn run(request: Value) -> Value {
 
 fn ok(request: Value) -> Value {
     let answer = run(request.clone());
-    answer.get("ok").cloned().unwrap_or_else(|| panic!("{request} answered {answer}"))
+    answer
+        .get("ok")
+        .cloned()
+        .unwrap_or_else(|| panic!("{request} answered {answer}"))
 }
 
 fn err(request: Value) -> String {
     let answer = run(request.clone());
-    answer.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+    answer
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("{request} answered {answer}"))
+        .to_string()
 }
 
 fn network_hash() -> Value {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/public/caps/sample-network-load.json"
+    ))
+    .unwrap();
     ok(serde_json::from_str(&text).unwrap())["network_hash"].clone()
 }
 
@@ -61,7 +73,12 @@ fn with(op: &str, extra: Value) -> Value {
 #[test]
 fn the_gap_list_reads_every_source() {
     let gaps = ok(with("gaps", json!({})));
-    let sources: Vec<Value> = gaps["gaps"].as_array().unwrap().iter().map(|g| g["source"].clone()).collect();
+    let sources: Vec<Value> = gaps["gaps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["source"].clone())
+        .collect();
     assert_eq!(
         sources,
         vec![
@@ -76,22 +93,38 @@ fn the_gap_list_reads_every_source() {
 #[test]
 fn the_day_lists_routes_with_their_disruptions() {
     let today = ok(with("today", json!({})));
-    let routes: Vec<&str> = today["routes"].as_array().unwrap().iter().map(|r| r["route"].as_str().unwrap()).collect();
+    let routes: Vec<&str> = today["routes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["route"].as_str().unwrap())
+        .collect();
     assert_eq!(routes, ["10", "20"], "route 20 serves the suspended stop B");
     let r10 = &today["routes"][0]["disruptions"];
     assert_eq!(r10.as_array().unwrap().len(), 4);
-    assert_eq!(r10[0]["first_stop"], json!({ "id": "A", "name": "Main & 1st", "lat": 45.5, "lon": -73.5 }));
+    assert_eq!(
+        r10[0]["first_stop"],
+        json!({ "id": "A", "name": "Main & 1st", "lat": 45.5, "lon": -73.5 })
+    );
     assert_eq!(r10[1]["explained_by"], json!(["a1"]));
     assert_eq!(r10[2]["from"], "feed");
     assert!(today["unaffected_routes"].as_u64().is_some());
     let at_c = ok(with("today", json!({ "stop": "C" })));
-    let only: Vec<&str> = at_c["routes"][0]["disruptions"].as_array().unwrap().iter().map(|d| d["trip"].as_str().unwrap()).collect();
+    let only: Vec<&str> = at_c["routes"][0]["disruptions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["trip"].as_str().unwrap())
+        .collect();
     assert_eq!(only, ["t30"], "only t30 serves stop C");
 }
 
 #[test]
 fn garbage_is_an_error_not_a_panic() {
-    assert!(err(json!({ "op": "gaps", "network_hash": "sha256:nope", "date": "2026-11-19", "now": 0 })).contains("sha256:nope"));
+    assert!(err(
+        json!({ "op": "gaps", "network_hash": "sha256:nope", "date": "2026-11-19", "now": 0 })
+    )
+    .contains("sha256:nope"));
     assert!(err(with("today", json!({ "date": "11/19" }))).contains("11/19"));
 }
 

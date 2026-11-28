@@ -7,8 +7,8 @@ use ts_rs::TS;
 use transit_date::Date;
 
 use crate::{
-    Network, trip_distance_m, median_gap_secs, METERS_PER_MILE, ServiceTypeSummary, usable_transfer_pairs,
-    service_type_summaries
+    median_gap_secs, service_type_summaries, trip_distance_m, usable_transfer_pairs, Network,
+    ServiceTypeSummary, METERS_PER_MILE,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,8 +67,7 @@ pub struct RouteStats {
     pub revenue_miles: f64,
 }
 
-
-pub(crate) fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Date) -> NetworkStats {
+fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Date) -> NetworkStats {
     let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     let mut route_trips: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_first: BTreeMap<String, u32> = BTreeMap::new();
@@ -97,7 +96,9 @@ pub(crate) fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Da
             let Some(route) = net.patterns.get(&trip.pattern).map(|p| p.route.clone()) else {
                 continue;
             };
-            let Some(end) = trip.stop_times.last() else { continue };
+            let Some(end) = trip.stop_times.last() else {
+                continue;
+            };
             trips += 1;
             *route_trips.entry(route.to_string()).or_default() += 1;
             route_first
@@ -151,24 +152,22 @@ pub(crate) fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Da
         let busiest = route_departures
             .iter()
             .filter(|((r, _), _)| r == route_id)
-            .fold(None::<(&String, &Vec<u32>)>, |best, ((_, stop), times)| match best {
-                Some((_, b)) if b.len() >= times.len() => best,
-                _ => Some((stop, times)),
-            });
+            .fold(
+                None::<(&String, &Vec<u32>)>,
+                |best, ((_, stop), times)| match best {
+                    Some((_, b)) if b.len() >= times.len() => best,
+                    _ => Some((stop, times)),
+                },
+            );
         let typical = busiest.and_then(|(_, times)| median_gap_secs(times));
         routes.push(RouteStats {
             route_id: route_id.clone(),
             name: route.label().to_string(),
             patterns: pattern_starts
                 .iter()
-                .filter(|(pid, _)| {
-                    net.patterns.get(*pid).is_some_and(|p| &p.route == route_id)
-                })
+                .filter(|(pid, _)| net.patterns.get(*pid).is_some_and(|p| &p.route == route_id))
                 .count() as u32,
-            stops: route_stop_sets
-                .get(route_id)
-                .map(|s| s.len())
-                .unwrap_or(0) as u32,
+            stops: route_stop_sets.get(route_id).map(|s| s.len()).unwrap_or(0) as u32,
             trips: route_trips,
             first_start_secs: route_first.get(route_id).copied(),
             last_arrival_secs: route_last.get(route_id).copied(),
@@ -191,7 +190,10 @@ pub(crate) fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Da
             for gid in group.keys() {
                 for ((sid, rid), times) in &times_at {
                     if sid == gid {
-                        pooled.entry(rid.as_str()).or_default().extend_from_slice(times);
+                        pooled
+                            .entry(rid.as_str())
+                            .or_default()
+                            .extend_from_slice(times);
                     }
                 }
             }
@@ -238,11 +240,9 @@ pub(crate) fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: Da
     }
 }
 
-
 pub(crate) fn family_stats(net: &Network, group: &BTreeSet<String>) -> NetworkStats {
     stats_fold(net, |sid| group.contains(sid), Date::MIN)
 }
-
 
 #[derive(Debug, Clone, Default)]
 struct StopActivity {
@@ -251,7 +251,6 @@ struct StopActivity {
     first: Option<u32>,
     last: Option<u32>,
 }
-
 
 impl StopActivity {
     fn visit(&mut self, route: &str, arrival: u32) {
@@ -269,18 +268,21 @@ impl StopActivity {
     }
 }
 
-
 pub fn network_stats(net: &Network, date: Date) -> NetworkStats {
     day_stats(net, date, None)
 }
 
 fn day_stats(net: &Network, date: Date, only_type: Option<&str>) -> NetworkStats {
-    let mut stats = stats_fold(net, |sid| {
-        net.service_types
-            .get(sid)
-            .is_some_and(|st| st.rule.runs_on(date))
-            && only_type.map_or(true, |t| sid == t)
-    }, date);
+    let mut stats = stats_fold(
+        net,
+        |sid| {
+            net.service_types
+                .get(sid)
+                .is_some_and(|st| st.rule.runs_on(date))
+                && only_type.map_or(true, |t| sid == t)
+        },
+        date,
+    );
     stats.service_types = service_type_summaries(net, Some(date));
     stats
 }

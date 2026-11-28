@@ -8,10 +8,10 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use support::{build_zip_spaced, model_day, TripSpec};
+use transit_date::Date;
 use transit_router::{earliest_arrival, Leg, RouterNetwork};
 use transit_streets::walking::{Walk, WalkTable};
 
@@ -20,7 +20,9 @@ fn date() -> Date {
 }
 
 fn table(walks: Vec<Walk>) -> WalkTable {
-    WalkTable { kind: Default::default(), schema_version: Default::default(),
+    WalkTable {
+        kind: Default::default(),
+        schema_version: Default::default(),
         streets_hash: "sha256:streets".into(),
         network_hash: "sha256:network".into(),
         speed_mps: 1.3,
@@ -31,7 +33,13 @@ fn table(walks: Vec<Walk>) -> WalkTable {
 
 fn walks(n: usize) -> impl Strategy<Value = Vec<Walk>> {
     vec((0..n + 1, 0..n + 1, 1u32..600), 0..12).prop_map(move |pairs| {
-        let id = |i: usize| if i == n { "ghost".to_string() } else { format!("s{i}") };
+        let id = |i: usize| {
+            if i == n {
+                "ghost".to_string()
+            } else {
+                format!("s{i}")
+            }
+        };
         let mut by_pair = BTreeMap::new();
         for (a, b, secs) in pairs {
             if a != b {
@@ -40,8 +48,16 @@ fn walks(n: usize) -> impl Strategy<Value = Vec<Walk>> {
         }
         let mut out = Vec::new();
         for ((a, b), walk_secs) in by_pair {
-            out.push(Walk { from: a.clone(), to: b.clone(), walk_secs });
-            out.push(Walk { from: b, to: a, walk_secs });
+            out.push(Walk {
+                from: a.clone(),
+                to: b.clone(),
+                walk_secs,
+            });
+            out.push(Walk {
+                from: b,
+                to: a,
+                walk_secs,
+            });
         }
         out.sort_by(|x, y| (&x.from, &x.to).cmp(&(&y.from, &y.to)));
         out
@@ -56,7 +72,13 @@ fn footpaths(net: &RouterNetwork) -> BTreeMap<(String, String), u32> {
     let mut out = BTreeMap::new();
     for node in &net.stops {
         for edge in &node.footpaths {
-            out.insert((node.stop_id.clone(), net.stops[edge.to as usize].stop_id.clone()), edge.walk_secs);
+            out.insert(
+                (
+                    node.stop_id.clone(),
+                    net.stops[edge.to as usize].stop_id.clone(),
+                ),
+                edge.walk_secs,
+            );
         }
     }
     out
@@ -86,20 +108,50 @@ proptest! {
 /// between them) have no plan.
 #[test]
 fn a_plan_walks_where_the_table_walks_and_nowhere_else() {
-    let far = [TripSpec { stops: vec![0], start: 28_800, step: 60 }];
+    let far = [TripSpec {
+        stops: vec![0],
+        start: 28_800,
+        step: 60,
+    }];
     let (network, day) = model_day(&build_zip_spaced(2, 0.003, &far), date());
-    let walk = |secs| vec![
-        Walk { from: "s0".into(), to: "s1".into(), walk_secs: secs },
-        Walk { from: "s1".into(), to: "s0".into(), walk_secs: secs },
-    ];
+    let walk = |secs| {
+        vec![
+            Walk {
+                from: "s0".into(),
+                to: "s1".into(),
+                walk_secs: secs,
+            },
+            Walk {
+                from: "s1".into(),
+                to: "s0".into(),
+                walk_secs: secs,
+            },
+        ]
+    };
     let net = RouterNetwork::build(&network, &day, date(), None).with_walks(&table(walk(420)));
-    let plan = earliest_arrival(&net, "s0", "s1", 28_000, 3).unwrap().expect("the walk reaches it");
+    let plan = earliest_arrival(&net, "s0", "s1", 28_000, 3)
+        .unwrap()
+        .expect("the walk reaches it");
     assert_eq!(plan.arrival_secs, 28_420);
-    assert!(matches!(&plan.legs[..], [Leg::Walk { walk_secs: 420, .. }]), "{:?}", plan.legs);
+    assert!(
+        matches!(&plan.legs[..], [Leg::Walk { walk_secs: 420, .. }]),
+        "{:?}",
+        plan.legs
+    );
 
     let (network, day) = model_day(&build_zip_spaced(2, 0.0001, &far), date());
     let straight = RouterNetwork::build(&network, &day, date(), None);
-    assert!(earliest_arrival(&straight, "s0", "s1", 28_000, 3).unwrap().is_some(), "11 m apart: a straight-line walk");
+    assert!(
+        earliest_arrival(&straight, "s0", "s1", 28_000, 3)
+            .unwrap()
+            .is_some(),
+        "11 m apart: a straight-line walk"
+    );
     let none = straight.with_walks(&table(vec![]));
-    assert!(earliest_arrival(&none, "s0", "s1", 28_000, 3).unwrap().is_none(), "the table joins them by no walk");
+    assert!(
+        earliest_arrival(&none, "s0", "s1", 28_000, 3)
+            .unwrap()
+            .is_none(),
+        "the table joins them by no walk"
+    );
 }

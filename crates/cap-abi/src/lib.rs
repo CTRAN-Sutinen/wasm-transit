@@ -188,13 +188,12 @@ macro_rules! assembly {
     };
 }
 
-
 // The library of each kind reads and hashes its own kind.
-pub use transit_version::document::{
-    canonical_bytes, canonical_hash, content_hash, is_gzip, noting_read, parse_document, parse_versioned, read_versioned,
-    versioned, ReadAhead,
-};
 use transit_version::document::read_value;
+pub use transit_version::document::{
+    canonical_bytes, canonical_hash, content_hash, is_gzip, noting_read, parse_document,
+    parse_versioned, read_versioned, versioned, ReadAhead,
+};
 pub use transit_version::jcs;
 pub use transit_version::{Refusal, RefusalCode};
 
@@ -245,7 +244,9 @@ where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        versioned(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map(Current).map_err(stash)
+        versioned(<serde_json::Value as serde::Deserialize>::deserialize(d)?)
+            .map(Current)
+            .map_err(stash)
     }
 }
 
@@ -267,18 +268,28 @@ where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let (document, read) = read_value::<T>(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map_err(stash)?;
+        let (document, read) =
+            read_value::<T>(<serde_json::Value as serde::Deserialize>::deserialize(d)?)
+                .map_err(stash)?;
         if let Some(read) = read {
-            transit_version::writes_over::<T>(read.found, transit_version::ReadAs::Ahead(read.how)).map_err(stash)?;
+            transit_version::writes_over::<T>(read.found, transit_version::ReadAs::Ahead(read.how))
+                .map_err(stash)?;
         }
         Ok(Base(document))
     }
 }
 
 /// Also return the fields that this build does not know.
-pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(doc: serde_json::Value) -> Result<(T, Vec<String>), Refusal> {
-    let (read, unknown) = transit_version::noting_unknown(|| serde_json::from_value::<Base<T>>(doc));
-    Ok((read.map_err(|e| stashed().unwrap_or_else(|| e.to_string().into()))?.0, unknown))
+pub fn read_base<T: serde::de::DeserializeOwned + transit_version::Versioned>(
+    doc: serde_json::Value,
+) -> Result<(T, Vec<String>), Refusal> {
+    let (read, unknown) =
+        transit_version::noting_unknown(|| serde_json::from_value::<Base<T>>(doc));
+    Ok((
+        read.map_err(|e| stashed().unwrap_or_else(|| e.to_string().into()))?
+            .0,
+        unknown,
+    ))
 }
 
 thread_local! {

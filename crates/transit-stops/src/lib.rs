@@ -35,23 +35,21 @@
 
 #![forbid(unsafe_code)]
 
+pub mod load;
 pub mod request_rule;
 pub mod stop_record;
-pub mod load;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use transit_date::Date;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    StopsKind = "stops"
-);
+transit_version::kind_tag!(StopsKind = "stops");
 
 impl transit_version::Versioned for Stops {
     const KIND: &'static str = "stops";
@@ -92,7 +90,12 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "bindings", ts(optional))]
     pub on: Option<String>,
-    #[cfg_attr(feature = "bindings", ts(type = "\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"moved\" | \"changed\" | \"retired\""))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(
+            type = "\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"moved\" | \"changed\" | \"retired\""
+        )
+    )]
     pub event: EventKind,
     /// The first service date after a temporary `suspended` or `moved`,
     /// when the earlier state returns.
@@ -169,8 +172,13 @@ impl Attachment {
     pub fn well_named(&self) -> bool {
         let hex = self.hash.strip_prefix("sha256:").unwrap_or("");
         hex.len() == 64
-            && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            && self.media_type.split_once('/').is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && self
+                .media_type
+                .split_once('/')
+                .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
     }
 }
 
@@ -205,7 +213,11 @@ impl EventKind {
     pub fn as_str(&self) -> &str {
         match self {
             EventKind::Unknown(name) => name,
-            known => Self::NAMES.iter().find(|(_, k)| k == known).map(|(n, _)| *n).unwrap_or(""),
+            known => Self::NAMES
+                .iter()
+                .find(|(_, k)| k == known)
+                .map(|(n, _)| *n)
+                .unwrap_or(""),
         }
     }
 
@@ -237,7 +249,11 @@ impl Serialize for EventKind {
 impl<'de> Deserialize<'de> for EventKind {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let name = String::deserialize(d)?;
-        Ok(EventKind::NAMES.iter().find(|(n, _)| *n == name).map(|(_, k)| k.clone()).unwrap_or(EventKind::Unknown(name)))
+        Ok(EventKind::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, k)| k.clone())
+            .unwrap_or(EventKind::Unknown(name)))
     }
 }
 
@@ -316,17 +332,26 @@ pub struct Details {
     /// recorded. The agency's own names beside [`AMENITIES`] are
     /// kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, bool>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, bool>>")
+    )]
     pub amenities: BTreeMap<String, bool>,
     /// A survey may contradict the agency's other data. It is kept as given
     /// (D-161).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, String>>")
+    )]
     pub site: BTreeMap<String, String>,
     /// Ids in other systems, by system or part name (`sign`, `tms`, `gis`).
     /// Kept and not checked.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, String>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, String>>")
+    )]
     pub refs: BTreeMap<String, String>,
 }
 
@@ -354,19 +379,62 @@ pub const SITE: [(&str, Answer); 32] = [
     ("county", Answer::Text),
     ("lanes", Answer::Number),
     ("speed_limit_mph", Answer::Number),
-    ("direction", Answer::OneOf(&["northbound", "southbound", "eastbound", "westbound", "clockwise", "counterclockwise"])),
+    (
+        "direction",
+        Answer::OneOf(&[
+            "northbound",
+            "southbound",
+            "eastbound",
+            "westbound",
+            "clockwise",
+            "counterclockwise",
+        ]),
+    ),
     ("side", Answer::OneOf(&["north", "south", "east", "west"])),
-    ("position", Answer::OneOf(&["near_side", "far_side", "opposite", "mid_block"])),
-    ("land_use", Answer::OneOf(&["residential", "commercial", "public", "school", "hospital", "mixed"])),
-    ("shoulder", Answer::OneOf(&["improved", "unimproved", "none"])),
-    ("surface", Answer::OneOf(&["asphalt", "concrete", "brick", "gravel", "dirt"])),
+    (
+        "position",
+        Answer::OneOf(&["near_side", "far_side", "opposite", "mid_block"]),
+    ),
+    (
+        "land_use",
+        Answer::OneOf(&[
+            "residential",
+            "commercial",
+            "public",
+            "school",
+            "hospital",
+            "mixed",
+        ]),
+    ),
+    (
+        "shoulder",
+        Answer::OneOf(&["improved", "unimproved", "none"]),
+    ),
+    (
+        "surface",
+        Answer::OneOf(&["asphalt", "concrete", "brick", "gravel", "dirt"]),
+    ),
     ("sidewalk", Answer::OneOf(YES_NO)),
     ("sidewalk:surface", Answer::Text),
-    ("sidewalk:connection", Answer::OneOf(&["continuous", "one_direction", "isolated", "none"])),
+    (
+        "sidewalk:connection",
+        Answer::OneOf(&["continuous", "one_direction", "isolated", "none"]),
+    ),
     ("ada", Answer::OneOf(YES_NO)),
     ("curb", Answer::OneOf(YES_NO)),
-    ("curb_cut", Answer::OneOf(&["at_all_corners", "at_stop_corners", "driveway_close", "none"])),
-    ("street_light", Answer::OneOf(&["at_stop", "within_50ft", "other_source", "none"])),
+    (
+        "curb_cut",
+        Answer::OneOf(&[
+            "at_all_corners",
+            "at_stop_corners",
+            "driveway_close",
+            "none",
+        ]),
+    ),
+    (
+        "street_light",
+        Answer::OneOf(&["at_stop", "within_50ft", "other_source", "none"]),
+    ),
     ("turnout", Answer::OneOf(&["yes", "no", "right_turn_only"])),
     ("crossing", Answer::OneOf(&["within_200ft", "none"])),
     ("advertising", Answer::OneOf(YES_NO)),
@@ -437,9 +505,12 @@ impl Details {
         set(&mut self.level, &next.level);
         set(&mut self.timezone, &next.timezone);
         set(&mut self.street_access, &next.street_access);
-        self.amenities.extend(next.amenities.iter().map(|(k, v)| (k.clone(), *v)));
-        self.site.extend(next.site.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.refs.extend(next.refs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.amenities
+            .extend(next.amenities.iter().map(|(k, v)| (k.clone(), *v)));
+        self.site
+            .extend(next.site.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.refs
+            .extend(next.refs.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 }
 
@@ -457,7 +528,14 @@ pub enum Status {
 }
 
 impl Status {
-    pub const ALL: [Status; 6] = [Status::Planned, Status::Permitted, Status::Built, Status::InService, Status::Suspended, Status::Retired];
+    pub const ALL: [Status; 6] = [
+        Status::Planned,
+        Status::Permitted,
+        Status::Built,
+        Status::InService,
+        Status::Suspended,
+        Status::Retired,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -578,7 +656,9 @@ impl fmt::Display for Refusal {
             Problem::BadDate { date } => format!("has {date:?}, not a YYYY-MM-DD date"),
             Problem::NoDate => "has no date (only a first in_service may go undated)".into(),
             Problem::OutOfOrder => "is dated before the event above it".into(),
-            Problem::FirstEvent => "must be a stage first: planned, permitted, built, or in_service".into(),
+            Problem::FirstEvent => {
+                "must be a stage first: planned, permitted, built, or in_service".into()
+            }
             Problem::AfterRetired => "follows the stop's retirement".into(),
             Problem::StageBack => "is a stage the stop is already at or past".into(),
             Problem::NotInService => "suspends a stop that is not in service".into(),
@@ -587,12 +667,22 @@ impl fmt::Display for Refusal {
             Problem::Misplaced { field } => format!("carries {field}, which its type does not set"),
             Problem::NoPoint => "lacks a whole point (lat and lon)".into(),
             Problem::BadPoint => "has a point off the earth".into(),
-            Problem::BadAttachment { hash } => format!("names an attachment {hash:?} that is not a sha256 hash with a media type"),
-            Problem::BadAnswer { key, value } => format!("answers {key} with {value:?}, which it does not take"),
-            Problem::UnknownStop { stop } => format!("replaces {stop:?}, which is not in the document"),
+            Problem::BadAttachment { hash } => {
+                format!("names an attachment {hash:?} that is not a sha256 hash with a media type")
+            }
+            Problem::BadAnswer { key, value } => {
+                format!("answers {key} with {value:?}, which it does not take")
+            }
+            Problem::UnknownStop { stop } => {
+                format!("replaces {stop:?}, which is not in the document")
+            }
             Problem::ReplacesItself => "replaces itself".into(),
-            Problem::DuplicateEventId { id } => format!("has the id {id:?}, which an event above it has"),
-            Problem::StopExists => "is new, but the document already holds a stop with its id".into(),
+            Problem::DuplicateEventId { id } => {
+                format!("has the id {id:?}, which an event above it has")
+            }
+            Problem::StopExists => {
+                "is new, but the document already holds a stop with its id".into()
+            }
         };
         match self.event {
             Some(i) => write!(f, "stop {:?} event {i} {what}", self.stop),
@@ -660,7 +750,10 @@ fn fold(id: &str, events: &[Event], date: Date) -> Option<StopOn> {
         if let Some(until) = s.until.as_deref().and_then(|d| Date::parse(d).ok()) {
             let sooner = events
                 .iter()
-                .filter(|e| e.event.stage().is_some() || matches!(e.event, EventKind::Suspended | EventKind::Retired))
+                .filter(|e| {
+                    e.event.stage().is_some()
+                        || matches!(e.event, EventKind::Suspended | EventKind::Retired)
+                })
                 .filter_map(|e| e.on.as_deref().and_then(|d| Date::parse(d).ok()))
                 .filter(|&on| on > date && on < until)
                 .min();
@@ -682,18 +775,36 @@ impl Stops {
     }
 
     pub fn on_date(&self, date: Date) -> Vec<StopOn> {
-        self.stops.iter().filter_map(|(id, events)| fold(id, events, date)).collect()
+        self.stops
+            .iter()
+            .filter_map(|(id, events)| fold(id, events, date))
+            .collect()
     }
 
-    pub fn near(&self, date: Date, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>, statuses: Option<&[Status]>) -> Vec<NearStop> {
+    pub fn near(
+        &self,
+        date: Date,
+        lat: f64,
+        lon: f64,
+        limit: usize,
+        radius_m: Option<f64>,
+        statuses: Option<&[Status]>,
+    ) -> Vec<NearStop> {
         let mut out: Vec<NearStop> = self
             .on_date(date)
             .into_iter()
             .filter(|s| statuses.is_none_or(|w| w.contains(&s.status)))
-            .map(|s| NearStop { distance_m: transit_geo::distance_m(lat, lon, s.lat, s.lon), stop: s })
+            .map(|s| NearStop {
+                distance_m: transit_geo::distance_m(lat, lon, s.lat, s.lon),
+                stop: s,
+            })
             .filter(|n| radius_m.is_none_or(|r| n.distance_m <= r))
             .collect();
-        out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m).then_with(|| a.stop.stop_id.cmp(&b.stop.stop_id)));
+        out.sort_by(|a, b| {
+            a.distance_m
+                .total_cmp(&b.distance_m)
+                .then_with(|| a.stop.stop_id.cmp(&b.stop.stop_id))
+        });
         out.truncate(limit);
         out
     }
@@ -701,13 +812,18 @@ impl Stops {
     /// `_secs` is not read at a service day's grain. It stays so
     /// that a finer grain changes this function and not its callers.
     pub fn served(&self, id: &str, date: Date, _secs: u32) -> bool {
-        self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
+        self.stop_on(id, date)
+            .is_some_and(|s| s.status == Status::InService)
     }
 
     /// An event added to a held stop is an ordinary write, so the writer
     /// states the intent "new".
     pub fn refuse_taken(&self, id: &str) -> Option<Refusal> {
-        self.stops.contains_key(id).then(|| Refusal { stop: id.to_string(), event: None, problem: Problem::StopExists })
+        self.stops.contains_key(id).then(|| Refusal {
+            stop: id.to_string(),
+            event: None,
+            problem: Problem::StopExists,
+        })
     }
 
     /// A write passes `checked` after it.
@@ -716,7 +832,10 @@ impl Stops {
         let events = next.stops.entry(id.to_string()).or_default();
         let at = match event.on.as_deref() {
             None => events.iter().take_while(|e| e.on.is_none()).count(),
-            Some(on) => events.iter().take_while(|e| e.on.as_deref().is_none_or(|d| d <= on)).count(),
+            Some(on) => events
+                .iter()
+                .take_while(|e| e.on.as_deref().is_none_or(|d| d <= on))
+                .count(),
         };
         events.insert(at, event);
         next
@@ -724,13 +843,24 @@ impl Stops {
 
     pub fn next_events(&self, id: &str, date: Date) -> Vec<EventKind> {
         let on = date.to_string();
-        [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService, EventKind::Suspended, EventKind::Retired]
-            .into_iter()
-            .filter(|kind| {
-                let event = Event { on: Some(on.clone()), event: kind.clone(), ..Event::default() };
-                self.add_event(id, event).checked().is_ok()
-            })
-            .collect()
+        [
+            EventKind::Planned,
+            EventKind::Permitted,
+            EventKind::Built,
+            EventKind::InService,
+            EventKind::Suspended,
+            EventKind::Retired,
+        ]
+        .into_iter()
+        .filter(|kind| {
+            let event = Event {
+                on: Some(on.clone()),
+                event: kind.clone(),
+                ..Event::default()
+            };
+            self.add_event(id, event).checked().is_ok()
+        })
+        .collect()
     }
 
     pub fn counts_on(&self, date: Date) -> Vec<StatusCount> {
@@ -738,7 +868,10 @@ impl Stops {
         for s in self.on_date(date) {
             *counts.entry(s.status).or_default() += 1;
         }
-        counts.into_iter().map(|(status, stops)| StatusCount { status, stops }).collect()
+        counts
+            .into_iter()
+            .map(|(status, stops)| StatusCount { status, stops })
+            .collect()
     }
 
     /// A correction edits the wrong event, and the store keeps the earlier
@@ -759,9 +892,17 @@ impl Stops {
 
     /// Another writer's event added above does not change which event is
     /// edited (D-166).
-    pub fn correct_event_by_id(&self, id: &str, event_id: &str, event: Option<Event>) -> Option<Stops> {
+    pub fn correct_event_by_id(
+        &self,
+        id: &str,
+        event_id: &str,
+        event: Option<Event>,
+    ) -> Option<Stops> {
         let index = self.stops.get(id)?.iter().position(|e| e.id == event_id)?;
-        let event = event.map(|e| Event { id: event_id.to_string(), ..e });
+        let event = event.map(|e| Event {
+            id: event_id.to_string(),
+            ..e
+        });
         self.correct_event(id, index, event)
     }
 
@@ -770,10 +911,18 @@ impl Stops {
     pub fn identified(mut self) -> Stops {
         use sha2::{Digest, Sha256};
         for (id, events) in self.stops.iter_mut() {
-            let mut taken: BTreeSet<String> = events.iter().filter(|e| !e.id.is_empty()).map(|e| e.id.clone()).collect();
+            let mut taken: BTreeSet<String> = events
+                .iter()
+                .filter(|e| !e.id.is_empty())
+                .map(|e| e.id.clone())
+                .collect();
             for e in events.iter_mut().filter(|e| e.id.is_empty()) {
                 let content = serde_json::to_string(&*e).expect("events serialize");
-                let digest = Sha256::new().chain_update(id.as_bytes()).chain_update([0]).chain_update(content.as_bytes()).finalize();
+                let digest = Sha256::new()
+                    .chain_update(id.as_bytes())
+                    .chain_update([0])
+                    .chain_update(content.as_bytes())
+                    .finalize();
                 let base: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
                 let mut minted = format!("e{base}");
                 let mut n = 2;
@@ -792,7 +941,11 @@ impl Stops {
     /// rewrote, is the writer's. Attributing twice changes nothing.
     pub fn attribute_surveys(&self, mut next: Stops, by: &str) -> Stops {
         for (id, events) in next.stops.iter_mut() {
-            let mut held: Vec<&Event> = self.stops.get(id).map(|v| v.iter().collect()).unwrap_or_default();
+            let mut held: Vec<&Event> = self
+                .stops
+                .get(id)
+                .map(|v| v.iter().collect())
+                .unwrap_or_default();
             for e in events.iter_mut() {
                 if let Some(i) = held.iter().position(|h| *h == e) {
                     held.swap_remove(i);
@@ -806,7 +959,11 @@ impl Stops {
 
     pub fn checked(self) -> Result<Self, Vec<Refusal>> {
         let ids: BTreeSet<&str> = self.stops.keys().map(String::as_str).collect();
-        let refusals: Vec<Refusal> = self.stops.iter().flat_map(|(id, events)| check_stop(id, events, &ids)).collect();
+        let refusals: Vec<Refusal> = self
+            .stops
+            .iter()
+            .flat_map(|(id, events)| check_stop(id, events, &ids))
+            .collect();
         if refusals.is_empty() {
             Ok(self)
         } else {
@@ -818,14 +975,24 @@ impl Stops {
 fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> {
     let mut out = Vec::new();
     if events.is_empty() {
-        out.push(Refusal { stop: id.into(), event: None, problem: Problem::NoEvents });
+        out.push(Refusal {
+            stop: id.into(),
+            event: None,
+            problem: Problem::NoEvents,
+        });
         return out;
     }
     let mut last: Option<Date> = None;
     let mut retired = false;
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, e) in events.iter().enumerate() {
-        let mut refuse = |problem| out.push(Refusal { stop: id.into(), event: Some(i as u32), problem });
+        let mut refuse = |problem| {
+            out.push(Refusal {
+                stop: id.into(),
+                event: Some(i as u32),
+                problem,
+            })
+        };
         if !e.id.is_empty() && !seen.insert(e.id.as_str()) {
             refuse(Problem::DuplicateEventId { id: e.id.clone() });
         }
@@ -834,7 +1001,9 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             continue;
         }
         if let EventKind::Unknown(name) = &e.event {
-            refuse(Problem::UnknownEvent { event: name.clone() });
+            refuse(Problem::UnknownEvent {
+                event: name.clone(),
+            });
             continue;
         }
         let first = i == 0;
@@ -863,7 +1032,9 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         }
         if let Some(u) = &e.until {
             if !matches!(e.event, EventKind::Suspended | EventKind::Moved) {
-                refuse(Problem::Misplaced { field: "until".into() });
+                refuse(Problem::Misplaced {
+                    field: "until".into(),
+                });
             } else {
                 match Date::parse(u).ok() {
                     None => refuse(Problem::BadDate { date: u.clone() }),
@@ -880,11 +1051,15 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         if let (false, true, Some(d)) = (first, in_order, on) {
             let now = fold(id, &events[..i], d).map(|s| s.status);
             match (&e.event, now) {
-                (EventKind::InService, Some(Status::InService)) => refuse(Problem::AlreadyInService),
+                (EventKind::InService, Some(Status::InService)) => {
+                    refuse(Problem::AlreadyInService)
+                }
                 (EventKind::InService, _) => {}
                 (EventKind::Suspended, Some(Status::InService)) => {}
                 (EventKind::Suspended, _) => refuse(Problem::NotInService),
-                (kind, Some(now)) if kind.stage().is_some_and(|k| now.rank() >= k) => refuse(Problem::StageBack),
+                (kind, Some(now)) if kind.stage().is_some_and(|k| now.rank() >= k) => {
+                    refuse(Problem::StageBack)
+                }
                 _ => {}
             }
         }
@@ -892,8 +1067,14 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         match (e.lat, e.lon) {
             (Some(lat), Some(lon)) => {
                 if !e.event.sets_point() {
-                    refuse(Problem::Misplaced { field: "point".into() });
-                } else if !(lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 && lon.abs() <= 180.0) {
+                    refuse(Problem::Misplaced {
+                        field: "point".into(),
+                    });
+                } else if !(lat.is_finite()
+                    && lon.is_finite()
+                    && lat.abs() <= 90.0
+                    && lon.abs() <= 180.0)
+                {
                     refuse(Problem::BadPoint);
                 }
             }
@@ -905,26 +1086,41 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             _ => refuse(Problem::NoPoint),
         }
         if !e.details.is_empty() && !e.event.sets_details() {
-            refuse(Problem::Misplaced { field: "details".into() });
+            refuse(Problem::Misplaced {
+                field: "details".into(),
+            });
         }
         if e.surveyed_by.is_some() && !e.event.sets_details() {
-            refuse(Problem::Misplaced { field: "surveyed_by".into() });
+            refuse(Problem::Misplaced {
+                field: "surveyed_by".into(),
+            });
         }
         for a in &e.attachments {
             if !a.well_named() {
-                refuse(Problem::BadAttachment { hash: a.hash.clone() });
-            } else if let Some(d) = a.taken_on.as_ref().filter(|d| Date::parse(d).ok().is_none()) {
+                refuse(Problem::BadAttachment {
+                    hash: a.hash.clone(),
+                });
+            } else if let Some(d) = a
+                .taken_on
+                .as_ref()
+                .filter(|d| Date::parse(d).ok().is_none())
+            {
                 refuse(Problem::BadDate { date: d.clone() });
             }
         }
         for (key, value) in &e.details.site {
             if SITE.iter().any(|(k, a)| k == key && !a.takes(value)) {
-                refuse(Problem::BadAnswer { key: key.clone(), value: value.clone() });
+                refuse(Problem::BadAnswer {
+                    key: key.clone(),
+                    value: value.clone(),
+                });
             }
         }
         if !e.replaces.is_empty() {
             if !begins {
-                refuse(Problem::Misplaced { field: "replaces".into() });
+                refuse(Problem::Misplaced {
+                    field: "replaces".into(),
+                });
             }
             for r in e.replaces.iter().filter(|_| begins) {
                 if r == id {

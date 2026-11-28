@@ -6,7 +6,8 @@
 use std::io::Write;
 
 use transit_analysis::{
-    network_stats, parse_layer, service_type_detail, service_type_overview, type_coverage, CoverageWindow,
+    network_stats, parse_layer, service_type_detail, service_type_overview, type_coverage,
+    CoverageWindow,
 };
 
 const DATE: &str = "2026-10-23"; // Friday: WK + HOL both run
@@ -21,8 +22,16 @@ fn production_zip() -> Vec<u8> {
         w.write_all(body.as_bytes()).unwrap();
     };
 
-    add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n10,1,10,3\n");
+    add(
+        &mut w,
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
+    );
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n10,1,10,3\n",
+    );
     add(
         &mut w,
         "stops.txt",
@@ -110,7 +119,10 @@ fn stats_report_route_and_stop_activity() {
     let c = by_id("C");
     assert_eq!(c.departures, 4);
     // An import that collapsed t9 would give the 20-minute variant's 06:20.
-    assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 3));
+    assert_eq!(
+        c.typical_headway_secs,
+        Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 3)
+    );
 }
 
 #[test]
@@ -128,7 +140,11 @@ fn service_type_ops_expose_the_design_axis() {
 
     let detail = service_type_detail(&network, &["WK".to_string()]).expect("detail");
     assert_eq!(detail.trips, 5);
-    assert_eq!(detail.routes.len(), 1, "route 10 runs; zero-trip routes filtered out");
+    assert_eq!(
+        detail.routes.len(),
+        1,
+        "route 10 runs; zero-trip routes filtered out"
+    );
     assert_eq!(detail.routes[0].typical_headway_secs, Some(2280));
     assert!((detail.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
     assert_eq!(detail.stops.len(), 3, "A, B and C are all served");
@@ -142,12 +158,16 @@ fn service_type_ops_expose_the_design_axis() {
 
     let layer = parse_layer(&pop_layer_geojson()).expect("layer parses");
     let layer = layer.weights(None, None).expect("one weight (POP)");
-    let coverage = type_coverage(&network, &layer, &["WK".to_string()], 400.0, 3600, 4, None).expect("WK runs");
+    let coverage = type_coverage(&network, &layer, &["WK".to_string()], 400.0, 3600, 4, None)
+        .expect("WK runs");
     assert_eq!(coverage.group, "WK");
     assert_eq!(coverage.members, ["WK"]);
     assert!((coverage.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
     // C is a terminal, so only A's 100 reads frequent.
-    assert!((coverage.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6, "{coverage:?}");
+    assert!(
+        (coverage.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6,
+        "{coverage:?}"
+    );
 }
 
 #[test]
@@ -162,19 +182,64 @@ fn frequency_in_a_window_is_the_worst_wait() {
     let layer = parse_layer(&pop_layer_geojson()).expect("layer parses");
     let layer = layer.weights(None, None).expect("one weight (POP)");
     let frequent_pct = |window: Option<CoverageWindow>| {
-        type_coverage(&network, &layer, &["WK".to_string()], 400.0, 2400, 2, window).expect("WK runs").frequent_pct
+        type_coverage(
+            &network,
+            &layer,
+            &["WK".to_string()],
+            400.0,
+            2400,
+            2,
+            window,
+        )
+        .expect("WK runs")
+        .frequent_pct
     };
     let on_a = 100.0 / 180.0 * 100.0;
-    assert_eq!(frequent_pct(None), 0.0, "the whole-day average (60 min) is not 40-min frequent");
-    let hour = CoverageWindow { start_secs: 8 * 3600, end_secs: 9 * 3600 };
-    assert!((frequent_pct(Some(hour)) - on_a).abs() < 1e-6, "08:00–09:00: worst wait 38 min ≤ 40");
-    let wider = CoverageWindow { start_secs: 7 * 3600, end_secs: 9 * 3600 };
-    assert_eq!(frequent_pct(Some(wider)), 0.0, "07:00–09:00: a rider at 07:00 waits 60 min");
+    assert_eq!(
+        frequent_pct(None),
+        0.0,
+        "the whole-day average (60 min) is not 40-min frequent"
+    );
+    let hour = CoverageWindow {
+        start_secs: 8 * 3600,
+        end_secs: 9 * 3600,
+    };
+    assert!(
+        (frequent_pct(Some(hour)) - on_a).abs() < 1e-6,
+        "08:00–09:00: worst wait 38 min ≤ 40"
+    );
+    let wider = CoverageWindow {
+        start_secs: 7 * 3600,
+        end_secs: 9 * 3600,
+    };
+    assert_eq!(
+        frequent_pct(Some(wider)),
+        0.0,
+        "07:00–09:00: a rider at 07:00 waits 60 min"
+    );
 
-    let all_day = CoverageWindow { start_secs: 0, end_secs: 30 * 3600 };
-    let c = type_coverage(&network, &layer, &["WK".to_string()], 400.0, 30 * 3600, 1, Some(all_day)).expect("WK runs");
-    assert!((c.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6, "A and C both served");
-    assert!((c.frequent_pct - on_a).abs() < 1e-6, "only A departs anything");
+    let all_day = CoverageWindow {
+        start_secs: 0,
+        end_secs: 30 * 3600,
+    };
+    let c = type_coverage(
+        &network,
+        &layer,
+        &["WK".to_string()],
+        400.0,
+        30 * 3600,
+        1,
+        Some(all_day),
+    )
+    .expect("WK runs");
+    assert!(
+        (c.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6,
+        "A and C both served"
+    );
+    assert!(
+        (c.frequent_pct - on_a).abs() < 1e-6,
+        "only A departs anything"
+    );
 }
 
 #[test]
@@ -194,7 +259,8 @@ fn a_proposal_compares_route_by_route_against_its_baseline() {
         }],
     )
     .unwrap();
-    let cmp = transit_analysis::service_type_compare(&base, &proposal, &["WK".to_string()]).unwrap();
+    let cmp =
+        transit_analysis::service_type_compare(&base, &proposal, &["WK".to_string()]).unwrap();
     assert_eq!((cmp.base.trips, cmp.base.routes), (5, 1));
     assert!(cmp.proposal.trips > cmp.base.trips);
     assert!(cmp.proposal.revenue_hours > cmp.base.revenue_hours);
@@ -208,6 +274,12 @@ fn a_proposal_compares_route_by_route_against_its_baseline() {
     let same = transit_analysis::service_type_compare(&base, &base, &["WK".to_string()]).unwrap();
     assert!(same.routes.is_empty());
     assert_eq!(same.unchanged_routes, 1);
-    assert_eq!((same.base.days, same.proposal.days), (cmp.base.days, cmp.base.days), "the dates WK holds on");
-    assert!(transit_analysis::service_type_compare(&base, &proposal, &["ghost".to_string()]).is_none());
+    assert_eq!(
+        (same.base.days, same.proposal.days),
+        (cmp.base.days, cmp.base.days),
+        "the dates WK holds on"
+    );
+    assert!(
+        transit_analysis::service_type_compare(&base, &proposal, &["ghost".to_string()]).is_none()
+    );
 }

@@ -28,7 +28,11 @@ pub struct OnTimeWindow {
 
 impl Default for OnTimeWindow {
     fn default() -> Self {
-        OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 300 }
+        OnTimeWindow {
+            early_secs: 0,
+            late_secs: 60,
+            very_late_secs: 300,
+        }
     }
 }
 
@@ -45,7 +49,9 @@ pub enum LiveStatus {
 }
 
 pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
-    let Some(d) = delay else { return LiveStatus::NoPrediction };
+    let Some(d) = delay else {
+        return LiveStatus::NoPrediction;
+    };
     if (d as i64) < -(window.early_secs as i64) {
         return LiveStatus::Early;
     }
@@ -153,7 +159,10 @@ impl AlertScope {
 
     fn admits(&self, v: &Visit) -> bool {
         self.route.as_deref().is_none_or(|r| r == v.route)
-            && self.direction.as_deref().is_none_or(|d| Some(d) == v.direction)
+            && self
+                .direction
+                .as_deref()
+                .is_none_or(|d| Some(d) == v.direction)
             && self.stop.as_deref().is_none_or(|s| s == v.stop)
             && self.trip.as_deref().is_none_or(|t| t == v.trip)
             && self.start_secs.is_none_or(|s| s == v.start_secs)
@@ -185,15 +194,13 @@ impl LiveAlert {
     }
 
     pub fn touches_stop(&self, stop: &str) -> bool {
-        self.scopes
-            .iter()
-            .any(|s| s.route.is_none() && s.trip.is_none() && s.stop.as_deref().is_none_or(|x| x == stop))
+        self.scopes.iter().any(|s| {
+            s.route.is_none() && s.trip.is_none() && s.stop.as_deref().is_none_or(|x| x == stop)
+        })
     }
 }
 
-transit_version::kind_tag!(
-    LiveKind = "live"
-);
+transit_version::kind_tag!(LiveKind = "live");
 
 impl transit_version::Versioned for LiveDay {
     const KIND: &'static str = "live";
@@ -239,16 +246,34 @@ impl LiveDay {
             .alerts
             .iter()
             .filter_map(|a| {
-                let scopes: Vec<AlertScope> = a.scopes.iter().filter(|s| s.on(date, current)).cloned().collect();
-                (!scopes.is_empty()).then(|| LiveAlert { scopes, ..a.clone() })
+                let scopes: Vec<AlertScope> = a
+                    .scopes
+                    .iter()
+                    .filter(|s| s.on(date, current))
+                    .cloned()
+                    .collect();
+                (!scopes.is_empty()).then(|| LiveAlert {
+                    scopes,
+                    ..a.clone()
+                })
             })
             .collect();
         LiveDay {
             kind: self.kind,
             schema_version: self.schema_version,
             window: self.window,
-            trips: self.trips.iter().filter(|t| here(&t.date)).cloned().collect(),
-            vehicles: self.vehicles.iter().filter(|v| here(&v.date)).cloned().collect(),
+            trips: self
+                .trips
+                .iter()
+                .filter(|t| here(&t.date))
+                .cloned()
+                .collect(),
+            vehicles: self
+                .vehicles
+                .iter()
+                .filter(|v| here(&v.date))
+                .cloned()
+                .collect(),
             unmatched_trips: self.unmatched_trips,
             alerts,
             unmatched_alerts: self.unmatched_alerts,
@@ -257,18 +282,34 @@ impl LiveDay {
 
     /// A loop visits a stop twice, so the entry is the one whose
     /// `scheduled_departure` matches, else the first at the stop.
-    pub fn visit(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
-        let trip = self.trips.iter().find(|t| t.trip == trip && t.start_secs == start_secs)?;
+    pub fn visit(
+        &self,
+        trip: &str,
+        start_secs: u32,
+        stop: &str,
+        scheduled_departure: u32,
+    ) -> Option<&LiveStop> {
+        let trip = self
+            .trips
+            .iter()
+            .find(|t| t.trip == trip && t.start_secs == start_secs)?;
         let mut at_stop = trip.stops.iter().filter(|s| s.stop == stop);
         let first = at_stop.clone().next();
-        at_stop.find(|s| s.scheduled_departure == Some(scheduled_departure)).or(first)
+        at_stop
+            .find(|s| s.scheduled_departure == Some(scheduled_departure))
+            .or(first)
     }
 
     pub fn runs(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> bool {
-        if self.trips.iter().any(|t| t.trip == trip && t.start_secs == start_secs && t.canceled) {
+        if self
+            .trips
+            .iter()
+            .any(|t| t.trip == trip && t.start_secs == start_secs && t.canceled)
+        {
             return false;
         }
-        self.visit(trip, start_secs, stop, scheduled_departure).is_none_or(|s| !s.skipped)
+        self.visit(trip, start_secs, stop, scheduled_departure)
+            .is_none_or(|s| !s.skipped)
     }
 }
 
@@ -355,7 +396,16 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
             })
             .collect()
     };
-    late.sort_by(|a, b| b.delay_secs.cmp(&a.delay_secs).then_with(|| a.key.cmp(&b.key)));
+    late.sort_by(|a, b| {
+        b.delay_secs
+            .cmp(&a.delay_secs)
+            .then_with(|| a.key.cmp(&b.key))
+    });
     late.truncate(limit);
-    LiveSummary { vehicles: day.vehicles.len() as u32, counts, late, late_are_predictions }
+    LiveSummary {
+        vehicles: day.vehicles.len() as u32,
+        counts,
+        late,
+        late_are_predictions,
+    }
 }

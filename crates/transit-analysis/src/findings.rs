@@ -2,16 +2,15 @@ use serde::Serialize;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-use transit_date::Date;
-use std::collections::{BTreeMap, BTreeSet};
-use transit_network::Network;
 use crate::{
-    RouteStats, timed_transfers, family_stats, TransferWindow, missed_connections,
-    longest_waits, CoverageWindow
+    family_stats, longest_waits, missed_connections, timed_transfers, CoverageWindow, RouteStats,
+    TransferWindow,
 };
+use std::collections::{BTreeMap, BTreeSet};
+use transit_date::Date;
+use transit_network::Network;
 
 #[cfg(feature = "bindings")]
-
 
 /// Provisional thresholds (D-136).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
@@ -164,8 +163,18 @@ impl Found {
             .iter()
             .find(|f| f.key == key)
             .map(|f| AnyFinding::Hole(f.clone()))
-            .or_else(|| self.waits.iter().find(|f| f.key == key).map(|f| AnyFinding::Wait(f.clone())))
-            .or_else(|| self.misses.iter().find(|f| f.key == key).map(|f| AnyFinding::Miss(f.clone())))
+            .or_else(|| {
+                self.waits
+                    .iter()
+                    .find(|f| f.key == key)
+                    .map(|f| AnyFinding::Wait(f.clone()))
+            })
+            .or_else(|| {
+                self.misses
+                    .iter()
+                    .find(|f| f.key == key)
+                    .map(|f| AnyFinding::Miss(f.clone()))
+            })
     }
 }
 
@@ -174,19 +183,30 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
     let date_text = combination.dates.first()?.clone();
     let date = Date::parse(&date_text).ok()?;
     let factor = p.hole_factor.unwrap_or(HOLE_FACTOR);
-    let in_hour = |h: u32| p.window.map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs);
-    let in_secs = |t: u32| p.window.map_or(true, |w| t >= w.start_secs && t <= w.end_secs);
+    let in_hour = |h: u32| {
+        p.window
+            .map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs)
+    };
+    let in_secs = |t: u32| {
+        p.window
+            .map_or(true, |w| t >= w.start_secs && t <= w.end_secs)
+    };
 
     let mut holes = Vec::new();
     if let Some(grid) = route_frequency(net, &combination.members) {
         for row in grid.routes {
-            let gaps: BTreeMap<u32, u32> =
-                row.hours.iter().filter_map(|h| h.longest_gap_secs.map(|g| (h.hour, g))).collect();
+            let gaps: BTreeMap<u32, u32> = row
+                .hours
+                .iter()
+                .filter_map(|h| h.longest_gap_secs.map(|g| (h.hour, g)))
+                .collect();
             for (&h, &g) in &gaps {
                 if h == 0 || !in_hour(h) {
                     continue;
                 }
-                let (Some(&a), Some(&b)) = (gaps.get(&(h - 1)), gaps.get(&(h + 1))) else { continue };
+                let (Some(&a), Some(&b)) = (gaps.get(&(h - 1)), gaps.get(&(h + 1))) else {
+                    continue;
+                };
                 let around = a.max(b);
                 if g as f64 >= factor * around as f64 {
                     holes.push(FrequencyHole {
@@ -201,7 +221,11 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
             }
         }
     }
-    holes.sort_by(|x, y| y.longest_gap_secs.cmp(&x.longest_gap_secs).then_with(|| x.key.cmp(&y.key)));
+    holes.sort_by(|x, y| {
+        y.longest_gap_secs
+            .cmp(&x.longest_gap_secs)
+            .then_with(|| x.key.cmp(&y.key))
+    });
 
     let threshold = p.wait_secs.unwrap_or(LONG_WAIT_SECS);
     let waits: Vec<LongWait> = longest_waits(net, date, p.window, None)
@@ -219,7 +243,10 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
     let cost = p.miss_cost_secs.unwrap_or(MISS_COST_SECS);
     let mut folded: BTreeMap<(String, String, String), (u32, Option<u32>, u32)> = BTreeMap::new();
     for (hub, stop) in &net.stops {
-        let station = net.stops.values().any(|c| c.parent.as_deref() == Some(hub.as_str()));
+        let station = net
+            .stops
+            .values()
+            .any(|c| c.parent.as_deref() == Some(hub.as_str()));
         if !station && !(stop.transfer && stop.parent.is_none()) {
             continue;
         }
@@ -231,7 +258,9 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
             if wait.is_some_and(|w| w < cost) {
                 continue;
             }
-            let e = folded.entry((hub.clone(), m.from_route, m.to_route)).or_insert((0, None, 0));
+            let e = folded
+                .entry((hub.clone(), m.from_route, m.to_route))
+                .or_insert((0, None, 0));
             e.0 += 1;
             match wait {
                 Some(w) => e.1 = Some(e.1.map_or(w, |x| x.max(w))),
@@ -241,20 +270,32 @@ fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<F
     }
     let mut misses: Vec<CostlyMiss> = folded
         .into_iter()
-        .map(|((hub, from_route, to_route), (misses, worst_wait_secs, stranded))| CostlyMiss {
-            key: format!("miss|{hub}|{from_route}|{to_route}"),
-            hub_name: net.stops.get(&hub).map(|s| s.name.clone()).unwrap_or_default(),
-            hub_id: hub,
-            from_route,
-            to_route,
-            misses,
-            worst_wait_secs,
-            stranded,
-        })
+        .map(
+            |((hub, from_route, to_route), (misses, worst_wait_secs, stranded))| CostlyMiss {
+                key: format!("miss|{hub}|{from_route}|{to_route}"),
+                hub_name: net
+                    .stops
+                    .get(&hub)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default(),
+                hub_id: hub,
+                from_route,
+                to_route,
+                misses,
+                worst_wait_secs,
+                stranded,
+            },
+        )
         .collect();
     misses.sort_by(|x, y| y.misses.cmp(&x.misses).then_with(|| x.key.cmp(&y.key)));
 
-    Some(Found { group: combination.id, date: date_text, holes, waits, misses })
+    Some(Found {
+        group: combination.id,
+        date: date_text,
+        holes,
+        waits,
+        misses,
+    })
 }
 
 pub fn network_findings(
@@ -277,32 +318,75 @@ pub fn network_findings(
         .collect();
     let cut = |n: usize| params.limit.map_or(n, |l| n.min(l as usize));
     let mut resolved = ResolvedFindings::default();
-    let (mut base_holes, mut base_waits, mut base_misses): (BTreeMap<_, _>, BTreeMap<_, _>, BTreeMap<_, _>) =
-        Default::default();
+    let (mut base_holes, mut base_waits, mut base_misses): (
+        BTreeMap<_, _>,
+        BTreeMap<_, _>,
+        BTreeMap<_, _>,
+    ) = Default::default();
     if let Some(t) = then {
         let hole_keys: BTreeSet<&String> = now.holes.iter().map(|f| &f.key).collect();
         let wait_keys: BTreeSet<&String> = now.waits.iter().map(|f| &f.key).collect();
         let miss_keys: BTreeSet<&String> = now.misses.iter().map(|f| &f.key).collect();
         for f in t.holes {
-            if hole_keys.contains(&f.key) { base_holes.insert(f.key.clone(), f); } else { resolved.holes.push(f); }
+            if hole_keys.contains(&f.key) {
+                base_holes.insert(f.key.clone(), f);
+            } else {
+                resolved.holes.push(f);
+            }
         }
         for f in t.waits {
-            if wait_keys.contains(&f.key) { base_waits.insert(f.key.clone(), f); } else { resolved.waits.push(f); }
+            if wait_keys.contains(&f.key) {
+                base_waits.insert(f.key.clone(), f);
+            } else {
+                resolved.waits.push(f);
+            }
         }
         for f in t.misses {
-            if miss_keys.contains(&f.key) { base_misses.insert(f.key.clone(), f); } else { resolved.misses.push(f); }
+            if miss_keys.contains(&f.key) {
+                base_misses.insert(f.key.clone(), f);
+            } else {
+                resolved.misses.push(f);
+            }
         }
     }
     resolved.holes.truncate(cut(resolved.holes.len()));
     resolved.waits.truncate(cut(resolved.waits.len()));
     resolved.misses.truncate(cut(resolved.misses.len()));
-    let n = (cut(now.holes.len()), cut(now.waits.len()), cut(now.misses.len()));
+    let n = (
+        cut(now.holes.len()),
+        cut(now.waits.len()),
+        cut(now.misses.len()),
+    );
     Some(NetworkFindings {
         group: now.group,
         date: now.date,
-        holes: now.holes.into_iter().take(n.0).map(|f| HoleRow { base: base_holes.remove(&f.key), now: f }).collect(),
-        waits: now.waits.into_iter().take(n.1).map(|f| WaitRow { base: base_waits.remove(&f.key), now: f }).collect(),
-        misses: now.misses.into_iter().take(n.2).map(|f| MissRow { base: base_misses.remove(&f.key), now: f }).collect(),
+        holes: now
+            .holes
+            .into_iter()
+            .take(n.0)
+            .map(|f| HoleRow {
+                base: base_holes.remove(&f.key),
+                now: f,
+            })
+            .collect(),
+        waits: now
+            .waits
+            .into_iter()
+            .take(n.1)
+            .map(|f| WaitRow {
+                base: base_waits.remove(&f.key),
+                now: f,
+            })
+            .collect(),
+        misses: now
+            .misses
+            .into_iter()
+            .take(n.2)
+            .map(|f| MissRow {
+                base: base_misses.remove(&f.key),
+                now: f,
+            })
+            .collect(),
         resolved,
         watched,
     })
@@ -328,7 +412,10 @@ pub fn hub_connections(
 ) -> Vec<RouteConnections> {
     let mut pairs: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
     for t in timed_transfers(net, date, stop_id, window) {
-        pairs.entry((t.from_route, t.to_route)).or_default().push(t.wait_secs);
+        pairs
+            .entry((t.from_route, t.to_route))
+            .or_default()
+            .push(t.wait_secs);
     }
     pairs
         .into_iter()
@@ -345,7 +432,6 @@ pub fn hub_connections(
         })
         .collect()
 }
-
 
 /// A target headway that varies through the day reads as the range it runs,
 /// never rounded to a grid.
@@ -383,8 +469,11 @@ pub struct RouteFrequency {
 pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequency> {
     let combination = transit_network::service_combination(net, members)?;
     let group: BTreeSet<String> = combination.members.iter().cloned().collect();
-    let mut stats: BTreeMap<String, RouteStats> =
-        family_stats(net, &group).routes.into_iter().map(|r| (r.route_id.clone(), r)).collect();
+    let mut stats: BTreeMap<String, RouteStats> = family_stats(net, &group)
+        .routes
+        .into_iter()
+        .map(|r| (r.route_id.clone(), r))
+        .collect();
     let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for (id, entry) in &net.pattern_trips {
         if !group.contains(&entry.service_type) {
@@ -413,11 +502,19 @@ pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequen
     let routes = departures
         .into_iter()
         .filter_map(|(route_id, stops)| {
-            let (stop, times) = stops.into_iter().fold(None::<(String, Vec<u32>)>, |best, (stop, times)| match best {
-                Some((_, ref b)) if b.len() >= times.len() => best,
-                _ => Some((stop, times)),
-            })?;
-            let spine: Vec<u32> = times.iter().copied().collect::<BTreeSet<u32>>().into_iter().collect();
+            let (stop, times) = stops.into_iter().fold(
+                None::<(String, Vec<u32>)>,
+                |best, (stop, times)| match best {
+                    Some((_, ref b)) if b.len() >= times.len() => best,
+                    _ => Some((stop, times)),
+                },
+            )?;
+            let spine: Vec<u32> = times
+                .iter()
+                .copied()
+                .collect::<BTreeSet<u32>>()
+                .into_iter()
+                .collect();
             let mut by_hour: BTreeMap<u32, (u32, Vec<u32>)> = BTreeMap::new();
             for t in &times {
                 by_hour.entry(t / 3600).or_default().0 += 1;
@@ -439,7 +536,10 @@ pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequen
                 })
                 .collect();
             Some(RouteFrequencyRow {
-                name: net.routes.get(&route_id).map_or(route_id.clone(), |r| r.label().to_string()),
+                name: net
+                    .routes
+                    .get(&route_id)
+                    .map_or(route_id.clone(), |r| r.label().to_string()),
                 stats: stats.remove(&route_id)?,
                 route_id,
                 headway_stop: Some(stop),

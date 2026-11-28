@@ -3,7 +3,13 @@ use serde_json::{json, Value};
 use transit_plans::{DevicePlan, FrozenVersions, PublishedPlans};
 
 fn ex(op: &'static str, request: Value) -> Example {
-    Example { bytes: None, kinds: vec![], op, loads: vec![], request }
+    Example {
+        bytes: None,
+        kinds: vec![],
+        op,
+        loads: vec![],
+        request,
+    }
 }
 
 pub fn examples() -> Vec<Example> {
@@ -12,13 +18,27 @@ pub fn examples() -> Vec<Example> {
     let plan_set = fixtures::fixture_plan_set();
     let first = &plan_set[0];
     let today = fixtures::fixture_today();
-    let published = plan_set.iter().fold(PublishedPlans::empty(), |set, plan| transit_plans::publish(&set, plan, &hash, today).unwrap_or(set));
-    let one = transit_plans::publish(&PublishedPlans::empty(), first, &hash, today).expect("the first pick publishes");
-    let records = transit_log::document_records(&serde_json::to_value(&one).expect("a document"), "plans", "pick", "plans", 1).expect("its records");
+    let published = plan_set.iter().fold(PublishedPlans::empty(), |set, plan| {
+        transit_plans::publish(&set, plan, &hash, today).unwrap_or(set)
+    });
+    let one = transit_plans::publish(&PublishedPlans::empty(), first, &hash, today)
+        .expect("the first pick publishes");
+    let records = transit_log::document_records(
+        &serde_json::to_value(&one).expect("a document"),
+        "plans",
+        "pick",
+        "plans",
+        1,
+    )
+    .expect("its records");
     let held = |k: &transit_log::KindRecords| -> serde_json::Map<String, Value> {
-        k.records.iter().map(|(id, v)| (id.clone(), json!({ "version": k.version, "value": v }))).collect()
+        k.records
+            .iter()
+            .map(|(id, v)| (id.clone(), json!({ "version": k.version, "value": v })))
+            .collect()
     };
-    let frozen = transit_plans::freeze(&FrozenVersions::empty(), first, &hash, "board packet").expect("the first pick freezes");
+    let frozen = transit_plans::freeze(&FrozenVersions::empty(), first, &hash, "board packet")
+        .expect("the first pick freezes");
     let set: PublishedPlans = serde_json::from_value(json!({
         "kind": "plans", "schema_version": transit_plans::PUBLISHED_SCHEMA_VERSION,
         "plans": [
@@ -28,27 +48,72 @@ pub fn examples() -> Vec<Example> {
     }))
     .expect("the example set reads");
     let device = vec![
-        DevicePlan { key: "plan-fall".into(), id: "fall".into(), name: "Fall 2026".into(), effective_from: Some("2026-10-19".into()), served: false },
-        DevicePlan { key: "plan-draft".into(), id: "spring".into(), name: "Spring 2027 draft".into(), effective_from: Some("2027-03-01".into()), served: false },
+        DevicePlan {
+            key: "plan-fall".into(),
+            id: "fall".into(),
+            name: "Fall 2026".into(),
+            effective_from: Some("2026-10-19".into()),
+            served: false,
+        },
+        DevicePlan {
+            key: "plan-draft".into(),
+            id: "spring".into(),
+            name: "Spring 2027 draft".into(),
+            effective_from: Some("2027-03-01".into()),
+            served: false,
+        },
     ];
     let mut write = fixtures::receive_write("plans", "planner-1", 1_792_752_000_000);
     write.header.intent.op = "POST /plans".into();
     vec![
-        ex("resolve", json!({ "op": "resolve", "plans": plan_set, "date": "2026-10-23" })),
+        ex(
+            "resolve",
+            json!({ "op": "resolve", "plans": plan_set, "date": "2026-10-23" }),
+        ),
         ex("validate", json!({ "op": "validate", "plans": plan_set })),
-        ex("publish", json!({ "op": "publish", "published": null, "plan": first, "network_hash": hash, "today": "2026-01-01" })),
-        ex("in_force", json!({ "op": "in_force", "published": published, "date": "2026-10-23" })),
-        ex("in_use", json!({ "op": "in_use", "published": published, "today": "2026-10-23" })),
-        ex("retire", json!({ "op": "retire", "published": published, "id": "fall", "today": "2026-01-01" })),
-        ex("freeze", json!({ "op": "freeze", "frozen": null, "plan": first, "network_hash": hash, "purpose": "proposal for public comment" })),
-        ex("adopt", json!({ "op": "adopt", "published": null, "frozen": frozen, "network_hash": hash, "today": "2026-01-01", "stops_seq": 3 })),
-        ex("log_records", json!({ "op": "log_records", "published": one })),
-        ex("receive", json!({ "op": "receive", "write": write, "ops": [
+        ex(
+            "publish",
+            json!({ "op": "publish", "published": null, "plan": first, "network_hash": hash, "today": "2026-01-01" }),
+        ),
+        ex(
+            "in_force",
+            json!({ "op": "in_force", "published": published, "date": "2026-10-23" }),
+        ),
+        ex(
+            "in_use",
+            json!({ "op": "in_use", "published": published, "today": "2026-10-23" }),
+        ),
+        ex(
+            "retire",
+            json!({ "op": "retire", "published": published, "id": "fall", "today": "2026-01-01" }),
+        ),
+        ex(
+            "freeze",
+            json!({ "op": "freeze", "frozen": null, "plan": first, "network_hash": hash, "purpose": "proposal for public comment" }),
+        ),
+        ex(
+            "adopt",
+            json!({ "op": "adopt", "published": null, "frozen": frozen, "network_hash": hash, "today": "2026-01-01", "stops_seq": 3 }),
+        ),
+        ex(
+            "log_records",
+            json!({ "op": "log_records", "published": one }),
+        ),
+        ex(
+            "receive",
+            json!({ "op": "receive", "write": write, "ops": [
             { "cap": "plans", "op": "freeze", "args": { "plan": first, "network_hash": hash, "purpose": "the published pick" } },
             { "cap": "plans", "op": "adopt", "args": { "network_hash": hash, "today": "2026-01-01" } }
-        ] })),
-        ex("log_document", json!({ "op": "log_document", "kind": "plans", "records": held(&records[0]), "document": held(&records[1]).remove("document") })),
-        ex("timeline", json!({ "op": "timeline", "plans": device, "published": set, "today": "2026-11-13" })),
+        ] }),
+        ),
+        ex(
+            "log_document",
+            json!({ "op": "log_document", "kind": "plans", "records": held(&records[0]), "document": held(&records[1]).remove("document") }),
+        ),
+        ex(
+            "timeline",
+            json!({ "op": "timeline", "plans": device, "published": set, "today": "2026-11-13" }),
+        ),
         ex("periods", json!({ "op": "periods", "plans": plan_set })),
     ]
 }

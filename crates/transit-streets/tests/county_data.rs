@@ -21,13 +21,21 @@ fn county_export_parses_and_respects_one_ways() {
         net.node_count(),
         json.len()
     );
-    for name in ["BURLINGTON NORTHERN SANTA FE", "PORTLAND TERMINAL", "WATER", "WASHOUGAL RIVER"] {
+    for name in [
+        "BURLINGTON NORTHERN SANTA FE",
+        "PORTLAND TERMINAL",
+        "WATER",
+        "WASHOUGAL RIVER",
+    ] {
         assert!(
             doc.ways.iter().all(|w| w.name.as_deref() != Some(name)),
             "{name} is not a street"
         );
     }
-    assert!(net.segment_count() > 500_000, "production-sized, not a stub");
+    assert!(
+        net.segment_count() > 500_000,
+        "production-sized, not a stub"
+    );
 
     // NW 10TH AVE has OneWay ">" and is digitized northbound, so legal
     // travel is northbound only.
@@ -40,13 +48,14 @@ fn county_export_parses_and_respects_one_ways() {
         Some(1),
         "with the grain: the same-segment shortcut"
     );
-    let back = net.route(north, south).expect("the grid offers a legal loop");
+    let back = net
+        .route(north, south)
+        .expect("the grid offers a legal loop");
     println!("against the grain: {} points", back.len());
     assert!(back.len() > 1, "no direct backward shortcut on a one-way");
     for p in &back {
         let on_line = (p.lon - -122.68142).abs() < 5e-6;
-        let mid_segment =
-            (p.lat - south.lat).abs() > 1e-6 && (p.lat - north.lat).abs() > 1e-6;
+        let mid_segment = (p.lat - south.lat).abs() > 1e-6 && (p.lat - north.lat).abs() > 1e-6;
         assert!(
             !(on_line && mid_segment),
             "backward interior point on the one-way: {p:?}"

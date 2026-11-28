@@ -6,17 +6,33 @@ mod common;
 
 use common::*;
 use proptest::prelude::*;
-use transit_network::{materialize, validation_issues_under, Departs, Network, NetworkError, RecoverySource};
+use transit_network::{
+    materialize, validation_issues_under, Departs, Network, NetworkError, RecoverySource,
+};
 use transit_runs::{recovery, RecoveryRule, SchedulingConstraints};
 
 /// b1 waits 40 minutes at C, b2 waits 10, both authored. C's floor is 600.
 fn shuttle() -> Network {
-    let trips = [("5", true, 8 * H), ("5", false, 9 * H), ("5", true, 10 * H), ("5", false, 10 * H + 1800)];
+    let trips = [
+        ("5", true, 8 * H),
+        ("5", false, 9 * H),
+        ("5", true, 10 * H),
+        ("5", false, 10 * H + 1800),
+    ];
     let mut net = world(
         &trips,
         &[
-            ("b1", vec![trip_id("5", true, 8 * H), trip_id("5", false, 9 * H)]),
-            ("b2", vec![trip_id("5", true, 10 * H), trip_id("5", false, 10 * H + 1800)]),
+            (
+                "b1",
+                vec![trip_id("5", true, 8 * H), trip_id("5", false, 9 * H)],
+            ),
+            (
+                "b2",
+                vec![
+                    trip_id("5", true, 10 * H),
+                    trip_id("5", false, 10 * H + 1800),
+                ],
+            ),
         ],
     );
     layover(&mut net, "b1", 0, 2400);
@@ -41,18 +57,55 @@ fn a_wait_says_what_is_required_and_what_is_slack() {
     let rows: Vec<_> = view
         .waits
         .iter()
-        .map(|w| (w.block_id.as_str(), w.terminal.as_str(), w.gap_secs, w.required_secs, w.required_by, w.slack_secs, w.recovery_pct))
+        .map(|w| {
+            (
+                w.block_id.as_str(),
+                w.terminal.as_str(),
+                w.gap_secs,
+                w.required_secs,
+                w.required_by,
+                w.slack_secs,
+                w.recovery_pct,
+            )
+        })
         .collect();
     assert_eq!(
         rows,
         vec![
-            ("b1", "C", 2400, Some(600), Some(RecoverySource::Terminal), Some(1800), 200),
-            ("b2", "C", 600, Some(600), Some(RecoverySource::Terminal), Some(0), 50),
+            (
+                "b1",
+                "C",
+                2400,
+                Some(600),
+                Some(RecoverySource::Terminal),
+                Some(1800),
+                200
+            ),
+            (
+                "b2",
+                "C",
+                600,
+                Some(600),
+                Some(RecoverySource::Terminal),
+                Some(0),
+                50
+            ),
         ]
     );
     assert_eq!(view.patterns.len(), 1);
     let p = &view.patterns[0];
-    assert_eq!((p.pattern.as_str(), p.waits, p.run_secs, p.gap_secs, p.recovery_pct, p.short, p.min_slack_secs), ("5o", 2, 2400, 3000, 125, 0, Some(0)));
+    assert_eq!(
+        (
+            p.pattern.as_str(),
+            p.waits,
+            p.run_secs,
+            p.gap_secs,
+            p.recovery_pct,
+            p.short,
+            p.min_slack_secs
+        ),
+        ("5o", 2, 2400, 3000, 125, 0, Some(0))
+    );
 }
 
 proptest! {

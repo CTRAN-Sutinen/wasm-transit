@@ -17,13 +17,20 @@ fn v1() -> Value {
 #[test]
 fn a_written_edit_document_names_its_kind_and_version_first() {
     let text = serde_json::to_string(&EditDocument::new(vec![])).unwrap();
-    assert_eq!(text, format!("{{\"kind\":\"edit_records\",\"schema_version\":{SCHEMA_VERSION},\"records\":[]}}"));
+    assert_eq!(
+        text,
+        format!("{{\"kind\":\"edit_records\",\"schema_version\":{SCHEMA_VERSION},\"records\":[]}}")
+    );
 }
 
 #[test]
 fn a_bare_array_is_version_1() {
     assert_eq!(schema_version_of(&v1()), Ok(1));
-    assert!(schema_version_of(&json!({"kind": "network", "schema_version": 2})).unwrap_err().contains("not an edit document"));
+    assert!(
+        schema_version_of(&json!({"kind": "network", "schema_version": 2}))
+            .unwrap_err()
+            .contains("not an edit document")
+    );
 }
 
 #[test]
@@ -34,7 +41,11 @@ fn migration_is_the_steps_in_order_and_keeps_every_record() {
     }
     let (chained, notes) = migrate_to(v1(), SCHEMA_VERSION).unwrap();
     assert_eq!(chained, stepwise);
-    assert_eq!(chained["records"], v1(), "every record, in order, unchanged");
+    assert_eq!(
+        chained["records"],
+        v1(),
+        "every record, in order, unchanged"
+    );
     assert!(notes.is_empty(), "v1 → v2 loses nothing: {notes:?}");
     let (read, dropped) = read_document(&chained).unwrap();
     assert_eq!((read.records.len(), dropped), (2, 0));
@@ -43,13 +54,26 @@ fn migration_is_the_steps_in_order_and_keeps_every_record() {
 #[test]
 fn migrating_the_current_version_is_refused() {
     let doc = serde_json::to_value(EditDocument::new(vec![])).unwrap();
-    assert!(migrate_to(doc, SCHEMA_VERSION).unwrap_err().contains("nothing to migrate"));
+    assert!(migrate_to(doc, SCHEMA_VERSION)
+        .unwrap_err()
+        .contains("nothing to migrate"));
 }
 
 #[test]
 fn reading_refuses_other_versions_naming_both() {
     let older = read_document(&v1()).unwrap_err();
-    assert!(older.message.contains("edit_records v1") && older.message.contains(&format!("reads v{SCHEMA_VERSION}")), "{older}");
-    let newer = read_document(&json!({"kind": "edit_records", "schema_version": SCHEMA_VERSION + 1, "records": []})).unwrap_err();
-    assert!(newer.message.contains(&format!("v{}", SCHEMA_VERSION + 1)) && newer.message.contains(&format!("reads v{SCHEMA_VERSION}")), "{newer}");
+    assert!(
+        older.message.contains("edit_records v1")
+            && older.message.contains(&format!("reads v{SCHEMA_VERSION}")),
+        "{older}"
+    );
+    let newer = read_document(
+        &json!({"kind": "edit_records", "schema_version": SCHEMA_VERSION + 1, "records": []}),
+    )
+    .unwrap_err();
+    assert!(
+        newer.message.contains(&format!("v{}", SCHEMA_VERSION + 1))
+            && newer.message.contains(&format!("reads v{SCHEMA_VERSION}")),
+        "{newer}"
+    );
 }

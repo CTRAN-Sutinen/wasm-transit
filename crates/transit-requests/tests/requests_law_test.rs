@@ -11,11 +11,22 @@ fn request(stop: &str, job: &str, status: &str) -> StopRequest {
 }
 
 fn doc(requests: Vec<(&str, StopRequest)>) -> StopRequests {
-    StopRequests { requests: requests.into_iter().map(|(k, v)| (k.to_string(), v)).collect(), ..StopRequests::default() }
+    StopRequests {
+        requests: requests
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+        ..StopRequests::default()
+    }
 }
 
 fn refused(d: StopRequests) -> Vec<RequestProblem> {
-    d.checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
+    d.checked()
+        .err()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| r.problem)
+        .collect()
 }
 
 fn refused_json(v: Value) -> Vec<RequestProblem> {
@@ -24,10 +35,26 @@ fn refused_json(v: Value) -> Vec<RequestProblem> {
 
 #[test]
 fn every_job_and_status_the_worksheet_names_is_accepted() {
-    assert_eq!(JOBS, ["new", "reinstall", "relocate_remove", "repair_improve", "temporary"]);
-    assert_eq!(STATUSES, ["drafted", "submitted", "ordered", "completed", "cancelled"]);
+    assert_eq!(
+        JOBS,
+        [
+            "new",
+            "reinstall",
+            "relocate_remove",
+            "repair_improve",
+            "temporary"
+        ]
+    );
+    assert_eq!(
+        STATUSES,
+        ["drafted", "submitted", "ordered", "completed", "cancelled"]
+    );
     for job in JOBS {
-        assert_eq!(refused(doc(vec![("r1", request("6124", job, "drafted"))])), vec![], "{job}");
+        assert_eq!(
+            refused(doc(vec![("r1", request("6124", job, "drafted"))])),
+            vec![],
+            "{job}"
+        );
     }
 }
 
@@ -55,10 +82,28 @@ fn the_worked_request_reads() {
 
 #[test]
 fn a_request_names_its_stop_and_a_known_job_and_status() {
-    assert_eq!(refused(doc(vec![("r", request("", "new", "drafted"))])), vec![RequestProblem::NoStop]);
-    assert_eq!(refused(doc(vec![("r", request("a", "paint", "drafted"))])), vec![RequestProblem::Unknown { field: "job".into(), value: "paint".into() }]);
-    assert_eq!(refused(doc(vec![("r", request("a", "new", "lost"))])), vec![RequestProblem::Unknown { field: "status".into(), value: "lost".into() }]);
-    assert_eq!(refused(doc(vec![("", request("a", "new", "drafted"))])), vec![RequestProblem::NoId]);
+    assert_eq!(
+        refused(doc(vec![("r", request("", "new", "drafted"))])),
+        vec![RequestProblem::NoStop]
+    );
+    assert_eq!(
+        refused(doc(vec![("r", request("a", "paint", "drafted"))])),
+        vec![RequestProblem::Unknown {
+            field: "job".into(),
+            value: "paint".into()
+        }]
+    );
+    assert_eq!(
+        refused(doc(vec![("r", request("a", "new", "lost"))])),
+        vec![RequestProblem::Unknown {
+            field: "status".into(),
+            value: "lost".into()
+        }]
+    );
+    assert_eq!(
+        refused(doc(vec![("", request("a", "new", "drafted"))])),
+        vec![RequestProblem::NoId]
+    );
 }
 
 #[test]
@@ -68,39 +113,81 @@ fn a_listed_answer_is_one_the_worksheet_lists() {
         r[field] = json!(value);
         refused_json(json!({ "requests": { "r": r } }))
     };
-    for (field, good) in [("side", "north"), ("direction", "clockwise"), ("marked_by", "stake")] {
+    for (field, good) in [
+        ("side", "north"),
+        ("direction", "clockwise"),
+        ("marked_by", "stake"),
+    ] {
         assert_eq!(with(field, good), vec![], "{field}");
-        assert_eq!(with(field, "sideways"), vec![RequestProblem::Unknown { field: field.into(), value: "sideways".into() }], "{field}");
+        assert_eq!(
+            with(field, "sideways"),
+            vec![RequestProblem::Unknown {
+                field: field.into(),
+                value: "sideways".into()
+            }],
+            "{field}"
+        );
     }
 }
 
 #[test]
 fn dates_are_dates_and_an_offset_is_not_negative() {
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "requested_on": "Jan 4" });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::BadDate { date: "Jan 4".into() }]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::BadDate {
+            date: "Jan 4".into()
+        }]
+    );
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "locate": { "called_on": "2027-13-01" } });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::BadDate { date: "2027-13-01".into() }]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::BadDate {
+            date: "2027-13-01".into()
+        }]
+    );
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "offset_ft": -3 });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::NegativeOffset]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::NegativeOffset]
+    );
 }
 
 #[test]
 fn a_status_carries_what_it_claims() {
     let r = json!({ "stop": "a", "job": "new", "status": "ordered" });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::NoWorkOrder]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::NoWorkOrder]
+    );
     let r = json!({ "stop": "a", "job": "new", "status": "ordered", "work_order": { "system": "Maintenance", "id": "" } });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::NoWorkOrder]);
-    let r = json!({ "stop": "a", "job": "new", "status": "completed", "work_order": { "id": "WO-1" } });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::NoCompletion]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::NoWorkOrder]
+    );
+    let r =
+        json!({ "stop": "a", "job": "new", "status": "completed", "work_order": { "id": "WO-1" } });
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::NoCompletion]
+    );
     let r = json!({ "stop": "a", "job": "new", "status": "completed", "requested_on": "2027-02-01", "completed_on": "2027-01-15" });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::CompletedBeforeRequested]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::CompletedBeforeRequested]
+    );
     let r = json!({ "stop": "a", "job": "new", "status": "cancelled" });
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![]);
 }
 
 #[test]
 fn every_refusal_names_its_request() {
-    let refusals = doc(vec![("good", request("a", "new", "drafted")), ("bad", request("", "new", "drafted"))]).checked().unwrap_err();
+    let refusals = doc(vec![
+        ("good", request("a", "new", "drafted")),
+        ("bad", request("", "new", "drafted")),
+    ])
+    .checked()
+    .unwrap_err();
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].request, "bad");
 }
@@ -120,7 +207,12 @@ fn arb_request() -> impl Strategy<Value = StopRequest> {
 }
 
 fn arb_doc() -> impl Strategy<Value = StopRequests> {
-    proptest::collection::btree_map("[a-z0-9-]{1,6}", arb_request(), 0..6).prop_map(|requests| StopRequests { requests, ..StopRequests::default() })
+    proptest::collection::btree_map("[a-z0-9-]{1,6}", arb_request(), 0..6).prop_map(|requests| {
+        StopRequests {
+            requests,
+            ..StopRequests::default()
+        }
+    })
 }
 
 proptest! {
@@ -208,23 +300,65 @@ proptest! {
 fn a_work_order_lands_on_its_request() {
     let held = doc(vec![
         ("a", request("1", "new", "submitted")),
-        ("b", StopRequest { completed_on: Some("2027-01-02".into()), ..request("2", "new", "completed") }),
+        (
+            "b",
+            StopRequest {
+                completed_on: Some("2027-01-02".into()),
+                ..request("2", "new", "completed")
+            },
+        ),
         ("c", request("3", "new", "drafted")),
     ]);
-    let wo = |id: &str, status: &str| transit_requests::WorkOrder { system: Some("Maintenance".into()), id: id.into(), status: Some(status.into()), read_on: Some("2027-01-07".into()), ..Default::default() };
+    let wo = |id: &str, status: &str| transit_requests::WorkOrder {
+        system: Some("Maintenance".into()),
+        id: id.into(),
+        status: Some(status.into()),
+        read_on: Some("2027-01-07".into()),
+        ..Default::default()
+    };
     let next = held.record_work_order("a", wo("WO-1", "open")).unwrap();
     assert_eq!(next.requests["a"].status, "ordered");
     assert_eq!(next.requests["a"].work_order.as_ref().unwrap().id, "WO-1");
     assert_eq!(next.requests["b"], held.requests["b"]);
     assert_eq!(next.clone().checked().map(|_| ()), Ok(()));
     let mut linked = next.clone();
-    linked.requests.get_mut("a").unwrap().work_order.as_mut().unwrap().url = Some("https://wo/1".into());
-    let later = linked.record_work_order("a", transit_requests::WorkOrder { url: None, ..wo("WO-1", "in progress") }).unwrap();
+    linked
+        .requests
+        .get_mut("a")
+        .unwrap()
+        .work_order
+        .as_mut()
+        .unwrap()
+        .url = Some("https://wo/1".into());
+    let later = linked
+        .record_work_order(
+            "a",
+            transit_requests::WorkOrder {
+                url: None,
+                ..wo("WO-1", "in progress")
+            },
+        )
+        .unwrap();
     let w = later.requests["a"].work_order.as_ref().unwrap();
-    assert_eq!((w.status.as_deref(), w.url.as_deref()), (Some("in progress"), Some("https://wo/1")));
+    assert_eq!(
+        (w.status.as_deref(), w.url.as_deref()),
+        (Some("in progress"), Some("https://wo/1"))
+    );
     assert_eq!(later.requests["a"].status, "ordered");
-    assert_eq!(held.record_work_order("b", wo("WO-2", "closed")).unwrap().requests["b"].status, "completed");
-    assert_eq!(held.record_work_order("c", wo("WO-3", "open")).unwrap().requests["c"].status, "ordered");
+    assert_eq!(
+        held.record_work_order("b", wo("WO-2", "closed"))
+            .unwrap()
+            .requests["b"]
+            .status,
+        "completed"
+    );
+    assert_eq!(
+        held.record_work_order("c", wo("WO-3", "open"))
+            .unwrap()
+            .requests["c"]
+            .status,
+        "ordered"
+    );
     assert!(held.record_work_order("zz", wo("WO-9", "open")).is_none());
 }
 
@@ -235,14 +369,22 @@ fn a_request_names_its_attachments_by_hash() {
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "attachments": [{ "hash": hash, "type": "application/pdf", "name": "site drawing.pdf" }] });
     assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![]);
     let r = json!({ "stop": "a", "job": "new", "status": "drafted", "attachments": [{ "hash": "sha256:xyz", "type": "image/jpeg" }] });
-    assert_eq!(refused_json(json!({ "requests": { "r": r } })), vec![RequestProblem::BadAttachment { hash: "sha256:xyz".into() }]);
+    assert_eq!(
+        refused_json(json!({ "requests": { "r": r } })),
+        vec![RequestProblem::BadAttachment {
+            hash: "sha256:xyz".into()
+        }]
+    );
 }
 
 #[test]
 fn a_new_request_is_refused_an_id_the_document_holds() {
     let held = doc(vec![("r1", request("A", "new", "drafted"))]);
     let refusal = held.refuse_taken("r1").expect("r1 is held");
-    assert_eq!((refusal.request.as_str(), &refusal.problem), ("r1", &RequestProblem::IdTaken));
+    assert_eq!(
+        (refusal.request.as_str(), &refusal.problem),
+        ("r1", &RequestProblem::IdTaken)
+    );
     assert!(held.refuse_taken("r2").is_none(), "a free id is accepted");
     assert!(StopRequests::default().refuse_taken("r1").is_none());
     let replaced = held.put("r1", request("B", "new", "submitted"));
@@ -251,20 +393,45 @@ fn a_new_request_is_refused_an_id_the_document_holds() {
 
 #[test]
 fn the_open_statuses_are_the_ones_before_completed_and_cancelled() {
-    assert_eq!(transit_requests::OPEN_STATUSES, ["drafted", "submitted", "ordered"]);
-    assert!(transit_requests::OPEN_STATUSES.iter().all(|s| STATUSES.contains(s)));
+    assert_eq!(
+        transit_requests::OPEN_STATUSES,
+        ["drafted", "submitted", "ordered"]
+    );
+    assert!(transit_requests::OPEN_STATUSES
+        .iter()
+        .all(|s| STATUSES.contains(s)));
 }
 
 #[test]
 fn the_work_order_call_says_what_to_send_for_a_request() {
     let mut with_order = request("A", "new", "ordered");
-    with_order.work_order = Some(transit_requests::WorkOrder { id: "WO-1".into(), ..Default::default() });
-    let held = doc(vec![("r1", request("A", "new", "submitted")), ("r2", with_order.clone())]);
+    with_order.work_order = Some(transit_requests::WorkOrder {
+        id: "WO-1".into(),
+        ..Default::default()
+    });
+    let held = doc(vec![
+        ("r1", request("A", "new", "submitted")),
+        ("r2", with_order.clone()),
+    ]);
 
     let open = held.work_order_call("r1", "open").unwrap();
-    assert_eq!((open.action.as_str(), open.request.as_ref().map(|r| r.stop.as_str()), open.work_order.is_none()), ("open", Some("A"), true));
+    assert_eq!(
+        (
+            open.action.as_str(),
+            open.request.as_ref().map(|r| r.stop.as_str()),
+            open.work_order.is_none()
+        ),
+        ("open", Some("A"), true)
+    );
     let refresh = held.work_order_call("r2", "refresh").unwrap();
-    assert_eq!((refresh.action.as_str(), refresh.request.is_none(), refresh.work_order.as_ref().map(|w| w.id.as_str())), ("refresh", true, Some("WO-1")));
+    assert_eq!(
+        (
+            refresh.action.as_str(),
+            refresh.request.is_none(),
+            refresh.work_order.as_ref().map(|w| w.id.as_str())
+        ),
+        ("refresh", true, Some("WO-1"))
+    );
     assert!(held.work_order_call("r9", "open").is_err());
     assert!(held.work_order_call("r1", "close").is_err());
 }
@@ -279,13 +446,30 @@ fn a_v1_document_is_a_v2_document() {
     want["schema_version"] = 2.into();
     assert_eq!(v2, want);
     let unversioned = serde_json::json!({"requests": {}});
-    assert_eq!(version::schema_version_of(&unversioned), Ok(1), "a copy without a version is v1");
-    assert_eq!(version::forward(v2.clone()).unwrap(), v2, "the current version is as it is");
+    assert_eq!(
+        version::schema_version_of(&unversioned),
+        Ok(1),
+        "a copy without a version is v1"
+    );
+    assert_eq!(
+        version::forward(v2.clone()).unwrap(),
+        v2,
+        "the current version is as it is"
+    );
     let doc: transit_requests::StopRequests = serde_json::from_value(v2).unwrap();
     assert_eq!(doc.requests["R-1"].routes, vec!["99".to_string()]);
     let record = v1["requests"]["R-1"].clone();
-    assert_eq!(version::record_forward("stop_request", record.clone(), 1), Ok(record.clone()));
-    assert_eq!(version::record_forward("stop_requests", serde_json::json!({"kind": "stop_requests", "schema_version": 1}), 1),
-        Ok(serde_json::json!({"kind": "stop_requests", "schema_version": 2})));
+    assert_eq!(
+        version::record_forward("stop_request", record.clone(), 1),
+        Ok(record.clone())
+    );
+    assert_eq!(
+        version::record_forward(
+            "stop_requests",
+            serde_json::json!({"kind": "stop_requests", "schema_version": 1}),
+            1
+        ),
+        Ok(serde_json::json!({"kind": "stop_requests", "schema_version": 2}))
+    );
     assert!(version::record_forward("stop_request", record, 3).is_err());
 }

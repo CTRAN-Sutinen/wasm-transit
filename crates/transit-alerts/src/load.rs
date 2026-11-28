@@ -13,7 +13,8 @@ impl transit_version::Load for crate::ServiceAlerts {
     type Answer = ServiceAlertsLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::ServiceAlerts = transit_version::parse_versioned(bytes).map_err(|e| e.context("service alerts document"))?;
+        let document: crate::ServiceAlerts = transit_version::parse_versioned(bytes)
+            .map_err(|e| e.context("service alerts document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
             format!("service alerts document: {}", reasons.join("; ")).into()
@@ -25,7 +26,10 @@ impl transit_version::Load for crate::ServiceAlerts {
     }
 
     fn answer(&self, hash: String) -> ServiceAlertsLoaded {
-        ServiceAlertsLoaded { alerts_hash: hash, alerts: self.alerts.len() as u32 }
+        ServiceAlertsLoaded {
+            alerts_hash: hash,
+            alerts: self.alerts.len() as u32,
+        }
     }
 }
 
@@ -44,7 +48,8 @@ impl transit_version::Load for crate::AlertTemplates {
     type Answer = AlertTemplatesLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::AlertTemplates = transit_version::parse_versioned(bytes).map_err(|e| e.context("alert templates document"))?;
+        let document: crate::AlertTemplates = transit_version::parse_versioned(bytes)
+            .map_err(|e| e.context("alert templates document"))?;
         document.checked().map_err(|refusals| {
             let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
             format!("alert templates document: {}", reasons.join("; ")).into()
@@ -56,6 +61,9 @@ impl transit_version::Load for crate::AlertTemplates {
     }
 
     fn answer(&self, hash: String) -> AlertTemplatesLoaded {
-        AlertTemplatesLoaded { templates_hash: hash, templates: self.templates.len() as u32 }
+        AlertTemplatesLoaded {
+            templates_hash: hash,
+            templates: self.templates.len() as u32,
+        }
     }
 }

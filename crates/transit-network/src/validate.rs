@@ -33,10 +33,13 @@ pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
     let mut floors: BTreeMap<String, u32> = BTreeMap::new();
     for block in network.blocks.values() {
         for layover in &block.layovers {
-            let terminal = layover
-                .at
-                .as_deref()
-                .or_else(|| block.trips.get(layover.after_trip).and_then(|t| ends.get(t.trip.as_str())).map(|e| e.1));
+            let terminal = layover.at.as_deref().or_else(|| {
+                block
+                    .trips
+                    .get(layover.after_trip)
+                    .and_then(|t| ends.get(t.trip.as_str()))
+                    .map(|e| e.1)
+            });
             if let Some(terminal) = terminal {
                 let floor = floors.entry(terminal.to_string()).or_insert(layover.secs);
                 *floor = (*floor).min(layover.secs);
@@ -57,7 +60,9 @@ pub fn required_recovery(
 ) -> Option<(u32, RecoverySource)> {
     match policy {
         Some(secs) => Some((secs, RecoverySource::Policy)),
-        None if authored_layover => floors.get(terminal).map(|&secs| (secs, RecoverySource::Terminal)),
+        None if authored_layover => floors
+            .get(terminal)
+            .map(|&secs| (secs, RecoverySource::Terminal)),
         None => None,
     }
 }
@@ -69,7 +74,9 @@ fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
         .filter_map(|pt| network.patterns.get(&pt.pattern).map(|p| (pt, p)))
         .flat_map(|(pt, p)| {
             let last = p.stops.last().map(|s| s.stop.as_str()).unwrap_or("");
-            pt.trips.iter().map(move |t| (t.id.as_str(), (p.route.as_str(), last)))
+            pt.trips
+                .iter()
+                .map(move |t| (t.id.as_str(), (p.route.as_str(), last)))
         })
         .collect()
 }
@@ -77,7 +84,10 @@ fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
 /// `policy` answers the seconds required after a trip, or `None` where no
 /// rule applies. Recovery then follows [`required_recovery`]. With a
 /// requirement, every adjacent pair of distinct trips is judged.
-pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -> Option<u32>) -> Vec<NetworkError> {
+pub fn validation_issues_under(
+    network: &Network,
+    policy: &dyn Fn(&RecoveryAt) -> Option<u32>,
+) -> Vec<NetworkError> {
     let mut issues = Vec::new();
 
     for (stop_id, stop) in &network.stops {
@@ -109,7 +119,11 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                 }
             }
         }
-        if let Some(alignment) = pattern.alignment.as_ref().filter(|a| !network.alignments.contains_key(*a)) {
+        if let Some(alignment) = pattern
+            .alignment
+            .as_ref()
+            .filter(|a| !network.alignments.contains_key(*a))
+        {
             issues.push(NetworkError::UnknownAlignment {
                 pattern: pattern_id.clone(),
                 alignment: alignment.clone(),
@@ -160,11 +174,7 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                         profile: pi,
                     });
                 }
-                if profile
-                    .at_timepoints
-                    .windows(2)
-                    .any(|w| w[1] < w[0])
-                {
+                if profile.at_timepoints.windows(2).any(|w| w[1] < w[0]) {
                     issues.push(NetworkError::NonMonotonicTimes {
                         pattern: pattern_id.clone(),
                         profile: pi,
@@ -172,7 +182,13 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                 }
             }
         }
-        if overlapping(&pattern.timing.iter().map(|p| (p.start_secs, p.end_secs)).collect::<Vec<_>>()) {
+        if overlapping(
+            &pattern
+                .timing
+                .iter()
+                .map(|p| (p.start_secs, p.end_secs))
+                .collect::<Vec<_>>(),
+        ) {
             issues.push(NetworkError::OverlappingTimingProfiles {
                 pattern: pattern_id.clone(),
             });
@@ -188,7 +204,9 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                 continue;
             }
             if routes_meeting_at(network, &index, stop_id).len() < 2 {
-                issues.push(NetworkError::TransferPointWithoutConnections { stop: stop_id.clone() });
+                issues.push(NetworkError::TransferPointWithoutConnections {
+                    stop: stop_id.clone(),
+                });
             }
         }
     }
@@ -242,7 +260,11 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
     let index: BTreeMap<&str, (&str, &Trip)> = network
         .pattern_trips
         .values()
-        .flat_map(|pt| pt.trips.iter().map(move |t| (t.id.as_str(), (pt.service_type.as_str(), t))))
+        .flat_map(|pt| {
+            pt.trips
+                .iter()
+                .map(move |t| (t.id.as_str(), (pt.service_type.as_str(), t)))
+        })
         .collect();
     let ends = trip_ends(network);
     let floors = recovery_floors(network);
@@ -296,7 +318,11 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
         }
         // Judge feasibility day by day, on each combination of service
         // types that run together on some date.
-        let types: BTreeSet<&str> = block.trips.iter().map(|t| index[t.trip.as_str()].0).collect();
+        let types: BTreeSet<&str> = block
+            .trips
+            .iter()
+            .map(|t| index[t.trip.as_str()].0)
+            .collect();
         'days: for day in days.signatures(&types) {
             // (block index, trip, start, arrival) of the previous instance.
             let mut prev: Option<(usize, &str, u32, u32)> = None;
@@ -326,7 +352,10 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
                             None
                         };
                         let issue = if start <= pstart {
-                            Some(NetworkError::BlockOutOfOrder { block: block_id.clone(), trip: r.trip.clone() })
+                            Some(NetworkError::BlockOutOfOrder {
+                                block: block_id.clone(),
+                                trip: r.trip.clone(),
+                            })
                         } else if arrival > start {
                             Some(NetworkError::BlockInfeasible {
                                 block: block_id.clone(),
@@ -363,21 +392,41 @@ pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -
 }
 
 /// The invariants of one trip, checked against its pattern when it resolves.
-fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mut Vec<NetworkError>) {
+fn trip_issues(
+    trip: &Trip,
+    pattern: Option<&crate::model::Pattern>,
+    issues: &mut Vec<NetworkError>,
+) {
     if let Departs::Every { bands, .. } = &trip.departs {
         if bands.is_empty() {
-            issues.push(NetworkError::EmptyHeadwayBand { trip: trip.id.clone(), band: 0 });
+            issues.push(NetworkError::EmptyHeadwayBand {
+                trip: trip.id.clone(),
+                band: 0,
+            });
         }
         for (bi, band) in bands.iter().enumerate() {
             if band.headway_secs == 0 {
-                issues.push(NetworkError::ZeroHeadway { trip: trip.id.clone(), band: bi });
+                issues.push(NetworkError::ZeroHeadway {
+                    trip: trip.id.clone(),
+                    band: bi,
+                });
             }
             if band.start_secs >= band.end_secs {
-                issues.push(NetworkError::EmptyHeadwayBand { trip: trip.id.clone(), band: bi });
+                issues.push(NetworkError::EmptyHeadwayBand {
+                    trip: trip.id.clone(),
+                    band: bi,
+                });
             }
         }
-        if overlapping(&bands.iter().map(|b| (b.start_secs, b.end_secs)).collect::<Vec<_>>()) {
-            issues.push(NetworkError::OverlappingHeadwayBands { trip: trip.id.clone() });
+        if overlapping(
+            &bands
+                .iter()
+                .map(|b| (b.start_secs, b.end_secs))
+                .collect::<Vec<_>>(),
+        ) {
+            issues.push(NetworkError::OverlappingHeadwayBands {
+                trip: trip.id.clone(),
+            });
         }
     }
     let Some(pattern) = pattern else { return };
@@ -389,23 +438,41 @@ fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mu
         });
         return;
     }
-    let both = |i: usize| trip.times[i].arrival_secs.is_some() && trip.times[i].departure_secs.is_some();
+    let both =
+        |i: usize| trip.times[i].arrival_secs.is_some() && trip.times[i].departure_secs.is_some();
     let last = trip.times.len().saturating_sub(1);
     if trip.times.is_empty() || !both(0) || !both(last) {
-        issues.push(NetworkError::TripEndpointUnscheduled { trip: trip.id.clone() });
+        issues.push(NetworkError::TripEndpointUnscheduled {
+            trip: trip.id.clone(),
+        });
     }
     for (i, ps) in pattern.stops.iter().enumerate() {
         if ps.timepoint && i != 0 && i != last && !both(i) {
-            issues.push(NetworkError::TimepointUnscheduled { trip: trip.id.clone(), index: i });
+            issues.push(NetworkError::TimepointUnscheduled {
+                trip: trip.id.clone(),
+                index: i,
+            });
         }
     }
-    if trip.times.first().and_then(|o| o.arrival_secs).is_some_and(|a| a != 0) {
-        issues.push(NetworkError::FirstOffsetNotZero { trip: trip.id.clone() });
+    if trip
+        .times
+        .first()
+        .and_then(|o| o.arrival_secs)
+        .is_some_and(|a| a != 0)
+    {
+        issues.push(NetworkError::FirstOffsetNotZero {
+            trip: trip.id.clone(),
+        });
     }
-    let scheduled: Vec<u32> =
-        trip.times.iter().flat_map(|o| o.arrival_secs.into_iter().chain(o.departure_secs)).collect();
+    let scheduled: Vec<u32> = trip
+        .times
+        .iter()
+        .flat_map(|o| o.arrival_secs.into_iter().chain(o.departure_secs))
+        .collect();
     if scheduled.windows(2).any(|w| w[1] < w[0]) {
-        issues.push(NetworkError::TripTimesBackwards { trip: trip.id.clone() });
+        issues.push(NetworkError::TripTimesBackwards {
+            trip: trip.id.clone(),
+        });
     }
 }
 
@@ -417,13 +484,18 @@ struct DaySignatures<'a> {
 
 impl<'a> DaySignatures<'a> {
     fn new(network: &'a Network) -> Self {
-        Self { network, dates: BTreeMap::new() }
+        Self {
+            network,
+            dates: BTreeMap::new(),
+        }
     }
 
     fn dates_of(&mut self, id: &'a str) -> &BTreeSet<Date> {
         let network = self.network;
         self.dates.entry(id).or_insert_with(|| {
-            let Some(st) = network.service_types.get(id) else { return BTreeSet::new() };
+            let Some(st) = network.service_types.get(id) else {
+                return BTreeSet::new();
+            };
             let mut candidates: BTreeSet<Date> =
                 st.rule.exceptions.iter().map(|e| e.date).collect();
             for r in &st.rule.ranges {
@@ -436,12 +508,16 @@ impl<'a> DaySignatures<'a> {
                     };
                 }
             }
-            candidates.into_iter().filter(|d| st.rule.runs_on(*d)).collect()
+            candidates
+                .into_iter()
+                .filter(|d| st.rule.runs_on(*d))
+                .collect()
         })
     }
 
     fn signatures(&mut self, types: &BTreeSet<&'a str>) -> Vec<BTreeSet<&'a str>> {
-        let mut out: BTreeSet<BTreeSet<&'a str>> = types.iter().map(|t| [*t].into_iter().collect()).collect();
+        let mut out: BTreeSet<BTreeSet<&'a str>> =
+            types.iter().map(|t| [*t].into_iter().collect()).collect();
         if types.len() > 1 {
             let mut by_date: BTreeMap<Date, BTreeSet<&'a str>> = BTreeMap::new();
             for t in types {
@@ -459,8 +535,11 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     let mut warnings = Vec::new();
 
     if !network.blocks.is_empty() {
-        let blocked: BTreeSet<&str> =
-            network.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();
+        let blocked: BTreeSet<&str> = network
+            .blocks
+            .values()
+            .flat_map(|b| b.trips.iter().map(|t| t.trip.as_str()))
+            .collect();
         for (pattern_trips_id, pattern_trips) in &network.pattern_trips {
             let unassigned = pattern_trips
                 .trips
@@ -478,8 +557,11 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     }
 
     if let (false, Some(from)) = (network.plan.id.is_empty(), network.plan.effective_from) {
-        let scheduled: BTreeSet<&str> =
-            network.pattern_trips.values().map(|s| s.service_type.as_str()).collect();
+        let scheduled: BTreeSet<&str> = network
+            .pattern_trips
+            .values()
+            .map(|s| s.service_type.as_str())
+            .collect();
         let runs_in_first_week = (0..7).any(|d| {
             let date = from + transit_date::Days::new(d);
             network
@@ -524,8 +606,15 @@ impl PublishCheck {
 
 pub fn publish_check(network: &Network) -> PublishCheck {
     let refusals = publish_refusals(network);
-    let warnings = validation_warnings(network).into_iter().filter(|w| !refusals.contains(w)).collect();
-    PublishCheck { issues: validation_issues(network), refusals, warnings }
+    let warnings = validation_warnings(network)
+        .into_iter()
+        .filter(|w| !refusals.contains(w))
+        .collect();
+    PublishCheck {
+        issues: validation_issues(network),
+        refusals,
+        warnings,
+    }
 }
 
 pub fn validate(network: &Network) -> Result<(), NetworkError> {

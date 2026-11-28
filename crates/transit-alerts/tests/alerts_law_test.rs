@@ -9,12 +9,18 @@ use transit_alerts::*;
 use transit_alerts::{AlertEffect, AlertPeriod};
 
 fn network() -> transit_network::Network {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     transit_codec::import(&feed).network
 }
 
 fn text(s: &str) -> Vec<AlertText> {
-    vec![AlertText { lang: None, text: s.into() }]
+    vec![AlertText {
+        lang: None,
+        text: s.into(),
+    }]
 }
 
 fn period(start: Option<u64>, end: Option<u64>) -> AlertPeriod {
@@ -22,11 +28,17 @@ fn period(start: Option<u64>, end: Option<u64>) -> AlertPeriod {
 }
 
 fn route(r: &str) -> AlertEntity {
-    AlertEntity { route: Some(r.into()), ..Default::default() }
+    AlertEntity {
+        route: Some(r.into()),
+        ..Default::default()
+    }
 }
 
 fn stop(s: &str) -> AlertEntity {
-    AlertEntity { stop: Some(s.into()), ..Default::default() }
+    AlertEntity {
+        stop: Some(s.into()),
+        ..Default::default()
+    }
 }
 
 fn alert(informed: Vec<AlertEntity>, communication: Vec<AlertPeriod>) -> ServiceAlert {
@@ -49,49 +61,114 @@ fn doc(alerts: Vec<(&str, ServiceAlert)>) -> ServiceAlerts {
 }
 
 fn problems(d: ServiceAlerts) -> Vec<AlertProblem> {
-    d.checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
+    d.checked()
+        .err()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| r.problem)
+        .collect()
 }
 
 #[test]
 fn a_well_formed_alert_passes() {
-    assert!(doc(vec![("a1", alert(vec![route("10")], vec![]))]).checked().is_ok());
+    assert!(doc(vec![("a1", alert(vec![route("10")], vec![]))])
+        .checked()
+        .is_ok());
 }
 
 #[test]
 fn a_record_is_refused_only_for_what_makes_it_wrong() {
     let cases: Vec<(ServiceAlert, AlertProblem)> = vec![
         (alert(vec![], vec![]), AlertProblem::NoEntity),
-        (ServiceAlert { header: vec![], ..alert(vec![route("10")], vec![]) }, AlertProblem::NoHeader),
-        (ServiceAlert { header: text("  "), ..alert(vec![route("10")], vec![]) }, AlertProblem::NoHeader),
-        (alert(vec![route("10")], vec![period(Some(200), Some(100))]), AlertProblem::EndBeforeStart),
         (
-            ServiceAlert { impact: vec![period(Some(50), Some(150))], ..alert(vec![route("10")], vec![period(Some(100), Some(200))]) },
-            AlertProblem::ImpactOutsideCommunication,
-        ),
-        (
-            alert(vec![AlertEntity { direction: Some("0".into()), ..Default::default() }], vec![]),
-            AlertProblem::DirectionWithoutRoute,
-        ),
-        (
-            alert(vec![AlertEntity { start_secs: Some(28_800), ..Default::default() }], vec![]),
-            AlertProblem::InstanceWithoutTrip,
-        ),
-        (
-            alert(vec![AlertEntity { trip: Some("t10".into()), date: Some("2026-13-01".into()), ..Default::default() }], vec![]),
-            AlertProblem::BadDate { date: "2026-13-01".into() },
+            ServiceAlert {
+                header: vec![],
+                ..alert(vec![route("10")], vec![])
+            },
+            AlertProblem::NoHeader,
         ),
         (
             ServiceAlert {
-                header: vec![AlertText { lang: Some("es".into()), text: "a".into() }, AlertText { lang: Some("es".into()), text: "b".into() }],
+                header: text("  "),
                 ..alert(vec![route("10")], vec![])
             },
-            AlertProblem::RepeatedLanguage { field: "header".into(), lang: Some("es".into()) },
+            AlertProblem::NoHeader,
+        ),
+        (
+            alert(vec![route("10")], vec![period(Some(200), Some(100))]),
+            AlertProblem::EndBeforeStart,
+        ),
+        (
+            ServiceAlert {
+                impact: vec![period(Some(50), Some(150))],
+                ..alert(vec![route("10")], vec![period(Some(100), Some(200))])
+            },
+            AlertProblem::ImpactOutsideCommunication,
+        ),
+        (
+            alert(
+                vec![AlertEntity {
+                    direction: Some("0".into()),
+                    ..Default::default()
+                }],
+                vec![],
+            ),
+            AlertProblem::DirectionWithoutRoute,
+        ),
+        (
+            alert(
+                vec![AlertEntity {
+                    start_secs: Some(28_800),
+                    ..Default::default()
+                }],
+                vec![],
+            ),
+            AlertProblem::InstanceWithoutTrip,
+        ),
+        (
+            alert(
+                vec![AlertEntity {
+                    trip: Some("t10".into()),
+                    date: Some("2026-13-01".into()),
+                    ..Default::default()
+                }],
+                vec![],
+            ),
+            AlertProblem::BadDate {
+                date: "2026-13-01".into(),
+            },
+        ),
+        (
+            ServiceAlert {
+                header: vec![
+                    AlertText {
+                        lang: Some("es".into()),
+                        text: "a".into(),
+                    },
+                    AlertText {
+                        lang: Some("es".into()),
+                        text: "b".into(),
+                    },
+                ],
+                ..alert(vec![route("10")], vec![])
+            },
+            AlertProblem::RepeatedLanguage {
+                field: "header".into(),
+                lang: Some("es".into()),
+            },
         ),
     ];
     for (a, want) in cases {
-        assert_eq!(problems(doc(vec![("a1", a)])), vec![want.clone()], "{want:?}");
+        assert_eq!(
+            problems(doc(vec![("a1", a)])),
+            vec![want.clone()],
+            "{want:?}"
+        );
     }
-    assert_eq!(problems(doc(vec![("", alert(vec![route("10")], vec![]))])), vec![AlertProblem::NoId]);
+    assert_eq!(
+        problems(doc(vec![("", alert(vec![route("10")], vec![]))])),
+        vec![AlertProblem::NoId]
+    );
 }
 
 #[test]
@@ -102,7 +179,10 @@ fn an_impact_period_inside_a_communication_period_passes() {
     };
     assert!(doc(vec![("a1", a)]).checked().is_ok());
     // An open communication period holds any impact after its start.
-    let open = ServiceAlert { impact: vec![period(Some(120), None)], ..alert(vec![route("10")], vec![period(Some(100), None)]) };
+    let open = ServiceAlert {
+        impact: vec![period(Some(120), None)],
+        ..alert(vec![route("10")], vec![period(Some(100), None)])
+    };
     assert!(doc(vec![("a1", open)]).checked().is_ok());
 }
 
@@ -113,8 +193,15 @@ fn an_id_the_network_does_not_have_is_flagged_not_refused() {
         vec![
             route("99"),
             stop("Z"),
-            AlertEntity { trip: Some("nope".into()), ..Default::default() },
-            AlertEntity { route: Some("10".into()), direction: Some("1".into()), ..Default::default() },
+            AlertEntity {
+                trip: Some("nope".into()),
+                ..Default::default()
+            },
+            AlertEntity {
+                route: Some("10".into()),
+                direction: Some("1".into()),
+                ..Default::default()
+            },
         ],
         vec![],
     );
@@ -126,37 +213,75 @@ fn an_id_the_network_does_not_have_is_flagged_not_refused() {
         vec![
             AlertNotice::UnknownRoute { route: "99".into() },
             AlertNotice::UnknownStop { stop: "Z".into() },
-            AlertNotice::UnknownTrip { trip: "nope".into() },
-            AlertNotice::UnknownDirection { route: "10".into(), direction: "1".into() },
+            AlertNotice::UnknownTrip {
+                trip: "nope".into()
+            },
+            AlertNotice::UnknownDirection {
+                route: "10".into(),
+                direction: "1".into()
+            },
         ]
     );
-    assert!(doc(vec![("a1", alert(vec![route("40"), stop("SA")], vec![]))]).flags(&net, &[]).is_empty());
+    assert!(
+        doc(vec![("a1", alert(vec![route("40"), stop("SA")], vec![]))])
+            .flags(&net, &[])
+            .is_empty()
+    );
 }
 
 #[test]
 fn a_missing_translation_is_flagged() {
     let net = network();
     let a = ServiceAlert {
-        header: vec![AlertText { lang: Some("en".into()), text: "Detour".into() }, AlertText { lang: Some("es".into()), text: "Desvío".into() }],
-        description: vec![AlertText { lang: Some("en".into()), text: "Stop C is closed.".into() }],
+        header: vec![
+            AlertText {
+                lang: Some("en".into()),
+                text: "Detour".into(),
+            },
+            AlertText {
+                lang: Some("es".into()),
+                text: "Desvío".into(),
+            },
+        ],
+        description: vec![AlertText {
+            lang: Some("en".into()),
+            text: "Stop C is closed.".into(),
+        }],
         ..alert(vec![route("10")], vec![])
     };
-    let flags: Vec<AlertNotice> = doc(vec![("a1", a)]).flags(&net, &["en".into(), "es".into(), "ru".into()]).into_iter().map(|f| f.notice).collect();
+    let flags: Vec<AlertNotice> = doc(vec![("a1", a)])
+        .flags(&net, &["en".into(), "es".into(), "ru".into()])
+        .into_iter()
+        .map(|f| f.notice)
+        .collect();
     assert_eq!(
         flags,
         vec![
-            AlertNotice::MissingTranslation { field: "header".into(), lang: "ru".into() },
-            AlertNotice::MissingTranslation { field: "description".into(), lang: "es".into() },
-            AlertNotice::MissingTranslation { field: "description".into(), lang: "ru".into() },
+            AlertNotice::MissingTranslation {
+                field: "header".into(),
+                lang: "ru".into()
+            },
+            AlertNotice::MissingTranslation {
+                field: "description".into(),
+                lang: "es".into()
+            },
+            AlertNotice::MissingTranslation {
+                field: "description".into(),
+                lang: "ru".into()
+            },
         ]
     );
 }
 
 fn arb_period() -> impl Strategy<Value = AlertPeriod> {
-    (proptest::option::of(0u64..1000), proptest::option::of(0u64..1000)).prop_map(|(a, b)| match (a, b) {
-        (Some(a), Some(b)) => period(Some(a.min(b)), Some(a.max(b))),
-        (a, b) => period(a, b),
-    })
+    (
+        proptest::option::of(0u64..1000),
+        proptest::option::of(0u64..1000),
+    )
+        .prop_map(|(a, b)| match (a, b) {
+            (Some(a), Some(b)) => period(Some(a.min(b)), Some(a.max(b))),
+            (a, b) => period(a, b),
+        })
 }
 
 proptest! {
@@ -198,12 +323,42 @@ fn the_list_puts_every_alert_in_one_group() {
     let now = 10_000;
     let d = doc(vec![
         ("always", alert(vec![route("10")], vec![])),
-        ("open", alert(vec![route("10")], vec![period(Some(now - 600), None)])),
-        ("closing", alert(vec![route("10")], vec![period(Some(now - 600), Some(now + 600))])),
-        ("later", alert(vec![route("10")], vec![period(Some(now + 600), None)])),
-        ("past", alert(vec![route("10")], vec![period(Some(now - 900), Some(now - 600))])),
-        ("withdrawn", ServiceAlert { status: AlertStatus::Retired, ..alert(vec![route("10")], vec![]) }),
-        ("draft", ServiceAlert { status: AlertStatus::Draft, ..alert(vec![route("10")], vec![]) }),
+        (
+            "open",
+            alert(vec![route("10")], vec![period(Some(now - 600), None)]),
+        ),
+        (
+            "closing",
+            alert(
+                vec![route("10")],
+                vec![period(Some(now - 600), Some(now + 600))],
+            ),
+        ),
+        (
+            "later",
+            alert(vec![route("10")], vec![period(Some(now + 600), None)]),
+        ),
+        (
+            "past",
+            alert(
+                vec![route("10")],
+                vec![period(Some(now - 900), Some(now - 600))],
+            ),
+        ),
+        (
+            "withdrawn",
+            ServiceAlert {
+                status: AlertStatus::Retired,
+                ..alert(vec![route("10")], vec![])
+            },
+        ),
+        (
+            "draft",
+            ServiceAlert {
+                status: AlertStatus::Draft,
+                ..alert(vec![route("10")], vec![])
+            },
+        ),
     ]);
     let list = d.list(now);
     let ids = |rows: &[AlertRow]| rows.iter().map(|r| r.id.clone()).collect::<Vec<_>>();
@@ -218,7 +373,12 @@ fn the_list_puts_every_alert_in_one_group() {
 }
 
 fn template(header: &str) -> AlertTemplate {
-    AlertTemplate { name: "Stop closure".into(), effect: AlertEffect::NoService, header: text(header), ..Default::default() }
+    AlertTemplate {
+        name: "Stop closure".into(),
+        effect: AlertEffect::NoService,
+        header: text(header),
+        ..Default::default()
+    }
 }
 
 fn templates(t: AlertTemplate) -> AlertTemplates {
@@ -227,19 +387,55 @@ fn templates(t: AlertTemplate) -> AlertTemplates {
 
 #[test]
 fn a_template_passes_or_names_its_problem() {
-    assert!(templates(template("The stop at {stop} is closed starting {start date}")).checked().is_ok());
-    let problems = |t: AlertTemplate| templates(t).checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect::<Vec<_>>();
-    assert_eq!(problems(AlertTemplate { name: " ".into(), ..template("x") }), vec![TemplateProblem::NoName]);
+    assert!(templates(template(
+        "The stop at {stop} is closed starting {start date}"
+    ))
+    .checked()
+    .is_ok());
+    let problems = |t: AlertTemplate| {
+        templates(t)
+            .checked()
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| r.problem)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        problems(AlertTemplate {
+            name: " ".into(),
+            ..template("x")
+        }),
+        vec![TemplateProblem::NoName]
+    );
     assert_eq!(problems(template("")), vec![TemplateProblem::NoHeader]);
-    assert_eq!(problems(template("Closed at {stop name}")), vec![TemplateProblem::UnknownBlank { blank: "stop name".into() }]);
+    assert_eq!(
+        problems(template("Closed at {stop name}")),
+        vec![TemplateProblem::UnknownBlank {
+            blank: "stop name".into()
+        }]
+    );
 }
 
 #[test]
 fn the_menu_offers_each_template_not_retired_by_name() {
-    let named = |name: &str, retired: bool| AlertTemplate { name: name.into(), retired, ..template("x") };
-    let t = AlertTemplates::default().put("z", named("Detour", false)).put("a", named("Stop closure", false)).put("old", named("Bridge lift", true));
+    let named = |name: &str, retired: bool| AlertTemplate {
+        name: name.into(),
+        retired,
+        ..template("x")
+    };
+    let t = AlertTemplates::default()
+        .put("z", named("Detour", false))
+        .put("a", named("Stop closure", false))
+        .put("old", named("Bridge lift", true));
     let menu: Vec<(String, String)> = t.offered().into_iter().map(|r| (r.id, r.name)).collect();
-    assert_eq!(menu, [("z".to_string(), "Detour".to_string()), ("a".to_string(), "Stop closure".to_string())]);
+    assert_eq!(
+        menu,
+        [
+            ("z".to_string(), "Detour".to_string()),
+            ("a".to_string(), "Stop closure".to_string())
+        ]
+    );
 }
 
 #[test]
@@ -257,11 +453,24 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
         end_date: Some("2026-11-20".into()),
     };
     let f = fill(&t, &net, &input);
-    assert_eq!(f.header[0].text, "The stop at Main & 1st is closed starting Monday, August 17");
-    assert_eq!(f.description[0].text, "Use 10, 20, and 40 at the stops near Main & 1st until Friday, November 20.");
+    assert_eq!(
+        f.header[0].text,
+        "The stop at Main & 1st is closed starting Monday, August 17"
+    );
+    assert_eq!(
+        f.description[0].text,
+        "Use 10, 20, and 40 at the stops near Main & 1st until Friday, November 20."
+    );
     assert!(f.unfilled.is_empty());
     assert_eq!(f.effect, AlertEffect::NoService);
-    let two = fill(&template("{stop}"), &net, &FillInput { stops: vec!["A".into(), "B".into()], ..Default::default() });
+    let two = fill(
+        &template("{stop}"),
+        &net,
+        &FillInput {
+            stops: vec!["A".into(), "B".into()],
+            ..Default::default()
+        },
+    );
     assert_eq!(two.header[0].text, "Main & 1st and Main & 2nd");
 }
 
@@ -271,14 +480,49 @@ fn the_fill_writes_names_and_dates_in_the_agencys_words() {
 fn the_fill_names_each_informed_route_and_stop_once() {
     use transit_alerts::AlertEntity;
     let net = network();
-    let entity = |route: Option<&str>, stop: Option<&str>| AlertEntity { route: route.map(Into::into), stop: stop.map(Into::into), ..Default::default() };
-    let informed = vec![entity(Some("10"), None), entity(Some("20"), Some("A")), entity(Some("10"), Some("B")), entity(None, Some("A"))];
-    let t = AlertTemplate { description: text("Use {route} near {stop}."), ..template("{stop}") };
-    let f = fill(&t, &net, &FillInput { informed, ..Default::default() });
+    let entity = |route: Option<&str>, stop: Option<&str>| AlertEntity {
+        route: route.map(Into::into),
+        stop: stop.map(Into::into),
+        ..Default::default()
+    };
+    let informed = vec![
+        entity(Some("10"), None),
+        entity(Some("20"), Some("A")),
+        entity(Some("10"), Some("B")),
+        entity(None, Some("A")),
+    ];
+    let t = AlertTemplate {
+        description: text("Use {route} near {stop}."),
+        ..template("{stop}")
+    };
+    let f = fill(
+        &t,
+        &net,
+        &FillInput {
+            informed,
+            ..Default::default()
+        },
+    );
     assert_eq!(f.header[0].text, "Main & 1st and Main & 2nd");
-    assert_eq!(f.description[0].text, "Use 10 and 20 near Main & 1st and Main & 2nd.");
-    let none = fill(&template("{stop}"), &net, &FillInput { informed: vec![AlertEntity::default()], ..Default::default() });
-    assert_eq!(none.unfilled.iter().map(|u| u.blank.as_str()).collect::<Vec<_>>(), ["stop"]);
+    assert_eq!(
+        f.description[0].text,
+        "Use 10 and 20 near Main & 1st and Main & 2nd."
+    );
+    let none = fill(
+        &template("{stop}"),
+        &net,
+        &FillInput {
+            informed: vec![AlertEntity::default()],
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        none.unfilled
+            .iter()
+            .map(|u| u.blank.as_str())
+            .collect::<Vec<_>>(),
+        ["stop"]
+    );
 }
 
 proptest! {
@@ -306,21 +550,44 @@ proptest! {
 }
 
 fn explaining(source: AlertSource) -> ServiceAlert {
-    ServiceAlert { explains: vec![source], ..alert(vec![route("10")], vec![]) }
+    ServiceAlert {
+        explains: vec![source],
+        ..alert(vec![route("10")], vec![])
+    }
 }
 
 #[test]
 fn an_alert_explains_a_trip_instance_the_live_feed_cancels() {
-    let trip = AlertSource::Trip { trip: "t10".into(), date: "2026-10-23".into(), start_secs: 28800 };
+    let trip = AlertSource::Trip {
+        trip: "t10".into(),
+        date: "2026-10-23".into(),
+        start_secs: 28800,
+    };
     assert_eq!(problems(doc(vec![("a1", explaining(trip))])), vec![]);
 }
 
 #[test]
 fn an_explained_trip_instance_names_a_trip_and_a_date() {
-    let blank = AlertSource::Trip { trip: " ".into(), date: "2026-10-23".into(), start_secs: 0 };
-    assert_eq!(problems(doc(vec![("a1", explaining(blank))])), vec![AlertProblem::InstanceWithoutTrip]);
-    let bad = AlertSource::Trip { trip: "t10".into(), date: "10/23/2026".into(), start_secs: 0 };
-    assert_eq!(problems(doc(vec![("a1", explaining(bad))])), vec![AlertProblem::BadDate { date: "10/23/2026".into() }]);
+    let blank = AlertSource::Trip {
+        trip: " ".into(),
+        date: "2026-10-23".into(),
+        start_secs: 0,
+    };
+    assert_eq!(
+        problems(doc(vec![("a1", explaining(blank))])),
+        vec![AlertProblem::InstanceWithoutTrip]
+    );
+    let bad = AlertSource::Trip {
+        trip: "t10".into(),
+        date: "10/23/2026".into(),
+        start_secs: 0,
+    };
+    assert_eq!(
+        problems(doc(vec![("a1", explaining(bad))])),
+        vec![AlertProblem::BadDate {
+            date: "10/23/2026".into()
+        }]
+    );
 }
 
 #[test]
@@ -337,17 +604,30 @@ fn a_version_1_document_comes_forward_unchanged_but_its_version() {
     want["schema_version"] = 2.into();
     assert_eq!(v2, want);
     let read: ServiceAlerts = serde_json::from_value(v2).unwrap();
-    assert_eq!(read.alerts["a1"].explains, vec![AlertSource::Edit { id: "e1".into() }]);
-    assert!(version::migrate_to(want, 2).is_err(), "a document already at the version has nothing to migrate");
+    assert_eq!(
+        read.alerts["a1"].explains,
+        vec![AlertSource::Edit { id: "e1".into() }]
+    );
+    assert!(
+        version::migrate_to(want, 2).is_err(),
+        "a document already at the version has nothing to migrate"
+    );
 }
 
 #[test]
 fn a_stored_version_1_record_comes_forward_unchanged() {
-    let record = serde_json::json!({ "status": "draft", "header": [{ "text": "x" }], "informed": [{}] });
-    assert_eq!(version::record_forward("service_alert", record.clone(), 1), Ok(record.clone()));
+    let record =
+        serde_json::json!({ "status": "draft", "header": [{ "text": "x" }], "informed": [{}] });
+    assert_eq!(
+        version::record_forward("service_alert", record.clone(), 1),
+        Ok(record.clone())
+    );
     let own = serde_json::json!({ "kind": "service_alerts", "schema_version": 1, "alerts": {} });
     let mut want = own.clone();
     want["schema_version"] = 2.into();
     assert_eq!(version::record_forward("service_alerts", own, 1), Ok(want));
-    assert!(version::record_forward("service_alert", record, 3).is_err(), "no step from a version newer than this build");
+    assert!(
+        version::record_forward("service_alert", record, 3).is_err(),
+        "no step from a version newer than this build"
+    );
 }

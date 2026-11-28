@@ -14,9 +14,9 @@
 //! 5. With `k` legs, properties 1 to 3 hold against the earliest-arrival
 //!    search at `k` legs.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_router::{earliest_arrival, latest_departure, Leg, RouterNetwork};
 
 #[path = "prop_support.rs"]
@@ -51,7 +51,11 @@ fn feed() -> impl Strategy<Value = (usize, f64, Vec<TripSpec>, usize, usize, Opt
 }
 
 fn day_end(trips: &[TripSpec]) -> u32 {
-    trips.iter().map(|t| t.start + (t.stops.len() as u32 - 1) * t.step).max().unwrap_or(0)
+    trips
+        .iter()
+        .map(|t| t.start + (t.stops.len() as u32 - 1) * t.step)
+        .max()
+        .unwrap_or(0)
 }
 
 proptest! {
@@ -124,11 +128,23 @@ proptest! {
 #[test]
 fn the_last_bus_home_runs_past_midnight() {
     let trips = vec![
-        TripSpec { stops: vec![0, 1], start: 22 * 3600, step: 54 * 60 },
-        TripSpec { stops: vec![0, 1], start: 23 * 3600 + 7 * 60, step: 54 * 60 },
+        TripSpec {
+            stops: vec![0, 1],
+            start: 22 * 3600,
+            step: 54 * 60,
+        },
+        TripSpec {
+            stops: vec![0, 1],
+            start: 23 * 3600 + 7 * 60,
+            step: 54 * 60,
+        },
         // A far-away trip that ends later sets the day's end. It gives no
         // reason to leave later from s0.
-        TripSpec { stops: vec![5, 6], start: 25 * 3600, step: 300 },
+        TripSpec {
+            stops: vec![5, 6],
+            start: 25 * 3600,
+            step: 300,
+        },
     ];
     let (network, day) = model_day(&build_zip_spaced(7, 0.003, &trips), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
@@ -136,20 +152,41 @@ fn the_last_bus_home_runs_past_midnight() {
     let it = answer.itinerary.expect("the last bus home exists");
     assert_eq!(it.arrival_secs, 24 * 3600 + 60, "arrives 24:01");
     match &it.legs[..] {
-        [Leg::Transit { board_secs, .. }] => assert_eq!(*board_secs, 23 * 3600 + 7 * 60, "the 23:07"),
+        [Leg::Transit { board_secs, .. }] => {
+            assert_eq!(*board_secs, 23 * 3600 + 7 * 60, "the 23:07")
+        }
         other => panic!("one ride home, got {other:?}"),
     }
     let earlier = latest_departure(&net, "s0", "s1", Some(24 * 3600), 4).unwrap();
-    assert_eq!(earlier.itinerary.expect("the 22:00 reaches").arrival_secs, 22 * 3600 + 54 * 60);
-    assert!(latest_departure(&net, "s0", "s1", Some(22 * 3600), 4).unwrap().itinerary.is_none());
+    assert_eq!(
+        earlier.itinerary.expect("the 22:00 reaches").arrival_secs,
+        22 * 3600 + 54 * 60
+    );
+    assert!(latest_departure(&net, "s0", "s1", Some(22 * 3600), 4)
+        .unwrap()
+        .itinerary
+        .is_none());
 }
 
 #[test]
 fn from_is_to_leaves_at_the_deadline() {
-    let trips = vec![TripSpec { stops: vec![0, 1], start: 8 * 3600, step: 600 }];
+    let trips = vec![TripSpec {
+        stops: vec![0, 1],
+        start: 8 * 3600,
+        step: 600,
+    }];
     let (network, day) = model_day(&build_zip_spaced(3, 0.003, &trips), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
-    let it = latest_departure(&net, "s2", "s2", Some(9 * 3600), 4).unwrap().itinerary.unwrap();
-    assert_eq!((it.depart_secs, it.arrival_secs, it.legs.len()), (9 * 3600, 9 * 3600, 0));
-    assert!(latest_departure(&net, "nope", "s2", None, 4).is_err(), "unknown stops are errors");
+    let it = latest_departure(&net, "s2", "s2", Some(9 * 3600), 4)
+        .unwrap()
+        .itinerary
+        .unwrap();
+    assert_eq!(
+        (it.depart_secs, it.arrival_secs, it.legs.len()),
+        (9 * 3600, 9 * 3600, 0)
+    );
+    assert!(
+        latest_departure(&net, "nope", "s2", None, 4).is_err(),
+        "unknown stops are errors"
+    );
 }

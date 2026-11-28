@@ -9,7 +9,9 @@ use transit_codec::feed::{
     AgencyRow, CalendarRow, FrequencyRow, RouteRow, ShapeRow, StopRow, StopTimeRow, TripRow,
 };
 use transit_codec::Feed;
-use transit_network::{materialize_service, validation_issues, Departs, HeadwayBand, Network, TripRef};
+use transit_network::{
+    materialize_service, validation_issues, Departs, HeadwayBand, Network, TripRef,
+};
 
 #[derive(Clone, Debug)]
 struct GenTrip {
@@ -33,28 +35,44 @@ struct GenTrip {
 fn gen_trip() -> impl Strategy<Value = GenTrip> {
     (2usize..=4).prop_flat_map(|n| {
         (
-            (0u8..2, 0u8..2, proptest::option::of(0u8..2), proptest::option::of(0u8..2)),
+            (
+                0u8..2,
+                0u8..2,
+                proptest::option::of(0u8..2),
+                proptest::option::of(0u8..2),
+            ),
             proptest::sample::subsequence((0u8..6).collect::<Vec<u8>>(), n),
             (60u32..90).prop_map(|slot| slot * 300),
-            proptest::collection::vec((60u32..900, 0u32..120, 0u8..4, proptest::option::of(any::<bool>())), n),
+            proptest::collection::vec(
+                (
+                    60u32..900,
+                    0u32..120,
+                    0u8..4,
+                    proptest::option::of(any::<bool>()),
+                ),
+                n,
+            ),
             proptest::option::weighted(
                 0.15,
-                (6u32 * 3600..9 * 3600, 1u32..3, 600u32..1800, any::<bool>())
-                    .prop_map(|(s, h, w, exact)| (s - s % 60, s - s % 60 + h * 3600, w - w % 60, exact)),
+                (6u32 * 3600..9 * 3600, 1u32..3, 600u32..1800, any::<bool>()).prop_map(
+                    |(s, h, w, exact)| (s - s % 60, s - s % 60 + h * 3600, w - w % 60, exact),
+                ),
             ),
             proptest::option::of(0u8..2),
         )
-            .prop_map(|((route, service, direction, shape), stops, start, rows, every, block)| GenTrip {
-                route,
-                service,
-                direction,
-                shape,
-                stops,
-                start,
-                rows,
-                every,
-                block,
-            })
+            .prop_map(
+                |((route, service, direction, shape), stops, start, rows, every, block)| GenTrip {
+                    route,
+                    service,
+                    direction,
+                    shape,
+                    stops,
+                    start,
+                    rows,
+                    every,
+                    block,
+                },
+            )
     })
 }
 
@@ -204,10 +222,20 @@ fn build_feed(trips: &[GenTrip]) -> Feed {
     feed
 }
 
-fn find<'a>(net: &'a Network, id: &str) -> Option<(&'a str, &'a transit_network::PatternTrips, &'a transit_network::Trip)> {
-    net.pattern_trips
-        .iter()
-        .find_map(|(k, pt)| pt.trips.iter().find(|t| t.id == id).map(|t| (k.as_str(), pt, t)))
+fn find<'a>(
+    net: &'a Network,
+    id: &str,
+) -> Option<(
+    &'a str,
+    &'a transit_network::PatternTrips,
+    &'a transit_network::Trip,
+)> {
+    net.pattern_trips.iter().find_map(|(k, pt)| {
+        pt.trips
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| (k.as_str(), pt, t))
+    })
 }
 
 fn trips_strategy() -> impl Strategy<Value = Vec<GenTrip>> {

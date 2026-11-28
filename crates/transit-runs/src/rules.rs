@@ -6,9 +6,7 @@ use ts_rs::TS;
 
 pub use crate::version::SCHEMA_VERSION;
 
-transit_version::kind_tag!(
-    WorkRulesKind = "work_rules"
-);
+transit_version::kind_tag!(WorkRulesKind = "work_rules");
 
 impl transit_version::Versioned for WorkRules {
     const KIND: &'static str = "work_rules";
@@ -43,7 +41,10 @@ pub struct WorkRules {
     /// that it limits, pays, or counts, so two readings of "drive" or
     /// "work" differ only here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, Vec<Activity>>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, Vec<Activity>>>")
+    )]
     pub measures: BTreeMap<String, Vec<Activity>>,
     #[serde(flatten)]
     pub rules: RuleSet,
@@ -647,7 +648,9 @@ impl Names<'_> {
         match name {
             None => Err(format!("{what} names no measure")),
             Some(m) if self.measures.contains_key(m) => Ok(()),
-            Some(m) => Err(format!("{what} names measure {m:?}, which the document does not define")),
+            Some(m) => Err(format!(
+                "{what} names measure {m:?}, which the document does not define"
+            )),
         }
     }
 
@@ -655,14 +658,21 @@ impl Names<'_> {
         if self.classes.contains(id) {
             Ok(())
         } else {
-            Err(format!("{what} names class {id:?}, which the document does not define"))
+            Err(format!(
+                "{what} names class {id:?}, which the document does not define"
+            ))
         }
     }
 
     fn limit(&self, what: &str, l: &Limit) -> Result<(), String> {
         match (l.quantity, &l.measure) {
             (Quantity::Measure, m) => self.measure(what, m.as_deref())?,
-            (_, Some(m)) => return Err(format!("{what} limits {:?} and names measure {m:?}, which only a measure limit takes", l.quantity)),
+            (_, Some(m)) => {
+                return Err(format!(
+                    "{what} limits {:?} and names measure {m:?}, which only a measure limit takes",
+                    l.quantity
+                ))
+            }
             _ => {}
         }
         if l.min.is_none() && l.max.is_none() {
@@ -674,12 +684,13 @@ impl Names<'_> {
             }
         }
         match (l.quantity, l.over) {
-            (Quantity::DaysWorked | Quantity::Rest, Window::Run) => {
-                return Err(format!("{what} spans days, so it is limited over a rolling 24 hours or a week, not a run"))
-            }
-            (Quantity::Piece | Quantity::Pieces | Quantity::Gap, Window::Rolling24h | Window::Week) => {
-                return Err(format!("{what} is limited over a run only"))
-            }
+            (Quantity::DaysWorked | Quantity::Rest, Window::Run) => return Err(format!(
+                "{what} spans days, so it is limited over a rolling 24 hours or a week, not a run"
+            )),
+            (
+                Quantity::Piece | Quantity::Pieces | Quantity::Gap,
+                Window::Rolling24h | Window::Week,
+            ) => return Err(format!("{what} is limited over a run only")),
             _ => {}
         }
         Ok(())
@@ -692,11 +703,18 @@ impl Names<'_> {
             }
         }
         for g in &r.gaps {
-            pct(&format!("{at}: the gap band from {} s", g.from_secs), g.paid_pct, 100)?;
+            pct(
+                &format!("{at}: the gap band from {} s", g.from_secs),
+                g.paid_pct,
+                100,
+            )?;
         }
         if let Some(first) = r.gaps.first() {
             if first.from_secs != 0 {
-                return Err(format!("{at}: the first gap band starts at {} s, not 0", first.from_secs));
+                return Err(format!(
+                    "{at}: the first gap band starts at {} s, not 0",
+                    first.from_secs
+                ));
             }
         }
         if let Some(w) = r.gaps.windows(2).find(|w| w[0].from_secs == w[1].from_secs) {
@@ -715,29 +733,47 @@ impl Names<'_> {
             }
             match b.from {
                 BreakFrom::MeasureStart => self.measure(&what, b.measure.as_deref())?,
-                BreakFrom::Report if b.measure.is_some() => return Err(format!("{what} names a measure but counts from the report")),
+                BreakFrom::Report if b.measure.is_some() => {
+                    return Err(format!("{what} names a measure but counts from the report"))
+                }
                 BreakFrom::Report => {}
             }
             match (&b.when_measure, b.when_over_secs) {
                 (Some(m), Some(_)) => self.measure(&what, Some(m))?,
                 (None, None) => {}
-                _ => return Err(format!("{what} gives half a trigger (when_measure and when_over_secs go together)")),
+                _ => {
+                    return Err(format!(
+                        "{what} gives half a trigger (when_measure and when_over_secs go together)"
+                    ))
+                }
             }
         }
         for p in &r.premiums {
             let what = format!("{at}: a {:?} premium", p.on);
             self.measure(&what, Some(&p.pays))?;
             pct(&what, p.pct, 1000)?;
-            let given = (p.measure.is_some(), p.after_secs.is_some(), p.from_secs.is_some() || p.to_secs.is_some(), !p.days.is_empty(), p.class.is_some());
+            let given = (
+                p.measure.is_some(),
+                p.after_secs.is_some(),
+                p.from_secs.is_some() || p.to_secs.is_some(),
+                !p.days.is_empty(),
+                p.class.is_some(),
+            );
             let fits = match p.on {
                 TriggerOn::Measure => given == (true, true, false, false, false),
                 TriggerOn::Spread => given == (false, true, false, false, false),
-                TriggerOn::TimeOfDay => given == (false, false, true, false, false) && p.from_secs.is_some() && p.to_secs.is_some(),
+                TriggerOn::TimeOfDay => {
+                    given == (false, false, true, false, false)
+                        && p.from_secs.is_some()
+                        && p.to_secs.is_some()
+                }
                 TriggerOn::DayOfWeek => given == (false, false, false, true, false),
                 TriggerOn::Class => given == (false, false, false, false, true),
             };
             if !fits {
-                return Err(format!("{what} gives fields its trigger does not take, or lacks one it needs"));
+                return Err(format!(
+                    "{what} gives fields its trigger does not take, or lacks one it needs"
+                ));
             }
             if let Some(m) = &p.measure {
                 self.measure(&what, Some(m))?;
@@ -766,7 +802,10 @@ impl Names<'_> {
                 Timing::Speed => t.speed_kph.is_some_and(|s| s > 0) && t.fixed_secs.is_none(),
             };
             if !fits {
-                return Err(format!("{what} is timed {:?} but gives other timing fields", t.timed));
+                return Err(format!(
+                    "{what} is timed {:?} but gives other timing fields",
+                    t.timed
+                ));
             }
             if let Some(p) = t.pct {
                 pct(&what, p, 1000)?;
@@ -797,14 +836,27 @@ impl WorkRules {
     /// names the rule.
     pub fn checked(mut self) -> Result<WorkRules, String> {
         if self.schema_version.0 != SCHEMA_VERSION {
-            return Err(format!("work rules version {} (this build speaks version {SCHEMA_VERSION})", self.schema_version.0));
+            return Err(format!(
+                "work rules version {} (this build speaks version {SCHEMA_VERSION})",
+                self.schema_version.0
+            ));
         }
         if let Some(s) = &self.source {
-            let from = s.effective_from.as_deref().map(transit_date::Date::read).transpose()?;
-            let to = s.effective_to.as_deref().map(transit_date::Date::read).transpose()?;
+            let from = s
+                .effective_from
+                .as_deref()
+                .map(transit_date::Date::read)
+                .transpose()?;
+            let to = s
+                .effective_to
+                .as_deref()
+                .map(transit_date::Date::read)
+                .transpose()?;
             if let (Some(from), Some(to)) = (from, to) {
                 if from > to {
-                    return Err(format!("the source's period ends before it starts ({from} to {to})"));
+                    return Err(format!(
+                        "the source's period ends before it starts ({from} to {to})"
+                    ));
                 }
             }
         }
@@ -842,7 +894,10 @@ impl WorkRules {
             o.maximize.dedup();
         }
 
-        let names = Names { measures: &self.measures, classes: self.classes.iter().map(|c| c.id.as_str()).collect() };
+        let names = Names {
+            measures: &self.measures,
+            classes: self.classes.iter().map(|c| c.id.as_str()).collect(),
+        };
         names.rules("the document", &self.rules)?;
         for c in &self.classes {
             let at = format!("run class {:?}", c.id);
@@ -853,7 +908,11 @@ impl WorkRules {
                 return Err(format!("{at}: a condition is given twice"));
             }
             names.rules(&at, &c.rules)?;
-            if let Some(kind) = c.replaces.iter().find(|&&k| k == RuleKind::Gaps && !c.rules.has(k)) {
+            if let Some(kind) = c
+                .replaces
+                .iter()
+                .find(|&&k| k == RuleKind::Gaps && !c.rules.has(k))
+            {
                 return Err(format!("{at} replaces the {kind:?} with none. To leave every gap unpaid, give a band at 0 s paid at 0 percent."));
             }
             names.rules(&format!("{at}, in force"), &self.rules_for(Some(&c.id)))?;
@@ -872,9 +931,15 @@ impl WorkRules {
             for p in [m.min_pct, m.target_pct, m.max_pct].into_iter().flatten() {
                 pct(what, p, 100)?;
             }
-            let given: Vec<u32> = [m.min_pct, m.target_pct, m.max_pct].into_iter().flatten().collect();
+            let given: Vec<u32> = [m.min_pct, m.target_pct, m.max_pct]
+                .into_iter()
+                .flatten()
+                .collect();
             if given.windows(2).any(|w| w[0] > w[1]) {
-                return Err(format!("{what} over {:?}: min, target, and max are out of order", m.classes));
+                return Err(format!(
+                    "{what} over {:?}: min, target, and max are out of order",
+                    m.classes
+                ));
             }
         }
         if twice(&self.mix) {
@@ -905,12 +970,24 @@ impl WorkRules {
             base.dedup();
         }
         let r = |k: RuleKind| c.replaces.contains(&k);
-        merge(&mut out.allowances, &c.rules.allowances, r(RuleKind::Allowances));
-        merge(&mut out.gaps, &c.rules.gaps, r(RuleKind::Gaps) || !c.rules.gaps.is_empty());
+        merge(
+            &mut out.allowances,
+            &c.rules.allowances,
+            r(RuleKind::Allowances),
+        );
+        merge(
+            &mut out.gaps,
+            &c.rules.gaps,
+            r(RuleKind::Gaps) || !c.rules.gaps.is_empty(),
+        );
         merge(&mut out.limits, &c.rules.limits, r(RuleKind::Limits));
         merge(&mut out.breaks, &c.rules.breaks, r(RuleKind::Breaks));
         merge(&mut out.premiums, &c.rules.premiums, r(RuleKind::Premiums));
-        merge(&mut out.guarantees, &c.rules.guarantees, r(RuleKind::Guarantees));
+        merge(
+            &mut out.guarantees,
+            &c.rules.guarantees,
+            r(RuleKind::Guarantees),
+        );
         merge(&mut out.travel, &c.rules.travel, r(RuleKind::Travel));
         out
     }
@@ -920,6 +997,10 @@ impl RuleSet {
     /// The percent of a gap of `gap_secs` that is paid: the band with the
     /// largest `from_secs` at or under the gap. With no bands, 0.
     pub fn gap_paid_pct(&self, gap_secs: u32) -> u32 {
-        self.gaps.iter().rev().find(|b| b.from_secs <= gap_secs).map_or(0, |b| b.paid_pct)
+        self.gaps
+            .iter()
+            .rev()
+            .find(|b| b.from_secs <= gap_secs)
+            .map_or(0, |b| b.paid_pct)
     }
 }

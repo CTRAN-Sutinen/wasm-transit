@@ -5,9 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use transit_date::Date;
 use proptest::prelude::*;
 use serde_json::{json, Value};
+use transit_date::Date;
 use transit_stops::{Details, Event, EventKind, Problem, Status, StopOn, Stops};
 
 fn day(n: u32) -> Date {
@@ -19,14 +19,21 @@ fn date(n: u32) -> String {
 }
 
 fn event(kind: EventKind, on: Option<u32>) -> Event {
-    Event { on: on.map(date), event: kind, ..Event::default() }
+    Event {
+        on: on.map(date),
+        event: kind,
+        ..Event::default()
+    }
 }
 
 fn begun(kind: EventKind, on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
     Event {
         lat: Some(lat),
         lon: Some(lon),
-        details: Details { name: Some(name.into()), ..Details::default() },
+        details: Details {
+            name: Some(name.into()),
+            ..Details::default()
+        },
         ..event(kind, on)
     }
 }
@@ -36,10 +43,21 @@ fn in_service(on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
 }
 
 fn doc(stops: Vec<(&str, Vec<Event>)>) -> Stops {
-    Stops { stops: stops.into_iter().map(|(id, e)| (id.to_string(), e)).collect(), ..Stops::default() }
+    Stops {
+        stops: stops
+            .into_iter()
+            .map(|(id, e)| (id.to_string(), e))
+            .collect(),
+        ..Stops::default()
+    }
 }
 
-const STAGES: [EventKind; 4] = [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService];
+const STAGES: [EventKind; 4] = [
+    EventKind::Planned,
+    EventKind::Permitted,
+    EventKind::Built,
+    EventKind::InService,
+];
 
 fn active(e: &Event, d: Date) -> bool {
     let p = |s: &String| Date::parse(s).unwrap();
@@ -63,17 +81,29 @@ fn oracle(events: &[Event], id: &str, d: Date) -> Option<StopOn> {
     let by = live.iter().rev().find(|e| status_of(&e.event).is_some())?;
     let status = status_of(&by.event)?;
     let point = live.iter().rev().find(|e| e.lat.is_some())?;
-    let last = |f: &dyn Fn(&Details) -> Option<Value>| -> Option<Value> { live.iter().rev().find_map(|e| f(&e.details)) };
+    let last = |f: &dyn Fn(&Details) -> Option<Value>| -> Option<Value> {
+        live.iter().rev().find_map(|e| f(&e.details))
+    };
     let mut details = Details::default();
-    details.name = last(&|d| d.name.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
-    details.code = last(&|d| d.code.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
+    details.name =
+        last(&|d| d.name.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
+    details.code =
+        last(&|d| d.code.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
     details.wheelchair = last(&|d| d.wheelchair.map(Value::from)).map(|v| v.as_bool().unwrap());
-    details.fare_zone = last(&|d| d.fare_zone.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
-    let mut keys: Vec<&String> = live.iter().flat_map(|e| e.details.amenities.keys()).collect();
+    details.fare_zone =
+        last(&|d| d.fare_zone.clone().map(Value::from)).map(|v| v.as_str().unwrap().to_string());
+    let mut keys: Vec<&String> = live
+        .iter()
+        .flat_map(|e| e.details.amenities.keys())
+        .collect();
     keys.sort();
     keys.dedup();
     for k in keys {
-        let v = live.iter().rev().find_map(|e| e.details.amenities.get(k)).unwrap();
+        let v = live
+            .iter()
+            .rev()
+            .find_map(|e| e.details.amenities.get(k))
+            .unwrap();
         details.amenities.insert(k.clone(), *v);
     }
     let mut site: BTreeMap<String, String> = BTreeMap::new();
@@ -143,10 +173,24 @@ fn arb_step() -> impl Strategy<Value = Step> {
 /// A first stage, then steps at non-decreasing dates. A step is kept only
 /// where the model allows it.
 fn arb_history() -> impl Strategy<Value = Vec<Event>> {
-    (0usize..4, proptest::option::of(0u32..30), proptest::collection::vec((0u32..20, arb_step()), 0..10)).prop_map(
-        |(stage, first_on, steps)| {
-            let first_on = if stage == 3 { first_on } else { Some(first_on.unwrap_or(0)) };
-            let mut events = vec![begun(STAGES[stage].clone(), first_on, 45.6, -122.6, "Main & 1st")];
+    (
+        0usize..4,
+        proptest::option::of(0u32..30),
+        proptest::collection::vec((0u32..20, arb_step()), 0..10),
+    )
+        .prop_map(|(stage, first_on, steps)| {
+            let first_on = if stage == 3 {
+                first_on
+            } else {
+                Some(first_on.unwrap_or(0))
+            };
+            let mut events = vec![begun(
+                STAGES[stage].clone(),
+                first_on,
+                45.6,
+                -122.6,
+                "Main & 1st",
+            )];
             let mut at = first_on.unwrap_or(0);
             for (gap, step) in steps {
                 at += gap;
@@ -171,7 +215,10 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
                         if now != Some(Status::InService) {
                             continue;
                         }
-                        Event { until: u.map(|u| date(at + u)), ..event(EventKind::Suspended, Some(at)) }
+                        Event {
+                            until: u.map(|u| date(at + u)),
+                            ..event(EventKind::Suspended, Some(at))
+                        }
                     }
                     Step::Move(u, d) => Event {
                         until: u.map(|u| date(at + u)),
@@ -193,35 +240,51 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
                                 details.code = Some(format!("{at}"));
                             }
                             4 => {
-                                details.site.insert("surface".into(), if b { "concrete" } else { "gravel" }.into());
+                                details.site.insert(
+                                    "surface".into(),
+                                    if b { "concrete" } else { "gravel" }.into(),
+                                );
                                 if b {
                                     details.site.insert("landmark".into(), format!("pole {at}"));
                                 }
                                 surveyor = Some(if b { "A. Lee" } else { "R. Ortiz" });
                             }
                             _ => {
-                                details.refs.insert(if b { "gis" } else { "sign" }.into(), format!("R-{at}"));
+                                details.refs.insert(
+                                    if b { "gis" } else { "sign" }.into(),
+                                    format!("R-{at}"),
+                                );
                             }
                         }
-                        Event { details, surveyed_by: surveyor.map(String::from), ..event(EventKind::Changed, Some(at)) }
+                        Event {
+                            details,
+                            surveyed_by: surveyor.map(String::from),
+                            ..event(EventKind::Changed, Some(at))
+                        }
                     }
                     Step::Retire => event(EventKind::Retired, Some(at)),
                 };
                 events.push(e);
             }
             events
-        },
-    )
+        })
 }
 
 fn arb_doc() -> impl Strategy<Value = Stops> {
-    proptest::collection::btree_map("[a-z0-9]{1,6}", arb_history(), 1..6).prop_map(|stops| Stops { stops, ..Stops::default() })
+    proptest::collection::btree_map("[a-z0-9]{1,6}", arb_history(), 1..6).prop_map(|stops| Stops {
+        stops,
+        ..Stops::default()
+    })
 }
 
 /// The spherical law of cosines on the library's mean earth radius, written
 /// apart from the library.
 fn cosine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (p1, p2, dl) = (lat1.to_radians(), lat2.to_radians(), (lon2 - lon1).to_radians());
+    let (p1, p2, dl) = (
+        lat1.to_radians(),
+        lat2.to_radians(),
+        (lon2 - lon1).to_radians(),
+    );
     let c = (p1.sin() * p2.sin() + p1.cos() * p2.cos() * dl.cos()).clamp(-1.0, 1.0);
     6_371_000.0 * c.acos()
 }
@@ -470,7 +533,12 @@ proptest! {
 }
 
 fn refused(d: Stops) -> Vec<Problem> {
-    d.checked().err().unwrap_or_default().into_iter().map(|r| r.problem).collect()
+    d.checked()
+        .err()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| r.problem)
+        .collect()
 }
 
 fn refused_json(v: Value) -> Vec<Problem> {
@@ -484,8 +552,15 @@ fn a_valid_document_is_accepted() {
             "6124",
             vec![
                 in_service(Some(0), 45.69, -122.65, "NE 99th St & Hwy 99"),
-                Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(10)) },
-                Event { lat: Some(45.691), lon: Some(-122.651), ..event(EventKind::Moved, Some(40)) },
+                Event {
+                    until: Some(date(30)),
+                    ..event(EventKind::Suspended, Some(10))
+                },
+                Event {
+                    lat: Some(45.691),
+                    lon: Some(-122.651),
+                    ..event(EventKind::Moved, Some(40))
+                },
             ],
         ),
         (
@@ -507,56 +582,129 @@ fn an_unknown_event_is_refused() {
         {"event": "in_service", "lat": 45.0, "lon": -122.0},
         {"on": "2027-01-02", "event": "teleported"}
     ]}}));
-    assert_eq!(p, vec![Problem::UnknownEvent { event: "teleported".into() }]);
+    assert_eq!(
+        p,
+        vec![Problem::UnknownEvent {
+            event: "teleported".into()
+        }]
+    );
 }
 
 #[test]
 fn events_out_of_date_order_are_refused() {
-    let p = refused(doc(vec![("a", vec![in_service(Some(5), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(5), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::OutOfOrder]);
 }
 
 #[test]
 fn a_stop_begins_at_a_stage() {
     assert_eq!(refused(doc(vec![("a", vec![])])), vec![Problem::NoEvents]);
-    let p = refused(doc(vec![("a", vec![Event { lat: Some(45.0), lon: Some(-122.0), ..event(EventKind::Moved, Some(1)) }])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![Event {
+            lat: Some(45.0),
+            lon: Some(-122.0),
+            ..event(EventKind::Moved, Some(1))
+        }],
+    )]));
     assert!(p.contains(&Problem::FirstEvent), "{p:?}");
     for stage in STAGES {
-        assert!(refused(doc(vec![("a", vec![begun(stage.clone(), Some(0), 45.0, -122.0, "A")])])).is_empty(), "{stage:?}");
+        assert!(
+            refused(doc(vec![(
+                "a",
+                vec![begun(stage.clone(), Some(0), 45.0, -122.0, "A")]
+            )]))
+            .is_empty(),
+            "{stage:?}"
+        );
     }
 }
 
 #[test]
 fn the_stages_do_not_go_back() {
-    let p = refused(doc(vec![("a", vec![begun(EventKind::Built, Some(0), 45.0, -122.0, "A"), event(EventKind::Permitted, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            begun(EventKind::Built, Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Permitted, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::StageBack]);
-    let p = refused(doc(vec![("a", vec![begun(EventKind::Permitted, Some(0), 45.0, -122.0, "A"), event(EventKind::Permitted, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            begun(EventKind::Permitted, Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Permitted, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::StageBack], "a stage is not entered twice");
-    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Planned, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Planned, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::StageBack]);
-    assert!(refused(doc(vec![("a", vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])])).is_empty());
+    assert!(refused(doc(vec![(
+        "a",
+        vec![
+            begun(EventKind::Planned, Some(0), 45.0, -122.0, "A"),
+            event(EventKind::InService, Some(3))
+        ]
+    )]))
+    .is_empty());
 }
 
 #[test]
 fn a_suspension_is_of_a_stop_in_service() {
-    let p = refused(doc(vec![("a", vec![begun(EventKind::Built, Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            begun(EventKind::Built, Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::NotInService]);
     let p = refused(doc(vec![(
         "a",
-        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(2)), event(EventKind::Suspended, Some(3))],
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(2)),
+            event(EventKind::Suspended, Some(3)),
+        ],
     )]));
-    assert_eq!(p, vec![Problem::NotInService], "a suspended stop is not suspended again");
+    assert_eq!(
+        p,
+        vec![Problem::NotInService],
+        "a suspended stop is not suspended again"
+    );
 }
 
 #[test]
 fn a_return_to_service_needs_a_stop_not_in_service() {
-    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::InService, Some(3)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::AlreadyInService]);
     let p = refused(doc(vec![(
         "a",
         vec![
             in_service(Some(0), 45.0, -122.0, "A"),
-            Event { until: Some(date(5)), ..event(EventKind::Suspended, Some(1)) },
+            Event {
+                until: Some(date(5)),
+                ..event(EventKind::Suspended, Some(1))
+            },
             event(EventKind::InService, Some(6)),
         ],
     )]));
@@ -565,7 +713,10 @@ fn a_return_to_service_needs_a_stop_not_in_service() {
         "a",
         vec![
             in_service(Some(0), 45.0, -122.0, "A"),
-            Event { until: Some(date(9)), ..event(EventKind::Suspended, Some(1)) },
+            Event {
+                until: Some(date(9)),
+                ..event(EventKind::Suspended, Some(1))
+            },
             event(EventKind::InService, Some(6)),
         ],
     )]))
@@ -576,7 +727,11 @@ fn a_return_to_service_needs_a_stop_not_in_service() {
 fn a_suspended_stop_may_never_return() {
     let d = doc(vec![(
         "a",
-        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(2)), event(EventKind::Retired, Some(90))],
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(2)),
+            event(EventKind::Retired, Some(90)),
+        ],
     )]);
     let d = d.checked().unwrap();
     assert_eq!(d.stop_on("a", day(50)).unwrap().status, Status::Suspended);
@@ -587,7 +742,11 @@ fn a_suspended_stop_may_never_return() {
 fn nothing_follows_retirement() {
     let p = refused(doc(vec![(
         "a",
-        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Retired, Some(3)), event(EventKind::Suspended, Some(4))],
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Retired, Some(3)),
+            event(EventKind::Suspended, Some(4)),
+        ],
     )]));
     assert_eq!(p, vec![Problem::AfterRetired]);
 }
@@ -601,19 +760,28 @@ fn a_suspension_ends_when_the_stop_is_back_early() {
         "s",
         vec![
             in_service(None, 45.0, -122.0, "A"),
-            Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(16)) },
+            Event {
+                until: Some(date(30)),
+                ..event(EventKind::Suspended, Some(16))
+            },
             event(EventKind::InService, Some(24)),
         ],
     )]);
     let on23 = back.stop_on("s", day(23)).unwrap();
-    assert_eq!((on23.status, on23.until.as_deref()), (Status::Suspended, Some(date(24).as_str())));
+    assert_eq!(
+        (on23.status, on23.until.as_deref()),
+        (Status::Suspended, Some(date(24).as_str()))
+    );
     let on24 = back.stop_on("s", day(24)).unwrap();
     assert_eq!((on24.status, on24.until), (Status::InService, None));
     let retired = doc(vec![(
         "s",
         vec![
             in_service(None, 45.0, -122.0, "A"),
-            Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(16)) },
+            Event {
+                until: Some(date(30)),
+                ..event(EventKind::Suspended, Some(16))
+            },
             event(EventKind::Retired, Some(20)),
         ],
     )]);
@@ -624,50 +792,123 @@ fn a_suspension_ends_when_the_stop_is_back_early() {
 fn until_comes_after_its_date() {
     let p = refused(doc(vec![(
         "a",
-        vec![in_service(Some(0), 45.0, -122.0, "A"), Event { until: Some(date(3)), ..event(EventKind::Suspended, Some(3)) }],
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            Event {
+                until: Some(date(3)),
+                ..event(EventKind::Suspended, Some(3))
+            },
+        ],
     )]));
     assert_eq!(p, vec![Problem::UntilNotAfter]);
 }
 
 #[test]
 fn only_a_first_in_service_may_go_undated() {
-    let p = refused(doc(vec![("a", vec![in_service(None, 45.0, -122.0, "A"), event(EventKind::Suspended, None)])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(None, 45.0, -122.0, "A"),
+            event(EventKind::Suspended, None),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::NoDate]);
-    let p = refused(doc(vec![("a", vec![begun(EventKind::Planned, None, 45.0, -122.0, "A")])]));
-    assert_eq!(p, vec![Problem::NoDate], "a stop still being planned has a date");
+    let p = refused(doc(vec![(
+        "a",
+        vec![begun(EventKind::Planned, None, 45.0, -122.0, "A")],
+    )]));
+    assert_eq!(
+        p,
+        vec![Problem::NoDate],
+        "a stop still being planned has a date"
+    );
 }
 
 #[test]
 fn a_date_is_a_service_date() {
-    let p = refused_json(json!({"stops": {"a": [{"on": "March 3", "event": "in_service", "lat": 45.0, "lon": -122.0}]}}));
-    assert_eq!(p, vec![Problem::BadDate { date: "March 3".into() }]);
+    let p = refused_json(
+        json!({"stops": {"a": [{"on": "March 3", "event": "in_service", "lat": 45.0, "lon": -122.0}]}}),
+    );
+    assert_eq!(
+        p,
+        vec![Problem::BadDate {
+            date: "March 3".into()
+        }]
+    );
 }
 
 #[test]
 fn an_event_carries_only_what_its_kind_sets() {
-    let misplaced = |e: Event| refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), e])]));
-    assert_eq!(misplaced(Event { until: Some(date(9)), ..event(EventKind::Changed, Some(1)) }), vec![Problem::Misplaced { field: "until".into() }]);
+    let misplaced = |e: Event| {
+        refused(doc(vec![(
+            "a",
+            vec![in_service(Some(0), 45.0, -122.0, "A"), e],
+        )]))
+    };
     assert_eq!(
-        misplaced(Event { lat: Some(45.0), lon: Some(-122.0), ..event(EventKind::Changed, Some(1)) }),
-        vec![Problem::Misplaced { field: "point".into() }]
+        misplaced(Event {
+            until: Some(date(9)),
+            ..event(EventKind::Changed, Some(1))
+        }),
+        vec![Problem::Misplaced {
+            field: "until".into()
+        }]
     );
     assert_eq!(
-        misplaced(Event { details: Details { name: Some("B".into()), ..Details::default() }, ..event(EventKind::Suspended, Some(1)) }),
-        vec![Problem::Misplaced { field: "details".into() }]
+        misplaced(Event {
+            lat: Some(45.0),
+            lon: Some(-122.0),
+            ..event(EventKind::Changed, Some(1))
+        }),
+        vec![Problem::Misplaced {
+            field: "point".into()
+        }]
     );
     assert_eq!(
-        misplaced(Event { replaces: vec!["a".into()], ..event(EventKind::Changed, Some(1)) }),
-        vec![Problem::Misplaced { field: "replaces".into() }]
+        misplaced(Event {
+            details: Details {
+                name: Some("B".into()),
+                ..Details::default()
+            },
+            ..event(EventKind::Suspended, Some(1))
+        }),
+        vec![Problem::Misplaced {
+            field: "details".into()
+        }]
+    );
+    assert_eq!(
+        misplaced(Event {
+            replaces: vec!["a".into()],
+            ..event(EventKind::Changed, Some(1))
+        }),
+        vec![Problem::Misplaced {
+            field: "replaces".into()
+        }]
     );
 }
 
 #[test]
 fn a_point_is_whole_and_on_the_earth() {
-    let p = refused(doc(vec![("a", vec![Event { lat: None, ..in_service(Some(0), 45.0, -122.0, "A") }])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![Event {
+            lat: None,
+            ..in_service(Some(0), 45.0, -122.0, "A")
+        }],
+    )]));
     assert_eq!(p, vec![Problem::NoPoint]);
-    let p = refused(doc(vec![("a", vec![in_service(Some(0), 95.0, -122.0, "A")])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![in_service(Some(0), 95.0, -122.0, "A")],
+    )]));
     assert_eq!(p, vec![Problem::BadPoint]);
-    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Moved, Some(2))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Moved, Some(2)),
+        ],
+    )]));
     assert_eq!(p, vec![Problem::NoPoint]);
 }
 
@@ -676,18 +917,38 @@ fn a_consolidation_names_other_stops_that_exist() {
     let with = |replaces: Vec<&str>| {
         refused(doc(vec![
             ("a", vec![in_service(Some(0), 45.0, -122.0, "A")]),
-            ("b", vec![Event { replaces: replaces.into_iter().map(String::from).collect(), ..begun(EventKind::Planned, Some(4), 45.0, -122.0, "B") }]),
+            (
+                "b",
+                vec![Event {
+                    replaces: replaces.into_iter().map(String::from).collect(),
+                    ..begun(EventKind::Planned, Some(4), 45.0, -122.0, "B")
+                }],
+            ),
         ]))
     };
     assert!(with(vec!["a"]).is_empty());
-    assert_eq!(with(vec!["zz"]), vec![Problem::UnknownStop { stop: "zz".into() }]);
+    assert_eq!(
+        with(vec!["zz"]),
+        vec![Problem::UnknownStop { stop: "zz".into() }]
+    );
     assert_eq!(with(vec!["b"]), vec![Problem::ReplacesItself]);
 }
 
 #[test]
 fn every_refusal_names_its_stop_and_event() {
-    let refusals = doc(vec![("a", vec![in_service(Some(5), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]).checked().unwrap_err();
-    assert_eq!((refusals[0].stop.as_str(), refusals[0].event), ("a", Some(1)));
+    let refusals = doc(vec![(
+        "a",
+        vec![
+            in_service(Some(5), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(3)),
+        ],
+    )])
+    .checked()
+    .unwrap_err();
+    assert_eq!(
+        (refusals[0].stop.as_str(), refusals[0].event),
+        ("a", Some(1))
+    );
 }
 
 #[test]
@@ -712,29 +973,68 @@ fn the_worked_example_reads_as_the_unit_says() {
     .unwrap();
     let d = d.checked().unwrap();
     let at = |id: &str, s: &str| d.stop_on(id, Date::parse(s).unwrap());
-    assert_eq!(at("6124", "2004-08-31"), None, "before it went into service, the stop is not there");
-    assert_eq!(at("6124", "2025-05-11").unwrap().details.amenities, BTreeMap::new(), "amenities not recorded yet");
-    assert_eq!(at("6124", "2025-05-12").unwrap().details.amenities.get("shelter"), Some(&true));
+    assert_eq!(
+        at("6124", "2004-08-31"),
+        None,
+        "before it went into service, the stop is not there"
+    );
+    assert_eq!(
+        at("6124", "2025-05-11").unwrap().details.amenities,
+        BTreeMap::new(),
+        "amenities not recorded yet"
+    );
+    assert_eq!(
+        at("6124", "2025-05-12")
+            .unwrap()
+            .details
+            .amenities
+            .get("shelter"),
+        Some(&true)
+    );
     assert_eq!(at("6124", "2027-03-03").unwrap().status, Status::Suspended);
     let away = at("6124", "2027-04-01").unwrap();
-    assert_eq!((away.since.as_deref(), away.until.as_deref()), (Some("2027-03-03"), Some("2027-07-01")), "suspended since, back on");
+    assert_eq!(
+        (away.since.as_deref(), away.until.as_deref()),
+        (Some("2027-03-03"), Some("2027-07-01")),
+        "suspended since, back on"
+    );
     assert_eq!(at("6124", "2027-06-30").unwrap().status, Status::Suspended);
-    assert_eq!(at("6124", "2027-07-01").unwrap().status, Status::InService, "until is the first day back");
-    assert_eq!((at("6124", "2027-08-31").unwrap().lat, at("6124", "2027-09-01").unwrap().lat), (45.6934, 45.6936));
+    assert_eq!(
+        at("6124", "2027-07-01").unwrap().status,
+        Status::InService,
+        "until is the first day back"
+    );
+    assert_eq!(
+        (
+            at("6124", "2027-08-31").unwrap().lat,
+            at("6124", "2027-09-01").unwrap().lat
+        ),
+        (45.6934, 45.6936)
+    );
     assert_eq!(at("7001", "2027-01-01").unwrap().status, Status::Planned);
     assert_eq!(at("7001", "2027-06-01").unwrap().status, Status::Built);
-    assert!(!d.served("7001", Date::from_ymd_opt(2027, 9, 5).unwrap(), 0) && d.served("7001", Date::from_ymd_opt(2027, 9, 6).unwrap(), 0));
+    assert!(
+        !d.served("7001", Date::from_ymd_opt(2027, 9, 5).unwrap(), 0)
+            && d.served("7001", Date::from_ymd_opt(2027, 9, 6).unwrap(), 0)
+    );
 }
 
 #[test]
 fn every_stop_on_a_date_in_id_order() {
     let d = doc(vec![
         ("b", vec![in_service(Some(0), 45.0, -122.0, "B")]),
-        ("a", vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A")]),
+        (
+            "a",
+            vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A")],
+        ),
         ("later", vec![in_service(Some(9), 45.0, -122.0, "L")]),
     ]);
     let ids: Vec<String> = d.on_date(day(1)).into_iter().map(|s| s.stop_id).collect();
-    assert_eq!(ids, vec!["a", "b"], "a stop not yet there is not listed; a planned one is");
+    assert_eq!(
+        ids,
+        vec!["a", "b"],
+        "a stop not yet there is not listed; a planned one is"
+    );
 }
 
 proptest! {
@@ -832,7 +1132,10 @@ fn two_events_with_one_id_in_a_stop_are_refused() {
     first.id = "e1".into();
     let mut second = event(EventKind::Suspended, Some(3));
     second.id = "e1".into();
-    assert_eq!(refused(doc(vec![("a", vec![first, second])])), vec![Problem::DuplicateEventId { id: "e1".into() }]);
+    assert_eq!(
+        refused(doc(vec![("a", vec![first, second])])),
+        vec![Problem::DuplicateEventId { id: "e1".into() }]
+    );
 }
 
 #[test]
@@ -846,7 +1149,14 @@ fn the_same_id_in_two_stops_is_two_events() {
 
 #[test]
 fn an_identified_document_round_trips_its_ids() {
-    let d = doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]).identified();
+    let d = doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            event(EventKind::Suspended, Some(3)),
+        ],
+    )])
+    .identified();
     let text = serde_json::to_string(&d).unwrap();
     let back: Stops = serde_json::from_str(&text).unwrap();
     assert_eq!(back, d);

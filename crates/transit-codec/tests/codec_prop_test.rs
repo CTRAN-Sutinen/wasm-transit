@@ -4,8 +4,8 @@
 
 use std::io::Write;
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 
 const EPOCH: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
@@ -34,17 +34,28 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         proptest::option::of(0u8..2),
         proptest::option::of(0u8..3),
     )
-        .prop_map(|(route, service, block, start_slot, stops, leg_min, direction, headsign)| {
-            let mut seq: Vec<u8> = stops
-                .into_iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            if seq.len() < 2 {
-                seq = vec![0, 1];
-            }
-            GenTrip { route, service, block, start_slot, stops: seq, leg_min, direction, headsign }
-        })
+        .prop_map(
+            |(route, service, block, start_slot, stops, leg_min, direction, headsign)| {
+                let mut seq: Vec<u8> = stops
+                    .into_iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                if seq.len() < 2 {
+                    seq = vec![0, 1];
+                }
+                GenTrip {
+                    route,
+                    service,
+                    block,
+                    start_slot,
+                    stops: seq,
+                    leg_min,
+                    direction,
+                    headsign,
+                }
+            },
+        )
 }
 
 /// The spec says one vehicle runs a block, so its trips on one service day
@@ -56,7 +67,10 @@ fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
         .map(|t| {
             let b = t.block?;
             let start = (t.start_slot as u32) * 600;
-            let span = (start, start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60);
+            let span = (
+                start,
+                start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60,
+            );
             let spans = taken.entry((b, t.service)).or_default();
             if spans.iter().any(|&(s, e)| span.0 <= e && s <= span.1) {
                 return None;
@@ -80,14 +94,19 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
         "agency.txt",
         "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
     );
-    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
+    add(
+        &mut w,
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n",
+    );
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));
     }
     add(&mut w, "stops.txt", &stops);
 
-    let mut trips_txt = String::from("route_id,service_id,trip_id,block_id,direction_id,trip_headsign");
+    let mut trips_txt =
+        String::from("route_id,service_id,trip_id,block_id,direction_id,trip_headsign");
     let blocks = blocks(trips);
     for (i, t) in trips.iter().enumerate() {
         trips_txt.push_str(&format!(
@@ -133,7 +152,10 @@ fn trips_of(
                 t.trip,
                 t.route,
                 t.start_secs,
-                t.stop_times.into_iter().map(|st| (st.stop, st.arrival_secs, st.departure_secs)).collect(),
+                t.stop_times
+                    .into_iter()
+                    .map(|st| (st.stop, st.arrival_secs, st.departure_secs))
+                    .collect(),
             )
         })
         .collect();
@@ -142,12 +164,17 @@ fn trips_of(
 }
 
 fn import(bytes: &[u8]) -> transit_codec::ImportOutcome {
-    transit_codec::import(&transit_codec::Feed::from_zip_bytes(bytes).expect("generated feeds read"))
+    transit_codec::import(
+        &transit_codec::Feed::from_zip_bytes(bytes).expect("generated feeds read"),
+    )
 }
 
 fn round_trip(first: &transit_codec::ImportOutcome) -> transit_codec::ImportOutcome {
-    let feed = transit_codec::export(&first.network, &first.boundary).expect("a valid document exports");
-    transit_codec::import(&transit_codec::Feed::from_zip_bytes(&feed.to_zip_bytes()).expect("exports read"))
+    let feed =
+        transit_codec::export(&first.network, &first.boundary).expect("a valid document exports");
+    transit_codec::import(
+        &transit_codec::Feed::from_zip_bytes(&feed.to_zip_bytes()).expect("exports read"),
+    )
 }
 
 /// An oracle that shares no code with the codec.

@@ -15,7 +15,10 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    cap_abi::kernel::kind::<transit_network::Network>().register(derived_network()).unwrap().0
+    cap_abi::kernel::kind::<transit_network::Network>()
+        .register(derived_network())
+        .unwrap()
+        .0
 }
 
 fn active_services(network_hash: &str, edits_hash: Option<String>, date: &str) -> Vec<String> {
@@ -111,7 +114,10 @@ fn edits_can_take_a_key_off_the_board() {
         updated_at: 1,
         extra: Default::default(),
     }];
-    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>()
+        .register(transit_sync::EditDocument::new(records))
+        .unwrap()
+        .0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()]
@@ -127,8 +133,13 @@ fn the_reverse_read_names_a_types_dates() {
     assert_eq!(
         dates,
         vec![
-            "2026-10-23", "2026-10-26", "2026-10-27", "2026-10-28",
-            "2026-10-30", "2026-11-02", "2026-11-03",
+            "2026-10-23",
+            "2026-10-26",
+            "2026-10-27",
+            "2026-10-28",
+            "2026-10-30",
+            "2026-11-02",
+            "2026-11-03",
         ],
         "every fixture weekday except the removed 10-29"
     );
@@ -194,9 +205,18 @@ fn the_reverse_read_comes_from_the_effective_day() {
         updated_at: 1,
         extra: Default::default(),
     }];
-    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(records)).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>()
+        .register(transit_sync::EditDocument::new(records))
+        .unwrap()
+        .0;
     assert_eq!(
-        service_dates(&network_hash, Some(edits_hash), "WK", "2026-10-23", "2026-10-26"),
+        service_dates(
+            &network_hash,
+            Some(edits_hash),
+            "WK",
+            "2026-10-23",
+            "2026-10-26"
+        ),
         vec!["2026-10-23".to_string(), "2026-10-26".to_string()],
         "the patched day answers the same as the rule"
     );
@@ -229,7 +249,10 @@ fn an_invalid_edit_record_moves_nothing() {
         extra: Default::default(),
     };
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
-    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>().register(transit_sync::EditDocument::new(vec![broken])).unwrap().0;
+    let edits_hash = cap_abi::kernel::kind::<transit_sync::EditDocument>()
+        .register(transit_sync::EditDocument::new(vec![broken]))
+        .unwrap()
+        .0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()],
@@ -250,21 +273,38 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
-    let bad = dispatch_json(r#"{"op":"active_services","network_hash":"sha256:x","date":"2026-13-99"}"#);
+    let bad =
+        dispatch_json(r#"{"op":"active_services","network_hash":"sha256:x","date":"2026-13-99"}"#);
     assert!(bad.contains("invalid date"), "{bad}");
     let bad = dispatch_bytes(0, b"whatever");
-    assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
+    assert!(
+        bad.contains("unknown bulk op"),
+        "the module takes JSON documents: {bad}"
+    );
 }
 
 #[test]
 fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let doc = include_str!("../../../testdata/network.json");
-    let via_json: serde_json::Value =
-        serde_json::from_str(&cap_calendar::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
-    let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_calendar::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, doc.as_bytes())).unwrap();
-    assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
+    let via_json: serde_json::Value = serde_json::from_str(&cap_calendar::invoke(&format!(
+        r#"{{"op":"load_network","network":{doc}}}"#
+    )))
+    .unwrap();
+    let via_bytes: serde_json::Value = serde_json::from_str(&cap_calendar::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        doc.as_bytes(),
+    ))
+    .unwrap();
+    assert!(
+        via_json["ok"]["network_hash"]
+            .as_str()
+            .is_some_and(|h| h.starts_with("sha256:")),
+        "{via_json}"
+    );
     assert_eq!(via_bytes, via_json);
-    let bad = cap_calendar::invoke_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, b"{not a network");
+    let bad = cap_calendar::invoke_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        b"{not a network",
+    );
     assert!(bad.contains("invalid document"), "{bad}");
 }

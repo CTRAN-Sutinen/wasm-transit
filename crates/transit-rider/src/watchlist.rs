@@ -16,9 +16,7 @@ pub const SCHEMA_VERSION: u32 = 2;
 
 pub const KIND: &str = "watchlist";
 
-transit_version::kind_tag!(
-    WatchlistKind = "watchlist"
-);
+transit_version::kind_tag!(WatchlistKind = "watchlist");
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
@@ -57,7 +55,10 @@ impl transit_version::Versioned for Watchlist {
     const KIND: &'static str = KIND;
     const READS: u32 = SCHEMA_VERSION;
     fn schema_version(&self) -> u32 {
-        self.legacy_version.as_deref().and_then(legacy).unwrap_or(self.schema_version.0)
+        self.legacy_version
+            .as_deref()
+            .and_then(legacy)
+            .unwrap_or(self.schema_version.0)
     }
     fn version_in(value: &Value) -> u32 {
         schema_version_of(value).unwrap_or(SCHEMA_VERSION)
@@ -66,7 +67,10 @@ impl transit_version::Versioned for Watchlist {
 
 impl Watchlist {
     pub fn new(stops: Vec<WatchStop>) -> Self {
-        Watchlist { stops, ..Default::default() }
+        Watchlist {
+            stops,
+            ..Default::default()
+        }
     }
 
     /// The id sequence is invariant across versions.
@@ -75,12 +79,19 @@ impl Watchlist {
     }
 
     pub fn label(&self, stop_id: &str) -> String {
-        self.stops.iter().find(|s| s.id == stop_id).map(|s| s.label.clone()).unwrap_or_default()
+        self.stops
+            .iter()
+            .find(|s| s.id == stop_id)
+            .map(|s| s.label.clone())
+            .unwrap_or_default()
     }
 }
 
 fn legacy(marker: &str) -> Option<u32> {
-    marker.strip_prefix('v').and_then(|n| n.parse().ok()).filter(|&n| n >= 1)
+    marker
+        .strip_prefix('v')
+        .and_then(|n| n.parse().ok())
+        .filter(|&n| n >= 1)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,23 +123,37 @@ pub fn schema_version_of(doc: &Value) -> Result<u32, String> {
     }
     match root.get("version") {
         None => Ok(SCHEMA_VERSION),
-        Some(v) => v.as_str().and_then(legacy).ok_or_else(|| format!("watchlist version {v} is not a version (\"v1\", \"v2\")")),
+        Some(v) => v
+            .as_str()
+            .and_then(legacy)
+            .ok_or_else(|| format!("watchlist version {v} is not a version (\"v1\", \"v2\")")),
     }
 }
 
 pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let found = schema_version_of(&doc)?;
     if found != from {
-        return Err(format!("the watchlist v{from} step was given a v{found} document"));
+        return Err(format!(
+            "the watchlist v{from} step was given a v{found} document"
+        ));
     }
     match from {
         1 => {
-            let stops = doc.get("stops").and_then(Value::as_array).ok_or("a v1 watchlist has its stops")?;
+            let stops = doc
+                .get("stops")
+                .and_then(Value::as_array)
+                .ok_or("a v1 watchlist has its stops")?;
             let mut dropped_colors = 0u32;
             let mut next = Vec::with_capacity(stops.len());
             for stop in stops {
-                let id = stop.get("id").and_then(Value::as_str).ok_or("a v1 stop has its id")?;
-                let note = stop.get("note").and_then(Value::as_str).ok_or("a v1 stop has its note")?;
+                let id = stop
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or("a v1 stop has its id")?;
+                let note = stop
+                    .get("note")
+                    .and_then(Value::as_str)
+                    .ok_or("a v1 stop has its note")?;
                 if stop.get("color").is_some_and(|c| !c.is_null()) {
                     dropped_colors += 1;
                 }
@@ -136,11 +161,21 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>)
             }
             let mut notes = Vec::new();
             if dropped_colors > 0 {
-                notes.push(MigrationNote { from: 1, kind: "dropped_field".into(), field: "color".into(), count: dropped_colors });
+                notes.push(MigrationNote {
+                    from: 1,
+                    kind: "dropped_field".into(),
+                    field: "color".into(),
+                    count: dropped_colors,
+                });
             }
-            Ok((serde_json::json!({ "kind": KIND, "schema_version": 2, "stops": next }), notes))
+            Ok((
+                serde_json::json!({ "kind": KIND, "schema_version": 2, "stops": next }),
+                notes,
+            ))
         }
-        n => Err(format!("no watchlist step from v{n} (this build reads up to v{SCHEMA_VERSION})")),
+        n => Err(format!(
+            "no watchlist step from v{n} (this build reads up to v{SCHEMA_VERSION})"
+        )),
     }
 }
 
@@ -148,10 +183,14 @@ pub fn migrate_step(doc: Value, from: u32) -> Result<(Value, Vec<MigrationNote>)
 pub fn migrate_to(doc: Value, to: u32) -> Result<(Value, Vec<MigrationNote>), String> {
     let from = schema_version_of(&doc)?;
     if to > SCHEMA_VERSION {
-        return Err(format!("watchlist v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"));
+        return Err(format!(
+            "watchlist v{to} is newer than this build (it reads up to v{SCHEMA_VERSION})"
+        ));
     }
     if from >= to {
-        return Err(format!("watchlist v{from} is not older than v{to}: nothing to migrate"));
+        return Err(format!(
+            "watchlist v{from} is not older than v{to}: nothing to migrate"
+        ));
     }
     let mut doc = doc;
     let mut notes = Vec::new();

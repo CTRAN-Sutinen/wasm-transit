@@ -8,10 +8,13 @@
 //!    `depart_secs <= leave_secs <= arrival_secs`.
 //! 4. `leave == transit_dispatch::wait(leave_secs, depart_secs)`.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
-use transit_router::{earliest_arrival_between, latest_departure_between, End, Itinerary, Leg, Place, PlaceWalk, RouterNetwork};
+use transit_date::Date;
+use transit_router::{
+    earliest_arrival_between, latest_departure_between, End, Itinerary, Leg, Place, PlaceWalk,
+    RouterNetwork,
+};
 
 #[path = "prop_support.rs"]
 mod support;
@@ -36,16 +39,28 @@ fn end(n_stops: usize, id: &'static str) -> impl Strategy<Value = End> {
         vec((0..n_stops, 0u32..600), 1..=3).prop_map(move |walks| End::Place(Place {
             id: id.into(),
             name: id.into(),
-            walks: walks.into_iter().map(|(s, secs)| PlaceWalk { stop_id: format!("s{s}"), walk_secs: secs, path: Vec::new() }).collect(),
+            walks: walks
+                .into_iter()
+                .map(|(s, secs)| PlaceWalk {
+                    stop_id: format!("s{s}"),
+                    walk_secs: secs,
+                    path: Vec::new()
+                })
+                .collect(),
         })),
     ]
 }
 
 fn check_door_to_door(it: &Itinerary) {
-    let first_ride = it.legs.iter().position(|l| matches!(l, Leg::Transit { .. }));
+    let first_ride = it
+        .legs
+        .iter()
+        .position(|l| matches!(l, Leg::Transit { .. }));
     let expected_leave = match first_ride {
         Some(i) => {
-            let Leg::Transit { board_secs, .. } = &it.legs[i] else { unreachable!() };
+            let Leg::Transit { board_secs, .. } = &it.legs[i] else {
+                unreachable!()
+            };
             let walked: u32 = it.legs[..i]
                 .iter()
                 .map(|l| match l {
@@ -57,9 +72,20 @@ fn check_door_to_door(it: &Itinerary) {
         }
         None => it.depart_secs,
     };
-    assert_eq!(it.leave_secs, expected_leave, "leave is the first boarding minus the walk before it: {it:?}");
-    assert_eq!(it.duration_secs, it.arrival_secs - it.leave_secs, "duration is arrival minus leave: {it:?}");
-    assert_eq!(it.leave, transit_dispatch::wait(it.leave_secs, it.depart_secs), "leave in is the board's wait rule");
+    assert_eq!(
+        it.leave_secs, expected_leave,
+        "leave is the first boarding minus the walk before it: {it:?}"
+    );
+    assert_eq!(
+        it.duration_secs,
+        it.arrival_secs - it.leave_secs,
+        "duration is arrival minus leave: {it:?}"
+    );
+    assert_eq!(
+        it.leave,
+        transit_dispatch::wait(it.leave_secs, it.depart_secs),
+        "leave in is the board's wait rule"
+    );
 }
 
 proptest! {
@@ -114,15 +140,29 @@ proptest! {
 
 #[test]
 fn a_walk_then_a_ride_leaves_at_the_walk_before_the_boarding() {
-    let zip = build_zip_spaced(2, 0.003, &[TripSpec { stops: vec![0, 1], start: 29_400, step: 1_200 }]);
+    let zip = build_zip_spaced(
+        2,
+        0.003,
+        &[TripSpec {
+            stops: vec![0, 1],
+            start: 29_400,
+            step: 1_200,
+        }],
+    );
     let (network, day) = model_day(&zip, DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
     let home = End::Place(Place {
         id: "home".into(),
         name: "Home".into(),
-        walks: vec![PlaceWalk { stop_id: "s0".into(), walk_secs: 300, path: Vec::new() }],
+        walks: vec![PlaceWalk {
+            stop_id: "s0".into(),
+            walk_secs: 300,
+            path: Vec::new(),
+        }],
     });
-    let it = earliest_arrival_between(&net, &home, &End::Stop("s1".into()), None, 28_800, 2).unwrap().unwrap();
+    let it = earliest_arrival_between(&net, &home, &End::Stop("s1".into()), None, 28_800, 2)
+        .unwrap()
+        .unwrap();
     assert_eq!(it.leave_secs, 29_100);
     assert_eq!(it.duration_secs, 1_500);
     assert_eq!(it.leave, transit_dispatch::Wait::Minutes { minutes: 5 });

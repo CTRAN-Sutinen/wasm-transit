@@ -1,33 +1,66 @@
+use serde::Serialize;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS, schemars::JsonSchema))]
 #[cfg_attr(feature = "bindings", ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkError {
-    UnknownParentStop { stop: String, parent: String },
+    UnknownParentStop {
+        stop: String,
+        parent: String,
+    },
 
-    UnknownStop { pattern: String, stop: String },
+    UnknownStop {
+        pattern: String,
+        stop: String,
+    },
 
-    UnknownRoute { pattern: String, route: String },
+    UnknownRoute {
+        pattern: String,
+        route: String,
+    },
 
-    UnknownDirection { pattern: String, route: String, direction: String },
+    UnknownDirection {
+        pattern: String,
+        route: String,
+        direction: String,
+    },
 
-    UnknownAlignment { pattern: String, alignment: String },
+    UnknownAlignment {
+        pattern: String,
+        alignment: String,
+    },
 
-    UnknownPattern { pattern_trips: String, pattern: String },
+    UnknownPattern {
+        pattern_trips: String,
+        pattern: String,
+    },
 
-    UnknownServiceType { pattern_trips: String, service_type: String },
+    UnknownServiceType {
+        pattern_trips: String,
+        service_type: String,
+    },
 
-    UnknownBlockTrip { block: String, trip: String },
+    UnknownBlockTrip {
+        block: String,
+        trip: String,
+    },
 
-    UnknownLayoverStop { block: String, stop: String },
+    UnknownLayoverStop {
+        block: String,
+        stop: String,
+    },
 
-    PatternTooShort { pattern: String },
+    PatternTooShort {
+        pattern: String,
+    },
 
-    EmptyTimingProfile { pattern: String, profile: usize },
+    EmptyTimingProfile {
+        pattern: String,
+        profile: usize,
+    },
 
     TimepointCountMismatch {
         pattern: String,
@@ -36,43 +69,93 @@ pub enum NetworkError {
         got: usize,
     },
 
-    FirstTimepointNotZero { pattern: String, profile: usize },
+    FirstTimepointNotZero {
+        pattern: String,
+        profile: usize,
+    },
 
-    NonMonotonicTimes { pattern: String, profile: usize },
+    NonMonotonicTimes {
+        pattern: String,
+        profile: usize,
+    },
 
-    OverlappingTimingProfiles { pattern: String },
+    OverlappingTimingProfiles {
+        pattern: String,
+    },
 
-    DecreasingDistances { pattern: String },
+    DecreasingDistances {
+        pattern: String,
+    },
 
-    EmptyPatternTrips { pattern_trips: String },
+    EmptyPatternTrips {
+        pattern_trips: String,
+    },
 
-    DuplicateTripId { trip: String, a: String, b: String },
+    DuplicateTripId {
+        trip: String,
+        a: String,
+        b: String,
+    },
 
-    TripTimesMismatch { trip: String, expected: usize, got: usize },
+    TripTimesMismatch {
+        trip: String,
+        expected: usize,
+        got: usize,
+    },
 
-    TripEndpointUnscheduled { trip: String },
+    TripEndpointUnscheduled {
+        trip: String,
+    },
 
-    TimepointUnscheduled { trip: String, index: usize },
+    TimepointUnscheduled {
+        trip: String,
+        index: usize,
+    },
 
-    FirstOffsetNotZero { trip: String },
+    FirstOffsetNotZero {
+        trip: String,
+    },
 
-    TripTimesBackwards { trip: String },
+    TripTimesBackwards {
+        trip: String,
+    },
 
-    ZeroHeadway { trip: String, band: usize },
+    ZeroHeadway {
+        trip: String,
+        band: usize,
+    },
 
-    EmptyHeadwayBand { trip: String, band: usize },
+    EmptyHeadwayBand {
+        trip: String,
+        band: usize,
+    },
 
-    OverlappingHeadwayBands { trip: String },
+    OverlappingHeadwayBands {
+        trip: String,
+    },
 
-    BadDateRange { service_type: String, index: usize },
+    BadDateRange {
+        service_type: String,
+        index: usize,
+    },
 
-    TransferPointWithoutConnections { stop: String },
+    TransferPointWithoutConnections {
+        stop: String,
+    },
 
-    EmptyBlock { block: String },
+    EmptyBlock {
+        block: String,
+    },
 
-    BlockOutOfOrder { block: String, trip: String },
+    BlockOutOfOrder {
+        block: String,
+        trip: String,
+    },
 
-    LayoverAfterLastTrip { block: String, after_trip: usize },
+    LayoverAfterLastTrip {
+        block: String,
+        after_trip: usize,
+    },
 
     /// One vehicle cannot run the block, because an instance arrives after
     /// the next instance departs on a day that both run.
@@ -95,9 +178,15 @@ pub enum NetworkError {
         required_by: RecoverySource,
     },
 
-    DuplicateBlockTrip { trip: String, a: String, b: String },
+    DuplicateBlockTrip {
+        trip: String,
+        a: String,
+        b: String,
+    },
 
-    UnknownPatternTrips { pattern_trips: String },
+    UnknownPatternTrips {
+        pattern_trips: String,
+    },
 }
 
 impl std::fmt::Display for NetworkError {
@@ -155,7 +244,10 @@ pub enum NetworkWarning {
     UnassignedTrips { pattern_trips: String, trips: u32 },
     /// The calendar ranges that a fork inherited end before the pick starts.
     /// `plan_name` is the name, not the generated id.
-    NoServiceInPlanPeriod { plan_name: String, effective_from: String },
+    NoServiceInPlanPeriod {
+        plan_name: String,
+        effective_from: String,
+    },
     /// The stops document records the status. `status` is none when
     /// the stop is not there yet. A suspension counts only when it covers the
     /// whole period of the pick or has no end.

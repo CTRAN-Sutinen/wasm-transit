@@ -7,16 +7,16 @@ use transit_network::fares::{
 };
 use transit_network::operators::{Attribution, AttributionScope, Operator, Publisher, Translation};
 use transit_network::places::{
-    Level, Pathway, PathwayMode, StationPart, StationPartKind, StopInfo, StopKind, TransferEnd, TransferKind,
-    TransferRule,
+    Level, Pathway, PathwayMode, StationPart, StationPartKind, StopInfo, StopKind, TransferEnd,
+    TransferKind, TransferRule,
 };
 use transit_network::{Coord, Network, Stop};
 
 use crate::feed::{
-    AgencyRow, AreaRow, AttributionRow, BookingRuleRow, FareAttributeRow, FareLegJoinRuleRow, FareLegRuleRow,
-    FareMediaRow, FareProductRow, FareRuleRow, FareTransferRuleRow, FeedInfoRow, LevelRow, LocationGroupRow,
-    LocationGroupStopRow, NetworkRow, PathwayRow, RiderCategoryRow, StopAreaRow, StopRow, TimeframeRow,
-    TransferRow, TranslationRow,
+    AgencyRow, AreaRow, AttributionRow, BookingRuleRow, FareAttributeRow, FareLegJoinRuleRow,
+    FareLegRuleRow, FareMediaRow, FareProductRow, FareRuleRow, FareTransferRuleRow, FeedInfoRow,
+    LevelRow, LocationGroupRow, LocationGroupStopRow, NetworkRow, PathwayRow, RiderCategoryRow,
+    StopAreaRow, StopRow, TimeframeRow, TransferRow, TranslationRow,
 };
 use crate::values::*;
 use crate::{Boundary, Feed};
@@ -99,7 +99,10 @@ pub(crate) fn import_operators(feed: &Feed, net: &mut Network, boundary: &mut Bo
 
 pub(crate) fn export_operators(net: &Network, boundary: &Boundary, feed: &mut Feed) {
     if net.operators.is_empty() {
-        feed.agency.push(AgencyRow { agency_name: Some(net.name.clone()), ..Default::default() });
+        feed.agency.push(AgencyRow {
+            agency_name: Some(net.name.clone()),
+            ..Default::default()
+        });
     }
     for (id, o) in &net.operators {
         feed.agency.push(AgencyRow {
@@ -128,7 +131,9 @@ pub(crate) fn export_operators(net: &Network, boundary: &Boundary, feed: &mut Fe
         });
     }
     for a in &net.attributions {
-        let scoped = |want: fn(&AttributionScope) -> Option<&String>| a.scope.as_ref().and_then(want).cloned();
+        let scoped = |want: fn(&AttributionScope) -> Option<&String>| {
+            a.scope.as_ref().and_then(want).cloned()
+        };
         feed.attributions.push(AttributionRow {
             attribution_id: a.id.clone(),
             agency_id: scoped(|s| match s {
@@ -232,7 +237,11 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 lon: at.lon,
                 parent: row.parent_station.clone(),
                 transfer: false,
-                kind: if int::<u8>(&row.location_type) == Some(1) { StopKind::Station } else { StopKind::Stop },
+                kind: if int::<u8>(&row.location_type) == Some(1) {
+                    StopKind::Station
+                } else {
+                    StopKind::Stop
+                },
                 info: stop_info(row),
                 extra: Default::default(),
             },
@@ -242,7 +251,11 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
         let Some(id) = &row.level_id else { continue };
         net.levels.insert(
             id.clone(),
-            Level { index: parse_f64(&row.level_index).unwrap_or(0.0), name: text(&row.level_name), extra: Default::default() },
+            Level {
+                index: parse_f64(&row.level_index).unwrap_or(0.0),
+                name: text(&row.level_name),
+                extra: Default::default(),
+            },
         );
     }
     for row in &feed.pathways {
@@ -284,7 +297,12 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 trip: text(&row.from_trip_id),
                 extra: Default::default(),
             },
-            to: TransferEnd { stop: text(&row.to_stop_id), route: text(&row.to_route_id), trip: text(&row.to_trip_id), extra: Default::default() },
+            to: TransferEnd {
+                stop: text(&row.to_stop_id),
+                route: text(&row.to_route_id),
+                trip: text(&row.to_trip_id),
+                extra: Default::default(),
+            },
             kind: match int::<u8>(&row.transfer_type) {
                 Some(1) => TransferKind::Timed,
                 Some(2) => TransferKind::MinimumTime,
@@ -301,7 +319,11 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
 
 pub(crate) fn export_places(net: &Network, feed: &mut Feed) {
     // An authored network may group stops without saying so.
-    let parents: std::collections::BTreeSet<&str> = net.stops.values().filter_map(|st| st.parent.as_deref()).collect();
+    let parents: std::collections::BTreeSet<&str> = net
+        .stops
+        .values()
+        .filter_map(|st| st.parent.as_deref())
+        .collect();
     for (id, st) in &net.stops {
         let station = st.kind == StopKind::Station || parents.contains(id.as_str());
         let mut row = StopRow {
@@ -424,24 +446,45 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
         fares.areas.entry(id.clone()).or_default().name = text(&row.area_name);
     }
     for row in &feed.stop_areas {
-        let (Some(area), Some(stop)) = (&row.area_id, &row.stop_id) else { continue };
-        fares.areas.entry(area.clone()).or_default().stops.push(stop.clone());
+        let (Some(area), Some(stop)) = (&row.area_id, &row.stop_id) else {
+            continue;
+        };
+        fares
+            .areas
+            .entry(area.clone())
+            .or_default()
+            .stops
+            .push(stop.clone());
     }
     for row in &feed.networks {
         let Some(id) = &row.network_id else { continue };
-        fares.networks.insert(id.clone(), FareNetwork { name: text(&row.network_name), extra: Default::default() });
+        fares.networks.insert(
+            id.clone(),
+            FareNetwork {
+                name: text(&row.network_name),
+                extra: Default::default(),
+            },
+        );
     }
     for row in &feed.timeframes {
-        let Some(id) = &row.timeframe_group_id else { continue };
-        fares.timeframes.entry(id.clone()).or_default().push(Timeframe {
-            service_type: row.service_id.clone().unwrap_or_default(),
-            start_secs: time(&row.start_time),
-            end_secs: time(&row.end_time),
-            extra: Default::default(),
-        });
+        let Some(id) = &row.timeframe_group_id else {
+            continue;
+        };
+        fares
+            .timeframes
+            .entry(id.clone())
+            .or_default()
+            .push(Timeframe {
+                service_type: row.service_id.clone().unwrap_or_default(),
+                start_secs: time(&row.start_time),
+                end_secs: time(&row.end_time),
+                extra: Default::default(),
+            });
     }
     for row in &feed.rider_categories {
-        let Some(id) = &row.rider_category_id else { continue };
+        let Some(id) = &row.rider_category_id else {
+            continue;
+        };
         fares.rider_categories.insert(
             id.clone(),
             RiderCategory {
@@ -453,7 +496,9 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
         );
     }
     for row in &feed.fare_media {
-        let Some(id) = &row.fare_media_id else { continue };
+        let Some(id) = &row.fare_media_id else {
+            continue;
+        };
         let kind = match int::<u8>(&row.fare_media_type) {
             Some(1) => FareMediaKind::PaperTicket,
             Some(2) => FareMediaKind::TransitCard,
@@ -461,18 +506,31 @@ pub(crate) fn import_fares(feed: &Feed, net: &mut Network) {
             Some(4) => FareMediaKind::MobileApp,
             _ => FareMediaKind::None,
         };
-        fares.media.insert(id.clone(), FareMedia { name: text(&row.fare_media_name), kind, extra: Default::default() });
+        fares.media.insert(
+            id.clone(),
+            FareMedia {
+                name: text(&row.fare_media_name),
+                kind,
+                extra: Default::default(),
+            },
+        );
     }
     for row in &feed.fare_products {
-        let Some(id) = &row.fare_product_id else { continue };
-        fares.products.entry(id.clone()).or_default().push(FareOffer {
-            name: text(&row.fare_product_name),
-            rider_category: text(&row.rider_category_id),
-            media: text(&row.fare_media_id),
-            amount: parse_f64(&row.amount).unwrap_or(0.0),
-            currency: row.currency.clone().unwrap_or_default(),
-            extra: Default::default(),
-        });
+        let Some(id) = &row.fare_product_id else {
+            continue;
+        };
+        fares
+            .products
+            .entry(id.clone())
+            .or_default()
+            .push(FareOffer {
+                name: text(&row.fare_product_name),
+                rider_category: text(&row.rider_category_id),
+                media: text(&row.fare_media_id),
+                amount: parse_f64(&row.amount).unwrap_or(0.0),
+                currency: row.currency.clone().unwrap_or_default(),
+                extra: Default::default(),
+            });
     }
     fares.leg_rules = feed
         .fare_leg_rules
@@ -549,13 +607,22 @@ pub(crate) fn export_fares(net: &Network, feed: &mut Feed) {
         });
     }
     for (id, area) in &fares.areas {
-        feed.areas.push(AreaRow { area_id: Some(id.clone()), area_name: area.name.clone() });
+        feed.areas.push(AreaRow {
+            area_id: Some(id.clone()),
+            area_name: area.name.clone(),
+        });
         for stop in &area.stops {
-            feed.stop_areas.push(StopAreaRow { area_id: Some(id.clone()), stop_id: Some(stop.clone()) });
+            feed.stop_areas.push(StopAreaRow {
+                area_id: Some(id.clone()),
+                stop_id: Some(stop.clone()),
+            });
         }
     }
     for (id, n) in &fares.networks {
-        feed.networks.push(NetworkRow { network_id: Some(id.clone()), network_name: n.name.clone() });
+        feed.networks.push(NetworkRow {
+            network_id: Some(id.clone()),
+            network_name: n.name.clone(),
+        });
     }
     for (id, spans) in &fares.timeframes {
         for t in spans {
@@ -652,16 +719,27 @@ pub(crate) fn export_fares(net: &Network, feed: &mut Feed) {
 pub(crate) fn import_demand_catalog(feed: &Feed, net: &mut Network) {
     let demand = &mut net.demand;
     for row in &feed.location_groups {
-        let Some(id) = &row.location_group_id else { continue };
+        let Some(id) = &row.location_group_id else {
+            continue;
+        };
         demand.location_groups.entry(id.clone()).or_default().name = text(&row.location_group_name);
     }
     for row in &feed.location_group_stops {
-        let (Some(group), Some(stop)) = (&row.location_group_id, &row.stop_id) else { continue };
-        demand.location_groups.entry(group.clone()).or_insert_with(LocationGroup::default).stops.push(stop.clone());
+        let (Some(group), Some(stop)) = (&row.location_group_id, &row.stop_id) else {
+            continue;
+        };
+        demand
+            .location_groups
+            .entry(group.clone())
+            .or_insert_with(LocationGroup::default)
+            .stops
+            .push(stop.clone());
     }
     demand.zones = feed.locations.clone();
     for row in &feed.booking_rules {
-        let Some(id) = &row.booking_rule_id else { continue };
+        let Some(id) = &row.booking_rule_id else {
+            continue;
+        };
         demand.booking_rules.insert(
             id.clone(),
             BookingRule {
@@ -692,10 +770,15 @@ pub(crate) fn import_demand_catalog(feed: &Feed, net: &mut Network) {
 pub(crate) fn export_demand_catalog(net: &Network, feed: &mut Feed) {
     let demand = &net.demand;
     for (id, g) in &demand.location_groups {
-        feed.location_groups.push(LocationGroupRow { location_group_id: Some(id.clone()), location_group_name: g.name.clone() });
+        feed.location_groups.push(LocationGroupRow {
+            location_group_id: Some(id.clone()),
+            location_group_name: g.name.clone(),
+        });
         for stop in &g.stops {
-            feed.location_group_stops
-                .push(LocationGroupStopRow { location_group_id: Some(id.clone()), stop_id: Some(stop.clone()) });
+            feed.location_group_stops.push(LocationGroupStopRow {
+                location_group_id: Some(id.clone()),
+                stop_id: Some(stop.clone()),
+            });
         }
     }
     feed.locations = demand.zones.clone();
@@ -727,7 +810,10 @@ pub(crate) fn export_demand_catalog(net: &Network, feed: &mut Feed) {
 
 /// The spec forbids both routes.txt network_id and route_networks.txt. The
 /// boundary records which one the feed used.
-pub(crate) fn route_fare_networks(feed: &Feed, boundary: &mut Boundary) -> BTreeMap<String, String> {
+pub(crate) fn route_fare_networks(
+    feed: &Feed,
+    boundary: &mut Boundary,
+) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for row in &feed.routes {
         if let (Some(route), Some(network)) = (&row.route_id, &row.network_id) {

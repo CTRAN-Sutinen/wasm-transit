@@ -1,4 +1,3 @@
-
 fn main() {
     let protoc = protoc_bin_vendored::protoc_bin_path().expect("vendored protoc");
     // A build script runs on one thread, so setting PROTOC here is safe.

@@ -35,7 +35,11 @@ pub fn parse_gtfs_date(text: &str) -> Option<Date> {
     if t.len() != 8 || !t.bytes().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    Date::from_ymd_opt(t[0..4].parse().ok()?, t[4..6].parse().ok()?, t[6..8].parse().ok()?)
+    Date::from_ymd_opt(
+        t[0..4].parse().ok()?,
+        t[4..6].parse().ok()?,
+        t[6..8].parse().ok()?,
+    )
 }
 
 pub(crate) fn format_date(date: Date) -> String {
@@ -43,7 +47,9 @@ pub(crate) fn format_date(date: Date) -> String {
 }
 
 pub(crate) fn parse_f64(text: &Option<String>) -> Option<f64> {
-    text.as_deref().and_then(|t| t.trim().parse::<f64>().ok()).filter(|v| v.is_finite())
+    text.as_deref()
+        .and_then(|t| t.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite())
 }
 
 pub(crate) fn float_cell(v: Option<f64>) -> Option<String> {

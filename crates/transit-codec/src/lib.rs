@@ -21,29 +21,31 @@ pub mod feed;
 pub use feed::{base64_encode, Feed, FeedError, FeedInfo, FeedSummary};
 pub use values::parse_gtfs_date;
 mod extras;
-mod values;
 pub mod load;
+mod values;
 
 use values::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::{Days, Date};
+use transit_date::{Date, Days};
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-use feed::{CalendarDateRow, CalendarRow, FrequencyRow, RouteNetworkRow, RouteRow, ShapeRow, StopTimeRow, TripRow};
+use feed::{
+    CalendarDateRow, CalendarRow, FrequencyRow, RouteNetworkRow, RouteRow, ShapeRow, StopTimeRow,
+    TripRow,
+};
 use transit_network::demand::{DemandTrip, Visit, VisitPlace};
 use transit_network::{
-    StopRule, Alignment, AlignmentPoint, Block, CalendarException, CalendarRule, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
-    Network, Pattern, PatternStop, PatternTrips, ServiceType, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
+    Alignment, AlignmentPoint, Block, CalendarException, CalendarRule, DateRange, DayState,
+    Departs, Direction, HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips,
+    ServiceType, StopOffset, StopRule, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
-transit_version::kind_tag!(
-    BoundaryKind = "boundary"
-);
+transit_version::kind_tag!(BoundaryKind = "boundary");
 
 impl transit_version::Versioned for Boundary {
     const KIND: &'static str = "boundary";
@@ -67,16 +69,25 @@ pub struct Boundary {
     pub schema_version: transit_version::Version<1>,
     /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")
+    )]
     pub stop_sequences: BTreeMap<String, Vec<u32>>,
     /// The first arrival of a frequency trip's rows. The spec reads those
     /// rows as offsets only.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, u32>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, u32>>")
+    )]
     pub frequency_bases: BTreeMap<String, u32>,
     /// Kept only where the numbers are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")
+    )]
     pub shape_sequences: BTreeMap<String, Vec<u32>>,
     /// The id given to the one agency that the feed names without an
     /// agency_id.
@@ -89,7 +100,10 @@ pub struct Boundary {
     /// The export writes these services back as dates, under the
     /// calendar.txt row they had (zero flags), if any.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "bindings", ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>"))]
+    #[cfg_attr(
+        feature = "bindings",
+        ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>")
+    )]
     pub dated_calendars: BTreeMap<String, DatedCalendar>,
 }
 
@@ -114,7 +128,6 @@ pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
 /// weekdays, a removed date for each one it skips, and an added date for each
 /// other date. None when no weekday qualifies, so the service stays dated.
 pub fn read_weekly_rule(dates: &BTreeSet<Date>) -> Option<CalendarRule> {
-    
     let (first, last) = (*dates.first()?, *dates.last()?);
     let index = |d: Date| d.weekday().num_days_from_monday() as usize;
     let (mut occurrences, mut ran) = ([0u32; 7], [0u32; 7]);
@@ -125,25 +138,51 @@ pub fn read_weekly_rule(dates: &BTreeSet<Date>) -> Option<CalendarRule> {
         d += Days::new(1);
     }
     let (num, den) = WEEKLY_MIN_SHARE;
-    let on: [bool; 7] = std::array::from_fn(|w| ran[w] >= WEEKLY_MIN_DAYS && den * ran[w] >= num * occurrences[w]);
+    let on: [bool; 7] =
+        std::array::from_fn(|w| ran[w] >= WEEKLY_MIN_DAYS && den * ran[w] >= num * occurrences[w]);
     if !on.iter().any(|&b| b) {
         return None;
     }
     let flagged: Vec<Date> = dates.iter().copied().filter(|&d| on[index(d)]).collect();
-    let range = DateRange { start: flagged[0], end: *flagged.last().expect("a weekday qualified"), extra: Default::default() };
+    let range = DateRange {
+        start: flagged[0],
+        end: *flagged.last().expect("a weekday qualified"),
+        extra: Default::default(),
+    };
     let mut exceptions = Vec::new();
     let (mut d, end) = (first.min(range.start), last.max(range.end));
     while d <= end {
         let by_rule = on[index(d)] && range.start <= d && d <= range.end;
         match (by_rule, dates.contains(&d)) {
-            (true, false) => exceptions.push(CalendarException { date: d, state: DayState::Removed, extra: Default::default() }),
-            (false, true) => exceptions.push(CalendarException { date: d, state: DayState::Added, extra: Default::default() }),
+            (true, false) => exceptions.push(CalendarException {
+                date: d,
+                state: DayState::Removed,
+                extra: Default::default(),
+            }),
+            (false, true) => exceptions.push(CalendarException {
+                date: d,
+                state: DayState::Added,
+                extra: Default::default(),
+            }),
             _ => {}
         }
         d += Days::new(1);
     }
     let [mon, tue, wed, thu, fri, sat, sun] = on;
-    Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions, extra: Default::default() })
+    Some(CalendarRule {
+        days: WeekdaySet {
+            mon,
+            tue,
+            wed,
+            thu,
+            fri,
+            sat,
+            sun,
+        },
+        ranges: vec![range],
+        exceptions,
+        extra: Default::default(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -158,8 +197,12 @@ pub enum ImportNote {
     },
     /// A transfers.txt row marks a stop whose walking group fewer than two
     /// routes serve. The flag is reported, not applied.
-    UnusableTransferPoint { stop: String },
-    UnknownShape { shape: String },
+    UnusableTransferPoint {
+        stop: String,
+    },
+    UnknownShape {
+        shape: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -286,8 +329,10 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             text_color: text(&row.route_text_color),
             sort_order: int(&row.route_sort_order),
             // Empty and 1 both mean no continuous stopping.
-            continuous_pickup: stop_rule(&row.continuous_pickup).filter(|r| *r != StopRule::NotAvailable),
-            continuous_drop_off: stop_rule(&row.continuous_drop_off).filter(|r| *r != StopRule::NotAvailable),
+            continuous_pickup: stop_rule(&row.continuous_pickup)
+                .filter(|r| *r != StopRule::NotAvailable),
+            continuous_drop_off: stop_rule(&row.continuous_drop_off)
+                .filter(|r| *r != StopRule::NotAvailable),
             operator: text(&row.agency_id),
             fare_network: fare_networks.get(id).cloned(),
             contactless: contactless(&row.cemv_support),
@@ -296,14 +341,27 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             extra: Default::default(),
         };
         let label = route.label();
-        route_names.insert(id, if label.is_empty() { id.clone() } else { label.to_string() });
+        route_names.insert(
+            id,
+            if label.is_empty() {
+                id.clone()
+            } else {
+                label.to_string()
+            },
+        );
         net.routes.insert(id.clone(), route);
     }
 
     let mut rows_of: BTreeMap<&str, Vec<(u32, &StopTimeRow)>> = BTreeMap::new();
     for row in &feed.stop_times {
-        let Some(trip) = row.trip_id.as_deref() else { continue };
-        let seq = row.stop_sequence.as_deref().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        let Some(trip) = row.trip_id.as_deref() else {
+            continue;
+        };
+        let seq = row
+            .stop_sequence
+            .as_deref()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
         rows_of.entry(trip).or_default().push((seq, row));
     }
     for rows in rows_of.values_mut() {
@@ -311,16 +369,25 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     }
     let mut bands_of: BTreeMap<&str, (Vec<HeadwayBand>, bool)> = BTreeMap::new();
     for row in &feed.frequencies {
-        let Some(trip) = row.trip_id.as_deref() else { continue };
+        let Some(trip) = row.trip_id.as_deref() else {
+            continue;
+        };
         let (Some(start), Some(end), Some(headway)) = (
             row.start_time.as_deref().and_then(parse_time),
             row.end_time.as_deref().and_then(parse_time),
-            row.headway_secs.as_deref().and_then(|h| h.trim().parse().ok()),
+            row.headway_secs
+                .as_deref()
+                .and_then(|h| h.trim().parse().ok()),
         ) else {
             continue;
         };
         let entry = bands_of.entry(trip).or_default();
-        entry.0.push(HeadwayBand { start_secs: start, end_secs: end, headway_secs: headway, extra: Default::default() });
+        entry.0.push(HeadwayBand {
+            start_secs: start,
+            end_secs: end,
+            headway_secs: headway,
+            extra: Default::default(),
+        });
         entry.1 |= flag(&row.exact_times);
     }
 
@@ -334,7 +401,11 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let rows = rows_of.get(id).map(Vec::as_slice).unwrap_or(&[]);
         let sequences: Vec<u32> = rows.iter().map(|(seq, _)| *seq).collect();
         if rows.iter().any(|(_, r)| is_flexible(r)) {
-            if sequences.iter().enumerate().any(|(i, s)| *s != i as u32 + 1) {
+            if sequences
+                .iter()
+                .enumerate()
+                .any(|(i, s)| *s != i as u32 + 1)
+            {
                 boundary.stop_sequences.insert(id.to_string(), sequences);
             }
             demand_services.insert(row.service_id.clone().unwrap_or_default());
@@ -361,7 +432,10 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             single_stop += 1;
             continue;
         }
-        let stops: Vec<String> = rows.iter().map(|(_, r)| r.stop_id.clone().unwrap_or_default()).collect();
+        let stops: Vec<String> = rows
+            .iter()
+            .map(|(_, r)| r.stop_id.clone().unwrap_or_default())
+            .collect();
         if stops.iter().any(|s| !net.stops.contains_key(s)) {
             missing_coords += 1;
             continue;
@@ -369,7 +443,10 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let times: Vec<(Option<u32>, Option<u32>)> = rows
             .iter()
             .map(|(_, r)| {
-                (r.arrival_time.as_deref().and_then(parse_time), r.departure_time.as_deref().and_then(parse_time))
+                (
+                    r.arrival_time.as_deref().and_then(parse_time),
+                    r.departure_time.as_deref().and_then(parse_time),
+                )
             })
             .collect();
         let Some(base) = times[0].0.or(times[0].1) else {
@@ -386,18 +463,27 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let flags: Vec<bool> = rows
             .iter()
             .zip(&times)
-            .map(|((_, r), (a, d))| a.is_some() && d.is_some() && r.timepoint.as_deref().map(str::trim) != Some("0"))
+            .map(|((_, r), (a, d))| {
+                a.is_some() && d.is_some() && r.timepoint.as_deref().map(str::trim) != Some("0")
+            })
             .collect();
         let departs = match bands_of.get(id) {
             Some((bands, exact)) => {
                 let mut bands = bands.clone();
                 bands.sort_by_key(|b| (b.start_secs, b.end_secs));
                 boundary.frequency_bases.insert(id.to_string(), base);
-                Departs::Every { bands, exact: *exact }
+                Departs::Every {
+                    bands,
+                    exact: *exact,
+                }
             }
             None => Departs::At { start_secs: base },
         };
-        if sequences.iter().enumerate().any(|(i, s)| *s != i as u32 + 1) {
+        if sequences
+            .iter()
+            .enumerate()
+            .any(|(i, s)| *s != i as u32 + 1)
+        {
             boundary.stop_sequences.insert(id.to_string(), sequences);
         }
         trips.push(Read {
@@ -410,41 +496,92 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             times: offsets,
             stops,
             flags,
-            distances: resolve_distances(&rows.iter().map(|(_, r)| parse_f64(&r.shape_dist_traveled)).collect::<Vec<_>>()),
+            distances: resolve_distances(
+                &rows
+                    .iter()
+                    .map(|(_, r)| parse_f64(&r.shape_dist_traveled))
+                    .collect::<Vec<_>>(),
+            ),
             attrs: rows.iter().map(|(_, r)| stop_attrs(r)).collect(),
         });
     }
-    trips.sort_by(|a, b| a.first_start().cmp(&b.first_start()).then_with(|| a.id.cmp(b.id)));
+    trips.sort_by(|a, b| {
+        a.first_start()
+            .cmp(&b.first_start())
+            .then_with(|| a.id.cmp(b.id))
+    });
 
-    type Key = (String, String, Vec<String>, Vec<bool>, Option<String>, Vec<StopAttrs>);
+    type Key = (
+        String,
+        String,
+        Vec<String>,
+        Vec<bool>,
+        Option<String>,
+        Vec<StopAttrs>,
+    );
     let mut clusters: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
     for (i, t) in trips.iter().enumerate() {
         let direction = t.row.direction_id.clone().unwrap_or_else(|| "n".into());
         clusters
-            .entry((t.route.to_string(), direction, t.stops.clone(), t.flags.clone(), t.row.shape_id.clone(), t.attrs.clone()))
+            .entry((
+                t.route.to_string(),
+                direction,
+                t.stops.clone(),
+                t.flags.clone(),
+                t.row.shape_id.clone(),
+                t.attrs.clone(),
+            ))
             .or_default()
             .push(i);
     }
-    let day_end = trips.iter().map(|t| t.first_start()).max().map_or(30 * 3600, |m| (m + 1).max(30 * 3600));
+    let day_end = trips
+        .iter()
+        .map(|t| t.first_start())
+        .max()
+        .map_or(30 * 3600, |m| (m + 1).max(30 * 3600));
     let mut pattern_of: Vec<String> = vec![String::new(); trips.len()];
     let mut index: BTreeMap<(String, String), usize> = BTreeMap::new();
     let stop_name = |id: &str| net.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
     let mut shapes: BTreeMap<&str, Vec<(u32, AlignmentPoint)>> = BTreeMap::new();
     for row in &feed.shapes {
-        let (Some(id), Some(lat), Some(lon)) = (row.shape_id.as_deref(), parse_f64(&row.shape_pt_lat), parse_f64(&row.shape_pt_lon))
-        else {
+        let (Some(id), Some(lat), Some(lon)) = (
+            row.shape_id.as_deref(),
+            parse_f64(&row.shape_pt_lat),
+            parse_f64(&row.shape_pt_lon),
+        ) else {
             continue;
         };
-        let seq = row.shape_pt_sequence.as_deref().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        shapes.entry(id).or_default().push((seq, AlignmentPoint { lat, lon, distance: parse_f64(&row.shape_dist_traveled) }));
+        let seq = row
+            .shape_pt_sequence
+            .as_deref()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        shapes.entry(id).or_default().push((
+            seq,
+            AlignmentPoint {
+                lat,
+                lon,
+                distance: parse_f64(&row.shape_dist_traveled),
+            },
+        ));
     }
     for (id, mut points) in shapes {
         points.sort_by_key(|(seq, _)| *seq);
         let sequences: Vec<u32> = points.iter().map(|(seq, _)| *seq).collect();
-        if !sequences.iter().enumerate().all(|(i, &s)| s == i as u32 + 1) {
+        if !sequences
+            .iter()
+            .enumerate()
+            .all(|(i, &s)| s == i as u32 + 1)
+        {
             boundary.shape_sequences.insert(id.to_string(), sequences);
         }
-        net.alignments.insert(id.to_string(), Alignment { points: points.into_iter().map(|(_, p)| p).collect(), extra: Default::default() });
+        net.alignments.insert(
+            id.to_string(),
+            Alignment {
+                points: points.into_iter().map(|(_, p)| p).collect(),
+                extra: Default::default(),
+            },
+        );
     }
     let mut unknown_shapes: BTreeSet<String> = BTreeSet::new();
     let mut patterns: Vec<(String, Pattern)> = Vec::new();
@@ -466,22 +603,31 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                     .filter(|(_, f)| **f)
                     .map(|(o, _)| o.arrival_secs.unwrap_or(0))
                     .collect(),
-                    extra: Default::default(),
+                extra: Default::default(),
             })
             .into_iter()
             .collect();
-        let route_name = route_names.get(route.as_str()).cloned().unwrap_or_else(|| route.clone());
+        let route_name = route_names
+            .get(route.as_str())
+            .cloned()
+            .unwrap_or_else(|| route.clone());
         patterns.push((
             pattern_id.clone(),
             Pattern {
                 route: route.clone(),
                 direction: (direction != "n").then(|| direction.clone()),
-                name: format!("{route_name} → {}", stop_name(stops.last().map_or("", String::as_str))),
+                name: format!(
+                    "{route_name} → {}",
+                    stop_name(stops.last().map_or("", String::as_str))
+                ),
                 alignment: shape.as_ref().and_then(|s| {
-                    net.alignments.contains_key(s).then(|| s.clone()).or_else(|| {
-                        unknown_shapes.insert(s.clone());
-                        None
-                    })
+                    net.alignments
+                        .contains_key(s)
+                        .then(|| s.clone())
+                        .or_else(|| {
+                            unknown_shapes.insert(s.clone());
+                            None
+                        })
                 }),
                 stops: stops
                     .iter()
@@ -516,7 +662,12 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let key = format!("{}:{}", t.service, pattern_of[i]);
         net.pattern_trips
             .entry(key)
-            .or_insert_with(|| PatternTrips { pattern: pattern_of[i].clone(), service_type: t.service.to_string(), trips: vec![], extra: Default::default() })
+            .or_insert_with(|| PatternTrips {
+                pattern: pattern_of[i].clone(),
+                service_type: t.service.to_string(),
+                trips: vec![],
+                extra: Default::default(),
+            })
             .trips
             .push(Trip {
                 id: t.id.to_string(),
@@ -541,7 +692,11 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         }
         let key = (route.clone(), direction.clone());
         let terminal = stop_name(stops.last().map_or("", String::as_str));
-        *terminals.entry(key.clone()).or_default().entry(terminal).or_default() += members.len();
+        *terminals
+            .entry(key.clone())
+            .or_default()
+            .entry(terminal)
+            .or_default() += members.len();
         let signs = headsigns.entry(key).or_default();
         for &i in members {
             if let Some(h) = trips[i].row.trip_headsign.as_deref() {
@@ -550,7 +705,10 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         }
     }
     let most = |counts: &BTreeMap<String, usize>| {
-        counts.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).map(|(k, _)| k.clone())
+        counts
+            .iter()
+            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+            .map(|(k, _)| k.clone())
     };
     for (key @ (route, direction), ends) in &terminals {
         let name = headsigns
@@ -558,7 +716,13 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             .and_then(&most)
             .unwrap_or_else(|| format!("To {}", most(ends).unwrap_or_default()));
         if let Some(r) = net.routes.get_mut(route) {
-            r.directions.insert(direction.clone(), Direction { name, extra: Default::default() });
+            r.directions.insert(
+                direction.clone(),
+                Direction {
+                    name,
+                    extra: Default::default(),
+                },
+            );
         }
     }
 
@@ -575,22 +739,44 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             sat: flag(&row.saturday),
             sun: flag(&row.sunday),
         };
-        if let (Some(start), Some(end)) =
-            (row.start_date.as_deref().and_then(parse_gtfs_date), row.end_date.as_deref().and_then(parse_gtfs_date))
-        {
-            rule.ranges.push(DateRange { start, end, extra: Default::default() });
+        if let (Some(start), Some(end)) = (
+            row.start_date.as_deref().and_then(parse_gtfs_date),
+            row.end_date.as_deref().and_then(parse_gtfs_date),
+        ) {
+            rule.ranges.push(DateRange {
+                start,
+                end,
+                extra: Default::default(),
+            });
         }
     }
     for row in &feed.calendar_dates {
-        let (Some(id), Some(date)) = (&row.service_id, row.date.as_deref().and_then(parse_gtfs_date)) else { continue };
+        let (Some(id), Some(date)) = (
+            &row.service_id,
+            row.date.as_deref().and_then(parse_gtfs_date),
+        ) else {
+            continue;
+        };
         let state = match row.exception_type.as_deref().map(str::trim) {
             Some("1") => DayState::Added,
             Some("2") => DayState::Removed,
             _ => continue,
         };
-        rules.entry(id.clone()).or_insert_with(empty_rule).exceptions.push(CalendarException { date, state, extra: Default::default() });
+        rules
+            .entry(id.clone())
+            .or_insert_with(empty_rule)
+            .exceptions
+            .push(CalendarException {
+                date,
+                state,
+                extra: Default::default(),
+            });
     }
-    for service in trips.iter().map(|t| t.service.to_string()).chain(demand_services) {
+    for service in trips
+        .iter()
+        .map(|t| t.service.to_string())
+        .chain(demand_services)
+    {
         rules.entry(service).or_insert_with(empty_rule);
     }
     for (id, mut rule) in rules {
@@ -606,12 +792,26 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                     .calendar
                     .iter()
                     .find(|r| r.service_id.as_deref() == Some(id.as_str()))
-                    .map(|r| (r.start_date.clone().unwrap_or_default(), r.end_date.clone().unwrap_or_default()));
-                boundary.dated_calendars.insert(id.clone(), DatedCalendar { row });
+                    .map(|r| {
+                        (
+                            r.start_date.clone().unwrap_or_default(),
+                            r.end_date.clone().unwrap_or_default(),
+                        )
+                    });
+                boundary
+                    .dated_calendars
+                    .insert(id.clone(), DatedCalendar { row });
                 rule = weekly;
             }
         }
-        net.service_types.insert(id.clone(), ServiceType { name: id, rule, extra: Default::default() });
+        net.service_types.insert(
+            id.clone(),
+            ServiceType {
+                name: id,
+                rule,
+                extra: Default::default(),
+            },
+        );
     }
 
     // GTFS has no layover. The observed gap between consecutive one-start
@@ -626,17 +826,34 @@ pub fn import(feed: &Feed) -> ImportOutcome {
         let mut layovers = Vec::new();
         for (k, pair) in members.windows(2).enumerate() {
             let (a, b) = (&trips[pair[0]], &trips[pair[1]]);
-            let (Departs::At { start_secs: from }, Departs::At { start_secs: to }) = (&a.departs, &b.departs) else {
+            let (Departs::At { start_secs: from }, Departs::At { start_secs: to }) =
+                (&a.departs, &b.departs)
+            else {
                 continue;
             };
             let end = from + a.times.last().and_then(|o| o.arrival_secs).unwrap_or(0);
             if a.service == b.service && end <= *to {
-                layovers.push(Layover { after_trip: k, secs: to - end, at: a.stops.last().cloned(), extra: Default::default() });
+                layovers.push(Layover {
+                    after_trip: k,
+                    secs: to - end,
+                    at: a.stops.last().cloned(),
+                    extra: Default::default(),
+                });
             }
         }
         net.blocks.insert(
             id.to_string(),
-            Block { trips: members.iter().map(|&i| TripRef { trip: trips[i].id.to_string(), extra: Default::default() }).collect(), layovers, extra: Default::default() },
+            Block {
+                trips: members
+                    .iter()
+                    .map(|&i| TripRef {
+                        trip: trips[i].id.to_string(),
+                        extra: Default::default(),
+                    })
+                    .collect(),
+                layovers,
+                extra: Default::default(),
+            },
         );
     }
 
@@ -659,7 +876,9 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             if transit_network::routes_meeting_at(&net, &index, stop).len() >= 2 {
                 net.stops.get_mut(stop).expect("checked above").transfer = true;
             } else {
-                notes.push(ImportNote::UnusableTransferPoint { stop: stop.to_string() });
+                notes.push(ImportNote::UnusableTransferPoint {
+                    stop: stop.to_string(),
+                });
             }
         }
     }
@@ -671,12 +890,25 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             missing_stop_coords: missing_coords,
         });
     }
-    notes.extend(unknown_shapes.into_iter().map(|shape| ImportNote::UnknownShape { shape }));
-    ImportOutcome { network: net, boundary, notes }
+    notes.extend(
+        unknown_shapes
+            .into_iter()
+            .map(|shape| ImportNote::UnknownShape { shape }),
+    );
+    ImportOutcome {
+        network: net,
+        boundary,
+        notes,
+    }
 }
 
 fn empty_rule() -> CalendarRule {
-    CalendarRule { days: WeekdaySet::none(), ranges: vec![], exceptions: vec![], extra: Default::default() }
+    CalendarRule {
+        days: WeekdaySet::none(),
+        ranges: vec![],
+        exceptions: vec![],
+        extra: Default::default(),
+    }
 }
 
 /// Refuses an invalid document, so the registry only holds feeds built from
@@ -684,7 +916,9 @@ fn empty_rule() -> CalendarRule {
 pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     if let Err(first) = net.validate() {
         let count = transit_network::validation_issues(net).len();
-        return Err(format!("invalid network: {first} ({count} issues total; the validate op returns all)"));
+        return Err(format!(
+            "invalid network: {first} ({count} issues total; the validate op returns all)"
+        ));
     }
     let s = |v: &str| Some(v.to_string());
     let mut feed = Feed::default();
@@ -707,11 +941,18 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
             route_sort_order: int_cell(r.sort_order),
             continuous_pickup: r.continuous_pickup.map(stop_rule_code),
             continuous_drop_off: r.continuous_drop_off.map(stop_rule_code),
-            network_id: if boundary.fare_networks_on_routes { network.clone() } else { None },
+            network_id: if boundary.fare_networks_on_routes {
+                network.clone()
+            } else {
+                None
+            },
             cemv_support: r.contactless.map(contactless_code),
         });
         if let (Some(network), false) = (network, boundary.fare_networks_on_routes) {
-            feed.route_networks.push(RouteNetworkRow { network_id: Some(network), route_id: s(id) });
+            feed.route_networks.push(RouteNetworkRow {
+                network_id: Some(network),
+                route_id: s(id),
+            });
         }
     }
 
@@ -720,8 +961,16 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         let route = net.routes.get(&pattern.route)?;
         Some((gtfs_direction(route, id)?, &route.directions[id]))
     };
-    let block_of: BTreeMap<&str, &str> =
-        net.blocks.iter().flat_map(|(b, block)| block.trips.iter().map(move |r| (r.trip.as_str(), b.as_str()))).collect();
+    let block_of: BTreeMap<&str, &str> = net
+        .blocks
+        .iter()
+        .flat_map(|(b, block)| {
+            block
+                .trips
+                .iter()
+                .map(move |r| (r.trip.as_str(), b.as_str()))
+        })
+        .collect();
 
     let mut rows: Vec<(&str, TripRow, Vec<StopTimeRow>, Vec<FrequencyRow>)> = Vec::new();
     for pt in net.pattern_trips.values() {
@@ -866,7 +1115,10 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     }
 
     for (id, alignment) in &net.alignments {
-        let sequences = boundary.shape_sequences.get(id).filter(|seqs| seqs.len() == alignment.points.len());
+        let sequences = boundary
+            .shape_sequences
+            .get(id)
+            .filter(|seqs| seqs.len() == alignment.points.len());
         for (i, p) in alignment.points.iter().enumerate() {
             feed.shapes.push(ShapeRow {
                 shape_id: s(id),
@@ -897,7 +1149,11 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
                     end_date: Some(end.clone()),
                 });
             }
-            let named = rule.ranges.iter().flat_map(|r| [r.start, r.end]).chain(rule.exceptions.iter().map(|e| e.date));
+            let named = rule
+                .ranges
+                .iter()
+                .flat_map(|r| [r.start, r.end])
+                .chain(rule.exceptions.iter().map(|e| e.date));
             if let (Some(from), Some(to)) = (named.clone().min(), named.max()) {
                 let mut date = from;
                 while date <= to {
@@ -965,21 +1221,35 @@ pub fn gtfs_direction(route: &transit_network::Route, id: &str) -> Option<u8> {
         _ => None,
     };
     literal(id).or_else(|| {
-        let mut free = [0u8, 1].into_iter().filter(|c| !route.directions.keys().any(|k| literal(k) == Some(*c)));
-        let rank = route.directions.keys().filter(|k| literal(k).is_none()).position(|k| k == id)?;
+        let mut free = [0u8, 1]
+            .into_iter()
+            .filter(|c| !route.directions.keys().any(|k| literal(k) == Some(*c)));
+        let rank = route
+            .directions
+            .keys()
+            .filter(|k| literal(k).is_none())
+            .position(|k| k == id)?;
         free.nth(rank)
     })
 }
 
 /// The inverse of [`gtfs_direction`]. A GTFS-rt alert's `direction_id`
 /// resolves through it.
-pub fn model_direction(route: &transit_network::Route, code: u32) -> Option<&transit_network::DirectionId> {
-    route.directions.keys().find(|k| gtfs_direction(route, k).map(u32::from) == Some(code))
+pub fn model_direction(
+    route: &transit_network::Route,
+    code: u32,
+) -> Option<&transit_network::DirectionId> {
+    route
+        .directions
+        .keys()
+        .find(|k| gtfs_direction(route, k).map(u32::from) == Some(code))
 }
 
 /// A GTFS-rt alert's `route_type` selector names this code.
 pub fn published_route_type(route: &transit_network::Route) -> u16 {
-    route.vehicle_type.unwrap_or_else(|| gtfs_route_type(route.mode))
+    route
+        .vehicle_type
+        .unwrap_or_else(|| gtfs_route_type(route.mode))
 }
 
 /// `Mode::Other` has no GTFS code, so it publishes as bus.
@@ -1004,7 +1274,13 @@ fn gtfs_route_type(mode: Mode) -> u16 {
 fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
     let raw: Vec<Option<f64>> = raw
         .iter()
-        .map(|d| if d.is_some_and(|v| v.is_finite()) { *d } else { None })
+        .map(|d| {
+            if d.is_some_and(|v| v.is_finite()) {
+                *d
+            } else {
+                None
+            }
+        })
         .collect();
     let n = raw.len();
     if raw.iter().all(|d| d.is_none()) {
@@ -1027,7 +1303,9 @@ fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
                         let fraction = (i - bi) as f64 / (ai - bi) as f64;
                         bd + (ad - bd) * fraction
                     }
-                    (Some((_, bd)), None) => bd + ((i - anchors.last().expect("some anchor").0) as f64) * 500.0,
+                    (Some((_, bd)), None) => {
+                        bd + ((i - anchors.last().expect("some anchor").0) as f64) * 500.0
+                    }
                     (None, Some((ai, ad))) => (ad - (ai - i) as f64 * 500.0).max(0.0),
                     (None, None) => unreachable!("at least one anchor exists"),
                 }

@@ -5,5 +5,5 @@
 //! `Versioned::version_in` reads the old marker so a refusal names it.
 
 pub mod device;
-pub mod watchlist;
 pub mod load;
+pub mod watchlist;

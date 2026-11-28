@@ -111,26 +111,55 @@ pub struct EntryRef {
     pub seq: u64,
 }
 
-pub fn touched(broken: Vec<Broken>, kinds: &[KindReferences], log: &str, entry: &Stored) -> Vec<Broken> {
+pub fn touched(
+    broken: Vec<Broken>,
+    kinds: &[KindReferences],
+    log: &str,
+    entry: &Stored,
+) -> Vec<Broken> {
     match read_entry(log, entry) {
         Ok(e) => touched_in(broken, kinds, log, &e, entry.seq),
         Err(_) => Vec::new(),
     }
 }
 
-pub fn touched_in(broken: Vec<Broken>, kinds: &[KindReferences], log: &str, e: &Entry, seq: u64) -> Vec<Broken> {
+pub fn touched_in(
+    broken: Vec<Broken>,
+    kinds: &[KindReferences],
+    log: &str,
+    e: &Entry,
+    seq: u64,
+) -> Vec<Broken> {
     let changed = |kind: &str, id: &str| e.changes.iter().any(|c| c.kind == kind && c.id == id);
-    let target_log = |kind: &str| kinds.iter().filter(|k| k.records.iter().any(|r| r.kind == kind)).find_map(|k| k.log.clone());
+    let target_log = |kind: &str| {
+        kinds
+            .iter()
+            .filter(|k| k.records.iter().any(|r| r.kind == kind))
+            .find_map(|k| k.log.clone())
+    };
     broken
         .into_iter()
-        .filter(|b| (b.log == log && changed(&b.kind, &b.id)) || (target_log(&b.target).as_deref() == Some(log) && changed(&b.target, &b.names)))
-        .map(|b| Broken { entry: Some(EntryRef { log: log.to_string(), seq }), ..b })
+        .filter(|b| {
+            (b.log == log && changed(&b.kind, &b.id))
+                || (target_log(&b.target).as_deref() == Some(log) && changed(&b.target, &b.names))
+        })
+        .map(|b| Broken {
+            entry: Some(EntryRef {
+                log: log.to_string(),
+                seq,
+            }),
+            ..b
+        })
         .collect()
 }
 
 /// Across two logs the later entry is the one with the later clock
 /// (`at_ms`).
-pub fn blame(broken: &mut [Broken], kinds: &[KindReferences], entries: &BTreeMap<String, Vec<Stored>>) {
+pub fn blame(
+    broken: &mut [Broken],
+    kinds: &[KindReferences],
+    entries: &BTreeMap<String, Vec<Stored>>,
+) {
     let mut target_log: BTreeMap<&str, &str> = BTreeMap::new();
     for k in kinds {
         if let Some(log) = &k.log {
@@ -142,21 +171,34 @@ pub fn blame(broken: &mut [Broken], kinds: &[KindReferences], entries: &BTreeMap
     let mut last: BTreeMap<(String, String, String), (u64, u64)> = BTreeMap::new();
     for (log, stored) in entries {
         for s in stored {
-            let Ok(entry) = read_entry(log, s) else { continue };
+            let Ok(entry) = read_entry(log, s) else {
+                continue;
+            };
             for c in &entry.changes {
-                let at = last.entry((log.clone(), c.kind.clone(), c.id.clone())).or_insert((0, 0));
+                let at = last
+                    .entry((log.clone(), c.kind.clone(), c.id.clone()))
+                    .or_insert((0, 0));
                 if s.seq > at.0 {
                     *at = (s.seq, entry.at_ms);
                 }
             }
         }
     }
-    let at = |log: &str, kind: &str, id: &str| last.get(&(log.to_string(), kind.to_string(), id.to_string())).map(|(seq, ms)| (log.to_string(), *seq, *ms));
+    let at = |log: &str, kind: &str, id: &str| {
+        last.get(&(log.to_string(), kind.to_string(), id.to_string()))
+            .map(|(seq, ms)| (log.to_string(), *seq, *ms))
+    };
     for b in broken.iter_mut() {
         let wrote = at(&b.log, &b.kind, &b.id);
-        let changed = target_log.get(b.target.as_str()).and_then(|l| at(l, &b.target, &b.names));
+        let changed = target_log
+            .get(b.target.as_str())
+            .and_then(|l| at(l, &b.target, &b.names));
         let later = match (wrote, changed) {
-            (Some(w), Some(c)) => Some(if (c.0 == w.0 && c.1 > w.1) || (c.0 != w.0 && c.2 > w.2) { c } else { w }),
+            (Some(w), Some(c)) => Some(if (c.0 == w.0 && c.1 > w.1) || (c.0 != w.0 && c.2 > w.2) {
+                c
+            } else {
+                w
+            }),
             (w, c) => w.or(c),
         };
         b.entry = later.map(|(log, seq, _)| EntryRef { log, seq });
@@ -177,21 +219,41 @@ pub fn broken(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Ve
         let Some(log) = &k.log else { continue };
         let Some(fold) = folds.get(log) else { continue };
         for r in &k.records {
-            let Some(records) = fold.get(&r.kind) else { continue };
+            let Some(records) = fold.get(&r.kind) else {
+                continue;
+            };
             for d in &k.references {
-                let Some(rest) = record_path(&d.path, &r.collection) else { continue };
-                let Some(target) = target_log.get(d.target.as_str()).and_then(|l| folds.get(*l)) else { continue };
+                let Some(rest) = record_path(&d.path, &r.collection) else {
+                    continue;
+                };
+                let Some(target) = target_log
+                    .get(d.target.as_str())
+                    .and_then(|l| folds.get(*l))
+                else {
+                    continue;
+                };
                 let held = target.get(&d.target);
                 for (id, record) in records {
                     if k.reads().is_some_and(|reads| record.version > reads) {
                         continue;
                     }
                     for (field, value) in values_at(&record.value, &rest) {
-                        let Value::String(names) = value else { continue };
+                        let Value::String(names) = value else {
+                            continue;
+                        };
                         if held.is_some_and(|h| h.contains_key(names.as_str())) {
                             continue;
                         }
-                        out.push(Broken { log: log.clone(), kind: r.kind.clone(), id: id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None, rule: None });
+                        out.push(Broken {
+                            log: log.clone(),
+                            kind: r.kind.clone(),
+                            id: id.clone(),
+                            field,
+                            target: d.target.clone(),
+                            names: names.clone(),
+                            entry: None,
+                            rule: None,
+                        });
                     }
                 }
             }
@@ -204,14 +266,26 @@ pub fn broken(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Ve
 /// The write path refuses these (D-233). A reference that the record already
 /// had in `before` is not added, so a person can still change or cancel a
 /// record that was broken before.
-pub fn added(kinds: &[KindReferences], read: &BTreeMap<String, Records>, before: &Records, log: &str, entry: &Stored) -> Vec<Broken> {
+pub fn added(
+    kinds: &[KindReferences],
+    read: &BTreeMap<String, Records>,
+    before: &Records,
+    log: &str,
+    entry: &Stored,
+) -> Vec<Broken> {
     match read_entry(log, entry) {
         Ok(e) => added_in(kinds, read, before, log, &e),
         Err(_) => Vec::new(),
     }
 }
 
-pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, before: &Records, log: &str, e: &Entry) -> Vec<Broken> {
+pub fn added_in(
+    kinds: &[KindReferences],
+    read: &BTreeMap<String, Records>,
+    before: &Records,
+    log: &str,
+    e: &Entry,
+) -> Vec<Broken> {
     let mut target_log: BTreeMap<&str, &str> = BTreeMap::new();
     for k in kinds {
         if let Some(l) = &k.log {
@@ -220,7 +294,12 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
             }
         }
     }
-    let in_entry = |kind: &str, id: &str| e.changes.iter().find(|c| c.kind == kind && c.id == id).map(|c| c.after.is_some());
+    let in_entry = |kind: &str, id: &str| {
+        e.changes
+            .iter()
+            .find(|c| c.kind == kind && c.id == id)
+            .map(|c| c.after.is_some())
+    };
     let mut out = Vec::new();
     for c in &e.changes {
         let Some(after) = &c.after else { continue };
@@ -230,27 +309,49 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
             }
             for r in k.records.iter().filter(|r| r.kind == c.kind) {
                 for d in &k.references {
-                    let Some(rest) = record_path(&d.path, &r.collection) else { continue };
-                    let Some(tlog) = target_log.get(d.target.as_str()) else { continue };
+                    let Some(rest) = record_path(&d.path, &r.collection) else {
+                        continue;
+                    };
+                    let Some(tlog) = target_log.get(d.target.as_str()) else {
+                        continue;
+                    };
                     let had: Vec<(String, Value)> = before
                         .get(&c.kind)
                         .and_then(|m| m.get(&c.id))
-                        .map(|h| values_at(&h.value, &rest).into_iter().map(|(f, v)| (f, v.clone())).collect())
+                        .map(|h| {
+                            values_at(&h.value, &rest)
+                                .into_iter()
+                                .map(|(f, v)| (f, v.clone()))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     for (field, value) in values_at(after, &rest) {
-                        let Value::String(names) = value else { continue };
+                        let Value::String(names) = value else {
+                            continue;
+                        };
                         if had.iter().any(|(f, v)| f == &field && v == value) {
                             continue;
                         }
                         let exists = match in_entry(&d.target, names) {
                             Some(created) => created,
                             None => match read.get(*tlog) {
-                                Some(fold) => fold.get(&d.target).is_some_and(|m| m.contains_key(names.as_str())),
+                                Some(fold) => fold
+                                    .get(&d.target)
+                                    .is_some_and(|m| m.contains_key(names.as_str())),
                                 None => continue,
                             },
                         };
                         if !exists {
-                            out.push(Broken { log: log.to_string(), kind: c.kind.clone(), id: c.id.clone(), field, target: d.target.clone(), names: names.clone(), entry: None, rule: None });
+                            out.push(Broken {
+                                log: log.to_string(),
+                                kind: c.kind.clone(),
+                                id: c.id.clone(),
+                                field,
+                                target: d.target.clone(),
+                                names: names.clone(),
+                                entry: None,
+                                rule: None,
+                            });
                         }
                     }
                 }
@@ -263,14 +364,24 @@ pub fn added_in(kinds: &[KindReferences], read: &BTreeMap<String, Records>, befo
 
 /// What compaction keeps. The existence check judges every held
 /// referrer, so a record that one names must stay in its fold.
-pub fn named(kinds: &[KindReferences], folds: &BTreeMap<String, Records>, target: &str) -> std::collections::BTreeSet<String> {
+pub fn named(
+    kinds: &[KindReferences],
+    folds: &BTreeMap<String, Records>,
+    target: &str,
+) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     for k in kinds {
-        let Some(fold) = k.log.as_ref().and_then(|l| folds.get(l)) else { continue };
+        let Some(fold) = k.log.as_ref().and_then(|l| folds.get(l)) else {
+            continue;
+        };
         for r in &k.records {
-            let Some(records) = fold.get(&r.kind) else { continue };
+            let Some(records) = fold.get(&r.kind) else {
+                continue;
+            };
             for d in k.references.iter().filter(|d| d.target == target) {
-                let Some(rest) = record_path(&d.path, &r.collection) else { continue };
+                let Some(rest) = record_path(&d.path, &r.collection) else {
+                    continue;
+                };
                 for record in records.values() {
                     for (_, value) in values_at(&record.value, &rest) {
                         if let Value::String(names) = value {
@@ -287,12 +398,20 @@ pub fn named(kinds: &[KindReferences], folds: &BTreeMap<String, Records>, target
 pub fn unjudged(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> Vec<Unjudged> {
     let mut out = Vec::new();
     for k in kinds {
-        let (Some(log), Some(reads)) = (&k.log, k.reads()) else { continue };
+        let (Some(log), Some(reads)) = (&k.log, k.reads()) else {
+            continue;
+        };
         let Some(fold) = folds.get(log) else { continue };
         for r in &k.records {
             for (id, record) in fold.get(&r.kind).into_iter().flatten() {
                 if record.version > reads {
-                    out.push(Unjudged { log: log.clone(), kind: r.kind.clone(), id: id.clone(), version: record.version, reads });
+                    out.push(Unjudged {
+                        log: log.clone(),
+                        kind: r.kind.clone(),
+                        id: id.clone(),
+                        version: record.version,
+                        reads,
+                    });
                 }
             }
         }
@@ -302,20 +421,37 @@ pub fn unjudged(kinds: &[KindReferences], folds: &BTreeMap<String, Records>) -> 
 }
 
 /// Reads every target, since a document by hash is any kind's.
-pub fn naming(kinds: &[KindReferences], folds: &BTreeMap<String, Records>, hashes: &[String]) -> Vec<Naming> {
+pub fn naming(
+    kinds: &[KindReferences],
+    folds: &BTreeMap<String, Records>,
+    hashes: &[String],
+) -> Vec<Naming> {
     let mut out = Vec::new();
     for k in kinds {
         let Some(log) = &k.log else { continue };
         let Some(fold) = folds.get(log) else { continue };
         for r in &k.records {
-            let Some(records) = fold.get(&r.kind) else { continue };
+            let Some(records) = fold.get(&r.kind) else {
+                continue;
+            };
             for d in &k.references {
-                let Some(rest) = record_path(&d.path, &r.collection) else { continue };
+                let Some(rest) = record_path(&d.path, &r.collection) else {
+                    continue;
+                };
                 for (id, record) in records {
                     for (field, value) in values_at(&record.value, &rest) {
-                        let Value::String(names) = value else { continue };
+                        let Value::String(names) = value else {
+                            continue;
+                        };
                         if hashes.contains(names) {
-                            out.push(Naming { log: log.clone(), kind: r.kind.clone(), id: id.clone(), field, target: d.target.clone(), names: names.clone() });
+                            out.push(Naming {
+                                log: log.clone(),
+                                kind: r.kind.clone(),
+                                id: id.clone(),
+                                field,
+                                target: d.target.clone(),
+                                names: names.clone(),
+                            });
                         }
                     }
                 }
@@ -344,9 +480,20 @@ pub fn values_at<'a>(value: &'a Value, path: &[String]) -> Vec<(String, &'a Valu
         let mut next = Vec::new();
         for (at, v) in found {
             let children: Vec<(String, &Value)> = match (name, v) {
-                ("*", Value::Array(items)) => items.iter().enumerate().map(|(i, c)| (format!("{at}/{i}"), c)).collect(),
-                ("*", Value::Object(map)) => map.iter().map(|(k, c)| (format!("{at}/{}", escape(k)), c)).collect(),
-                (field, Value::Object(map)) => map.get(field).map(|c| (format!("{at}/{}", escape(field)), c)).into_iter().collect(),
+                ("*", Value::Array(items)) => items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| (format!("{at}/{i}"), c))
+                    .collect(),
+                ("*", Value::Object(map)) => map
+                    .iter()
+                    .map(|(k, c)| (format!("{at}/{}", escape(k)), c))
+                    .collect(),
+                (field, Value::Object(map)) => map
+                    .get(field)
+                    .map(|c| (format!("{at}/{}", escape(field)), c))
+                    .into_iter()
+                    .collect(),
                 _ => Vec::new(),
             };
             next.extend(children.into_iter().filter(|(_, c)| match filter {

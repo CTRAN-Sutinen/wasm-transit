@@ -176,10 +176,34 @@ pub fn kinds_of(list: &[cap_abi::kinds::Declaration]) -> Vec<KindEntry> {
                 route: s.route.into(),
                 pointers: s.pointers.iter().map(|p| p.to_string()).collect(),
                 log: s.log.map(|l| l.name.into()),
-                records: s.log.map(|l| l.records.iter().map(|(k, c)| RecordEntry { kind: k.to_string(), collection: c.to_string() }).collect()).unwrap_or_default(),
-                post: s.post.map(|p| PostEntry { path: p.path.into(), op: p.op.into(), answer: p.answer.into(), echo: p.echo.iter().map(|e| e.to_string()).collect() }),
-                work_order: s.work_order.map(|w| WorkOrderEntry { method: w.method.into(), path: w.path.into(), call: w.call.into(), record: w.record.into() }),
-                pick: s.pick.map(|p| PickEntry { seq: p.seq.into(), export: p.export.into() }),
+                records: s
+                    .log
+                    .map(|l| {
+                        l.records
+                            .iter()
+                            .map(|(k, c)| RecordEntry {
+                                kind: k.to_string(),
+                                collection: c.to_string(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                post: s.post.map(|p| PostEntry {
+                    path: p.path.into(),
+                    op: p.op.into(),
+                    answer: p.answer.into(),
+                    echo: p.echo.iter().map(|e| e.to_string()).collect(),
+                }),
+                work_order: s.work_order.map(|w| WorkOrderEntry {
+                    method: w.method.into(),
+                    path: w.path.into(),
+                    call: w.call.into(),
+                    record: w.record.into(),
+                }),
+                pick: s.pick.map(|p| PickEntry {
+                    seq: p.seq.into(),
+                    export: p.export.into(),
+                }),
                 feed_events: s.feed_events.map(Into::into),
                 receive: s.log.and_then(|l| l.receive).map(Into::into),
                 intent: s.log.filter(|l| !l.intent).map(|_| false),
@@ -187,7 +211,10 @@ pub fn kinds_of(list: &[cap_abi::kinds::Declaration]) -> Vec<KindEntry> {
                 validate: s.check.map(|(_, op)| op.into()),
                 merge: s.merge,
                 read: s.read,
-                load: k.load.map(|l| LoadEntry { op: l.op.into(), code: l.code }),
+                load: k.load.map(|l| LoadEntry {
+                    op: l.op.into(),
+                    code: l.code,
+                }),
                 references: vec![],
             })
         })

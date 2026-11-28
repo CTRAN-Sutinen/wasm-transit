@@ -130,7 +130,10 @@ fn v1_to_v2(mut doc: Value, from: u32) -> Result<Value, String> {
     if from != 1 {
         return Err(format!("no step from v{from}"));
     }
-    let name = doc.as_object_mut().and_then(|o| o.remove("name")).ok_or("v1 has a name")?;
+    let name = doc
+        .as_object_mut()
+        .and_then(|o| o.remove("name"))
+        .ok_or("v1 has a name")?;
     doc["title"] = name;
     doc["schema_version"] = json!(2);
     Ok(doc)
@@ -164,39 +167,81 @@ fn a_build_that_matches_its_lock_passes() {
 fn the_frozen_example_is_its_canonical_bytes_and_hash() {
     let lock = v1_lock();
     let frozen = &lock.versions[&1];
-    assert_eq!(frozen.example, r#"{"kind":"thing","name":"Main St","schema_version":1,"stops":["A","B"]}"#);
-    assert_eq!(frozen.example_hash, cap_abi::content_hash(frozen.example.as_bytes()));
+    assert_eq!(
+        frozen.example,
+        r#"{"kind":"thing","name":"Main St","schema_version":1,"stops":["A","B"]}"#
+    );
+    assert_eq!(
+        frozen.example_hash,
+        cap_abi::content_hash(frozen.example.as_bytes())
+    );
 }
 
 #[test]
 fn a_version_this_build_writes_with_no_lock_fails() {
     let drifts = schema_lock::check(&v1_kind(), &Lock::empty("thing"));
-    assert!(has(&drifts, |d| matches!(d, Drift::Unlocked { version: 1, .. })), "{drifts:?}");
+    assert!(
+        has(&drifts, |d| matches!(d, Drift::Unlocked { version: 1, .. })),
+        "{drifts:?}"
+    );
 }
 
 /// Condition 1.
 #[test]
 fn a_changed_type_in_the_same_version_fails() {
     for (what, changed) in [
-        ("renamed", kind::<renamed::Thing>("thing", 1, Some(example(1)), None)),
-        ("retyped", kind::<retyped::Thing>("thing", 1, Some(example(1)), None)),
+        (
+            "renamed",
+            kind::<renamed::Thing>("thing", 1, Some(example(1)), None),
+        ),
+        (
+            "retyped",
+            kind::<retyped::Thing>("thing", 1, Some(example(1)), None),
+        ),
     ] {
         let drifts = schema_lock::check(&changed, &v1_lock());
-        assert!(has(&drifts, |d| matches!(d, Drift::SchemaChanged { additive: false, .. })), "{what}: {drifts:?}");
-        assert!(freeze(&changed, &v1_lock()).is_err(), "{what}: the lock command refuses it too");
+        assert!(
+            has(&drifts, |d| matches!(
+                d,
+                Drift::SchemaChanged {
+                    additive: false,
+                    ..
+                }
+            )),
+            "{what}: {drifts:?}"
+        );
+        assert!(
+            freeze(&changed, &v1_lock()).is_err(),
+            "{what}: the lock command refuses it too"
+        );
     }
 }
 
 #[test]
 fn a_renamed_field_is_named_as_unknown() {
-    let drifts = schema_lock::check(&kind::<renamed::Thing>("thing", 1, Some(example(1)), None), &v1_lock());
-    assert!(has(&drifts, |d| matches!(d, Drift::UnknownFields { names, .. } if names == &["name"])), "{drifts:?}");
+    let drifts = schema_lock::check(
+        &kind::<renamed::Thing>("thing", 1, Some(example(1)), None),
+        &v1_lock(),
+    );
+    assert!(
+        has(
+            &drifts,
+            |d| matches!(d, Drift::UnknownFields { names, .. } if names == &["name"])
+        ),
+        "{drifts:?}"
+    );
 }
 
 #[test]
 fn a_retyped_field_is_unreadable() {
-    let drifts = schema_lock::check(&kind::<retyped::Thing>("thing", 1, Some(example(1)), None), &v1_lock());
-    assert!(has(&drifts, |d| matches!(d, Drift::Unreadable { .. })), "{drifts:?}");
+    let drifts = schema_lock::check(
+        &kind::<retyped::Thing>("thing", 1, Some(example(1)), None),
+        &v1_lock(),
+    );
+    assert!(
+        has(&drifts, |d| matches!(d, Drift::Unreadable { .. })),
+        "{drifts:?}"
+    );
 }
 
 /// Condition 3.
@@ -204,8 +249,20 @@ fn a_retyped_field_is_unreadable() {
 fn a_field_that_changes_the_bytes_fails() {
     let changed = kind::<added_written::Thing>("thing", 1, Some(example(1)), None);
     let drifts = schema_lock::check(&changed, &v1_lock());
-    assert!(has(&drifts, |d| matches!(d, Drift::HashMoved { .. })), "{drifts:?}");
-    assert!(has(&drifts, |d| matches!(d, Drift::SchemaChanged { additive: false, .. })), "{drifts:?}");
+    assert!(
+        has(&drifts, |d| matches!(d, Drift::HashMoved { .. })),
+        "{drifts:?}"
+    );
+    assert!(
+        has(&drifts, |d| matches!(
+            d,
+            Drift::SchemaChanged {
+                additive: false,
+                ..
+            }
+        )),
+        "{drifts:?}"
+    );
     assert!(freeze(&changed, &v1_lock()).is_err());
 }
 
@@ -215,10 +272,22 @@ fn an_added_optional_field_is_recorded_in_the_same_version() {
     let added = kind::<added_optional::Thing>("thing", 1, Some(example(1)), None);
     let drifts = schema_lock::check(&added, &v1_lock());
     assert_eq!(drifts.len(), 1, "{drifts:?}");
-    assert!(matches!(drifts[0], Drift::SchemaChanged { additive: true, .. }), "{drifts:?}");
-    let recorded = freeze(&added, &v1_lock()).expect("the lock command records an added optional field");
-    assert_eq!(recorded.versions[&1].example, v1_lock().versions[&1].example, "the frozen example stays");
-    assert_ne!(recorded.versions[&1].schema, v1_lock().versions[&1].schema, "the schema is the new one");
+    assert!(
+        matches!(drifts[0], Drift::SchemaChanged { additive: true, .. }),
+        "{drifts:?}"
+    );
+    let recorded =
+        freeze(&added, &v1_lock()).expect("the lock command records an added optional field");
+    assert_eq!(
+        recorded.versions[&1].example,
+        v1_lock().versions[&1].example,
+        "the frozen example stays"
+    );
+    assert_ne!(
+        recorded.versions[&1].schema,
+        v1_lock().versions[&1].schema,
+        "the schema is the new one"
+    );
     assert_eq!(schema_lock::check(&added, &recorded), vec![]);
 }
 
@@ -227,8 +296,17 @@ fn an_added_optional_field_is_recorded_in_the_same_version() {
 fn an_older_example_that_does_not_migrate_fails() {
     let bumped = v2_kind(broken_step);
     let drifts = schema_lock::check(&bumped, &v1_lock());
-    assert!(has(&drifts, |d| matches!(d, Drift::MigrationBroken { from: 1, .. })), "{drifts:?}");
-    assert!(freeze(&bumped, &v1_lock()).is_err(), "v2 is not frozen over a v1 it cannot read");
+    assert!(
+        has(&drifts, |d| matches!(
+            d,
+            Drift::MigrationBroken { from: 1, .. }
+        )),
+        "{drifts:?}"
+    );
+    assert!(
+        freeze(&bumped, &v1_lock()).is_err(),
+        "v2 is not frozen over a v1 it cannot read"
+    );
 }
 
 #[test]
@@ -236,17 +314,36 @@ fn an_older_version_with_no_migration_fails() {
     let mut bumped = v2_kind(v1_to_v2);
     bumped.migrate = None;
     let drifts = schema_lock::check(&bumped, &v1_lock());
-    assert!(has(&drifts, |d| matches!(d, Drift::MigrationBroken { from: 1, .. })), "{drifts:?}");
+    assert!(
+        has(&drifts, |d| matches!(
+            d,
+            Drift::MigrationBroken { from: 1, .. }
+        )),
+        "{drifts:?}"
+    );
 }
 
 #[test]
 fn a_bump_freezes_the_new_version_and_keeps_the_old_one() {
     let bumped = v2_kind(v1_to_v2);
     let drifts = schema_lock::check(&bumped, &v1_lock());
-    assert_eq!(drifts, vec![Drift::Unlocked { tag: "thing".into(), version: 2 }]);
+    assert_eq!(
+        drifts,
+        vec![Drift::Unlocked {
+            tag: "thing".into(),
+            version: 2
+        }]
+    );
     let both = freeze(&bumped, &v1_lock()).expect("v2 freezes");
-    assert_eq!(both.versions.keys().copied().collect::<Vec<_>>(), vec![1, 2]);
-    assert_eq!(both.versions[&1], v1_lock().versions[&1], "v1 stays as frozen");
+    assert_eq!(
+        both.versions.keys().copied().collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert_eq!(
+        both.versions[&1],
+        v1_lock().versions[&1],
+        "v1 stays as frozen"
+    );
     assert_eq!(schema_lock::check(&bumped, &both), vec![]);
 }
 
@@ -254,7 +351,17 @@ fn a_bump_freezes_the_new_version_and_keeps_the_old_one() {
 fn a_lock_newer_than_the_build_fails() {
     let both = freeze(&v2_kind(v1_to_v2), &v1_lock()).unwrap();
     let drifts = schema_lock::check(&v1_kind(), &both);
-    assert!(has(&drifts, |d| matches!(d, Drift::LockAhead { version: 2, current: 1, .. })), "{drifts:?}");
+    assert!(
+        has(&drifts, |d| matches!(
+            d,
+            Drift::LockAhead {
+                version: 2,
+                current: 1,
+                ..
+            }
+        )),
+        "{drifts:?}"
+    );
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
@@ -268,11 +375,21 @@ fn a_lock_reads_back_as_written() {
     let dir = scratch("roundtrip");
     let lock = freeze(&v2_kind(v1_to_v2), &v1_lock()).unwrap();
     write_lock(&dir, &lock).unwrap();
-    for file in ["thing.lock.json", "thing.v1.schema.json", "thing.v1.example.json", "thing.v2.schema.json", "thing.v2.example.json"] {
+    for file in [
+        "thing.lock.json",
+        "thing.v1.schema.json",
+        "thing.v1.example.json",
+        "thing.v2.schema.json",
+        "thing.v2.example.json",
+    ] {
         assert!(dir.join(file).exists(), "{file}");
     }
     assert_eq!(read_lock(&dir, "thing").unwrap(), lock);
-    assert_eq!(read_lock(&dir.join("absent"), "thing").unwrap(), Lock::empty("thing"), "no lock yet is an empty lock");
+    assert_eq!(
+        read_lock(&dir.join("absent"), "thing").unwrap(),
+        Lock::empty("thing"),
+        "no lock yet is an empty lock"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -281,10 +398,15 @@ fn a_lock_edited_by_hand_fails() {
     let dir = scratch("edited");
     write_lock(&dir, &v1_lock()).unwrap();
     let path = dir.join("thing.v1.example.json");
-    let edited = std::fs::read_to_string(&path).unwrap().replace("Main St", "Elm St");
+    let edited = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("Main St", "Elm St");
     std::fs::write(&path, edited).unwrap();
     let drifts = schema_lock::check(&v1_kind(), &read_lock(&dir, "thing").unwrap());
-    assert!(has(&drifts, |d| matches!(d, Drift::Edited { version: 1, .. })), "{drifts:?}");
+    assert!(
+        has(&drifts, |d| matches!(d, Drift::Edited { version: 1, .. })),
+        "{drifts:?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -294,8 +416,12 @@ fn an_added_reference_declaration_is_recorded_in_the_same_version() {
     let declared = kind::<declared::Thing>("thing", 1, Some(example(1)), None);
     let drifts = schema_lock::check(&declared, &v1_lock());
     assert_eq!(drifts.len(), 1, "{drifts:?}");
-    assert!(matches!(drifts[0], Drift::SchemaChanged { additive: true, .. }), "{drifts:?}");
-    let recorded = freeze(&declared, &v1_lock()).expect("the lock command records an added declaration");
+    assert!(
+        matches!(drifts[0], Drift::SchemaChanged { additive: true, .. }),
+        "{drifts:?}"
+    );
+    let recorded =
+        freeze(&declared, &v1_lock()).expect("the lock command records an added declaration");
     assert_eq!(schema_lock::check(&declared, &recorded), vec![]);
 }
 
@@ -308,10 +434,19 @@ fn a_changed_or_dropped_reference_target_needs_a_bump() {
     let retargeted = kind::<retargeted::Thing>("thing", 1, Some(example(1)), None);
     let drifts = freeze(&retargeted, &lock).expect_err("a changed target is refused");
     assert!(
-        has(&drifts, |d| matches!(d, Drift::ReferenceChanged { path, was, now: Some(now), .. }
-            if path == "/stops/*" && was == "stop" && now == "network.stop")),
+        has(
+            &drifts,
+            |d| matches!(d, Drift::ReferenceChanged { path, was, now: Some(now), .. }
+            if path == "/stops/*" && was == "stop" && now == "network.stop")
+        ),
         "{drifts:?}"
     );
     let dropped = freeze(&v1_kind(), &lock).expect_err("a dropped declaration is refused");
-    assert!(has(&dropped, |d| matches!(d, Drift::ReferenceChanged { now: None, .. })), "{dropped:?}");
+    assert!(
+        has(&dropped, |d| matches!(
+            d,
+            Drift::ReferenceChanged { now: None, .. }
+        )),
+        "{dropped:?}"
+    );
 }

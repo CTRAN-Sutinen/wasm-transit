@@ -16,11 +16,11 @@
 //! 6. After an edit that extends the rule, the export still writes the same
 //!    calendar row and every running date as an added date.
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
 use std::collections::BTreeSet;
 use transit_codec::feed::{AgencyRow, CalendarDateRow, CalendarRow};
 use transit_codec::{export, import, Feed};
+use transit_date::{Date, Days};
 use transit_network::{CalendarRule, DayState};
 
 fn day0() -> Date {
@@ -44,8 +44,8 @@ struct Dated {
 
 fn dated() -> impl Strategy<Value = Dated> {
     let rhythm = (
-        0i64..14,                                  // start offset
-        1i64..20,                                  // weeks
+        0i64..14, // start offset
+        1i64..20, // weeks
         proptest::array::uniform7(proptest::bool::weighted(0.4)),
         proptest::collection::vec(0i64..140, 0..6), // holes (offsets)
         proptest::collection::vec(0i64..150, 0..4), // extras (offsets)
@@ -66,9 +66,15 @@ fn dated() -> impl Strategy<Value = Dated> {
             }
             dates
         });
-    let sparse = proptest::collection::btree_set(0i64..150, 1..8)
-        .prop_map(|o| o.into_iter().map(|o| day0() + Days::new(o)).collect::<BTreeSet<_>>());
-    (prop_oneof![3 => rhythm, 1 => sparse], proptest::option::of((0i64..10, 100i64..200)))
+    let sparse = proptest::collection::btree_set(0i64..150, 1..8).prop_map(|o| {
+        o.into_iter()
+            .map(|o| day0() + Days::new(o))
+            .collect::<BTreeSet<_>>()
+    });
+    (
+        prop_oneof![3 => rhythm, 1 => sparse],
+        proptest::option::of((0i64..10, 100i64..200)),
+    )
         .prop_filter("a service runs somewhere", |(d, _)| !d.is_empty())
         .prop_map(|(dates, row)| Dated { dates, row })
 }
@@ -113,7 +119,8 @@ fn runs(rule: &CalendarRule, date: Date) -> bool {
         return e.state == DayState::Added;
     }
     let w = rule.days;
-    let on = [w.mon, w.tue, w.wed, w.thu, w.fri, w.sat, w.sun][date.weekday().num_days_from_monday() as usize];
+    let on = [w.mon, w.tue, w.wed, w.thu, w.fri, w.sat, w.sun]
+        [date.weekday().num_days_from_monday() as usize];
     on && rule.ranges.iter().any(|r| r.start <= date && date <= r.end)
 }
 
@@ -145,7 +152,11 @@ fn expected_flags(dates: &BTreeSet<Date>) -> [bool; 7] {
 /// Row order is not part of the feed's meaning.
 fn calendar_rows(feed: &Feed) -> (BTreeSet<String>, BTreeSet<String>) {
     let cal = feed.calendar.iter().map(|r| format!("{r:?}")).collect();
-    let dates = feed.calendar_dates.iter().map(|r| format!("{r:?}")).collect();
+    let dates = feed
+        .calendar_dates
+        .iter()
+        .map(|r| format!("{r:?}"))
+        .collect();
     (cal, dates)
 }
 
@@ -256,16 +267,28 @@ fn a_flagged_or_removing_calendar_is_read_as_written() {
         let d = day0() + Days::weeks(k) + Days::new(1); // Tuesdays
         dated.insert(d);
         for id in ["wk", "zr"] {
-            f.calendar_dates.push(CalendarDateRow { service_id: s(id), date: Some(gtfs(d)), exception_type: s("1") });
+            f.calendar_dates.push(CalendarDateRow {
+                service_id: s(id),
+                date: Some(gtfs(d)),
+                exception_type: s("1"),
+            });
         }
     }
-    f.calendar_dates.push(CalendarDateRow { service_id: s("zr"), date: s("20260908"), exception_type: s("2") });
+    f.calendar_dates.push(CalendarDateRow {
+        service_id: s("zr"),
+        date: s("20260908"),
+        exception_type: s("2"),
+    });
     let net = import(&f).network;
     let wk = &net.service_types["wk"].rule;
     assert_eq!(flags(wk), [true, false, false, false, false, false, false]);
     assert_eq!(wk.exceptions.len(), 10);
     let zr = &net.service_types["zr"].rule;
-    assert_eq!(flags(zr), [false; 7], "a removed date: the feed's own reading");
+    assert_eq!(
+        flags(zr),
+        [false; 7],
+        "a removed date: the feed's own reading"
+    );
     assert_eq!(zr.exceptions.len(), 11);
 }
 
@@ -285,26 +308,65 @@ fn the_ctran_shapes_read_as_the_rule_says() {
     };
     let ymd = |y, m, d| Date::from_ymd_opt(y, m, d).unwrap();
     let mut weekday = span(ymd(2026, 9, 14), ymd(2027, 1, 8), &[0, 1, 2, 3, 4]);
-    for gap in [ymd(2026, 11, 26), ymd(2026, 11, 27), ymd(2026, 12, 24), ymd(2026, 12, 25), ymd(2027, 1, 1)] {
+    for gap in [
+        ymd(2026, 11, 26),
+        ymd(2026, 11, 27),
+        ymd(2026, 12, 24),
+        ymd(2026, 12, 25),
+        ymd(2027, 1, 1),
+    ] {
         weekday.remove(&gap);
     }
     let mut sunday = span(ymd(2026, 9, 13), ymd(2027, 1, 3), &[6]);
     sunday.extend([ymd(2026, 11, 26), ymd(2026, 12, 25), ymd(2027, 1, 1)]);
     let closed = span(ymd(2026, 9, 14), ymd(2026, 10, 9), &[0, 1, 2, 3, 4]);
-    let tuesdays: BTreeSet<_> =
-        [ymd(2026, 9, 22), ymd(2026, 10, 6), ymd(2026, 10, 20), ymd(2026, 11, 3), ymd(2026, 11, 17), ymd(2026, 12, 1), ymd(2026, 12, 15), ymd(2027, 1, 5)].into();
+    let tuesdays: BTreeSet<_> = [
+        ymd(2026, 9, 22),
+        ymd(2026, 10, 6),
+        ymd(2026, 10, 20),
+        ymd(2026, 11, 3),
+        ymd(2026, 11, 17),
+        ymd(2026, 12, 1),
+        ymd(2026, 12, 15),
+        ymd(2027, 1, 5),
+    ]
+    .into();
     let nye: BTreeSet<_> = [ymd(2026, 12, 31)].into();
     let row = Some((6, 124)); // 2026-09-13 → 2027-01-09
-    let services: Vec<Dated> =
-        [weekday, sunday, closed, tuesdays, nye].into_iter().map(|dates| Dated { dates, row }).collect();
+    let services: Vec<Dated> = [weekday, sunday, closed, tuesdays, nye]
+        .into_iter()
+        .map(|dates| Dated { dates, row })
+        .collect();
     let net = import(&feed(&services)).network;
     let rule = |i: usize| net.service_types[&format!("svc{i}")].rule.clone();
-    assert_eq!(flags(&rule(0)), [true, true, true, true, true, false, false]);
+    assert_eq!(
+        flags(&rule(0)),
+        [true, true, true, true, true, false, false]
+    );
     assert_eq!(rule(0).ranges[0].end, ymd(2027, 1, 8));
     assert_eq!(rule(0).exceptions.len(), 5, "the holiday gaps, removed");
-    assert_eq!(flags(&rule(1)), [false, false, false, false, false, false, true]);
-    assert_eq!(rule(1).exceptions.iter().filter(|e| e.state == DayState::Added).count(), 3, "holidays run Sunday service");
-    assert_eq!(rule(2).ranges[0].end, ymd(2026, 10, 9), "a closed period ends where its dates end");
-    assert_eq!(flags(&rule(3)), [false; 7], "every other Tuesday stays dated");
+    assert_eq!(
+        flags(&rule(1)),
+        [false, false, false, false, false, false, true]
+    );
+    assert_eq!(
+        rule(1)
+            .exceptions
+            .iter()
+            .filter(|e| e.state == DayState::Added)
+            .count(),
+        3,
+        "holidays run Sunday service"
+    );
+    assert_eq!(
+        rule(2).ranges[0].end,
+        ymd(2026, 10, 9),
+        "a closed period ends where its dates end"
+    );
+    assert_eq!(
+        flags(&rule(3)),
+        [false; 7],
+        "every other Tuesday stays dated"
+    );
     assert_eq!(flags(&rule(4)), [false; 7], "one date stays dated");
 }

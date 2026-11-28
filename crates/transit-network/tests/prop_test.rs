@@ -8,29 +8,29 @@
 //! * Structure: generated networks validate, and single mutations break
 //!   validation.
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 use transit_network::{
-    materialize, stop_detail, validation_issues, Block, CalendarException, CalendarRule, DateRange, DayState,
-    Departs, HeadwayBand, Mode, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType,
-    StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
+    materialize, stop_detail, validation_issues, Block, CalendarException, CalendarRule, DateRange,
+    DayState, Departs, HeadwayBand, Mode, Network, Pattern, PatternStop, PatternTrips, Route,
+    ServiceType, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
 const YEAR_START: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
 
 #[derive(Clone, Debug)]
 struct Spec {
-    n_stops: u32,       // 3..6
-    n_patterns: u32,    // 1..3
-    n_services: u32,    // 1..3
-    headway: u32,       // 300..1800
-    dayset: u32,        // preset index
+    n_stops: u32,    // 3..6
+    n_patterns: u32, // 1..3
+    n_services: u32, // 1..3
+    headway: u32,    // 300..1800
+    dayset: u32,     // preset index
     with_block: bool,
     with_exception: bool,
     /// A parent station pin that no pattern visits, with the first `bays`
     /// stops as its children: the shape of Fisher's Landing.
     station: bool,
-    bays: u32,           // 1..3
+    bays: u32, // 1..3
 }
 
 fn spec_strategy() -> impl Strategy<Value = Spec> {
@@ -87,7 +87,10 @@ fn dayset(index: u32) -> WeekdaySet {
 }
 
 fn build_network(spec: &Spec) -> Network {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for i in 0..spec.n_stops {
         net.stops.insert(
             format!("s{i}"),
@@ -103,13 +106,27 @@ fn build_network(spec: &Spec) -> Network {
     if spec.station {
         net.stops.insert(
             "STN".into(),
-            transit_network::Stop { name: "Station".into(), lat: 45.0, lon: -122.7, ..Default::default() },
+            transit_network::Stop {
+                name: "Station".into(),
+                lat: 45.0,
+                lon: -122.7,
+                ..Default::default()
+            },
         );
         for i in 0..spec.bays.min(spec.n_stops) {
-            net.stops.get_mut(&format!("s{i}")).expect("built above").parent = Some("STN".into());
+            net.stops
+                .get_mut(&format!("s{i}"))
+                .expect("built above")
+                .parent = Some("STN".into());
         }
     }
-    net.routes.insert("r0".into(), Route { mode: Mode::Bus, ..Default::default() });
+    net.routes.insert(
+        "r0".into(),
+        Route {
+            mode: Mode::Bus,
+            ..Default::default()
+        },
+    );
 
     for j in 0..spec.n_patterns {
         let len = 2 + (j as usize % 2) + ((j + spec.n_patterns) as usize % 2); // 2..=4
@@ -122,7 +139,12 @@ fn build_network(spec: &Spec) -> Network {
             if k > 0 {
                 cum += 300 + (k as u32 + j) * 120;
             }
-            stops.push(PatternStop { stop: format!("s{i}"), timepoint, distance_m: cum as f64, ..Default::default() });
+            stops.push(PatternStop {
+                stop: format!("s{i}"),
+                timepoint,
+                distance_m: cum as f64,
+                ..Default::default()
+            });
         }
         let tp_count = stops.iter().filter(|s| s.timepoint).count();
         let mut at_timepoints = Vec::new();
@@ -137,7 +159,12 @@ fn build_network(spec: &Spec) -> Network {
                 route: "r0".into(),
                 name: format!("Pattern {j}"),
                 stops,
-                timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints, extra: Default::default() }],
+                timing: vec![TimingProfile {
+                    start_secs: 0,
+                    end_secs: 30 * 3600,
+                    at_timepoints,
+                    extra: Default::default(),
+                }],
                 ..Default::default()
             },
         );
@@ -148,22 +175,22 @@ fn build_network(spec: &Spec) -> Network {
         ServiceType {
             name: "cal".into(),
             rule: CalendarRule {
-            days: dayset(spec.dayset),
-            ranges: vec![DateRange {
-                start: YEAR_START,
-                end: YEAR_START + Days::new(364),
-                extra: Default::default(),
-            }],
-            exceptions: if spec.with_exception {
-                vec![CalendarException {
-                    date: EXCEPTION_DATE,
-                    state: DayState::Added,
+                days: dayset(spec.dayset),
+                ranges: vec![DateRange {
+                    start: YEAR_START,
+                    end: YEAR_START + Days::new(364),
                     extra: Default::default(),
-                }]
-            } else {
-                vec![]
-            },
-            extra: Default::default(),
+                }],
+                exceptions: if spec.with_exception {
+                    vec![CalendarException {
+                        date: EXCEPTION_DATE,
+                        state: DayState::Added,
+                        extra: Default::default(),
+                    }]
+                } else {
+                    vec![]
+                },
+                extra: Default::default(),
             },
             extra: Default::default(),
         },
@@ -199,7 +226,15 @@ fn build_network(spec: &Spec) -> Network {
                 })
                 .collect()
         };
-        net.pattern_trips.insert(key, PatternTrips { pattern, service_type: "cal".into(), trips, extra: Default::default() });
+        net.pattern_trips.insert(
+            key,
+            PatternTrips {
+                pattern,
+                service_type: "cal".into(),
+                trips,
+                extra: Default::default(),
+            },
+        );
     }
 
     if spec.with_block {
@@ -208,7 +243,17 @@ fn build_network(spec: &Spec) -> Network {
         let every = &net.pattern_trips["svc0"].trips[0];
         let run = every.times.last().and_then(|o| o.arrival_secs).unwrap();
         if spec.headway >= run {
-            net.blocks.insert("b0".into(), Block { trips: vec![TripRef { trip: every.id.clone(), extra: Default::default() }], layovers: vec![], extra: Default::default() });
+            net.blocks.insert(
+                "b0".into(),
+                Block {
+                    trips: vec![TripRef {
+                        trip: every.id.clone(),
+                        extra: Default::default(),
+                    }],
+                    layovers: vec![],
+                    extra: Default::default(),
+                },
+            );
         }
     }
     net
@@ -216,7 +261,13 @@ fn build_network(spec: &Spec) -> Network {
 
 fn profile_times(pattern: &Pattern) -> Vec<StopOffset> {
     let profile = &pattern.timing[0];
-    let tps: Vec<usize> = pattern.stops.iter().enumerate().filter(|(_, s)| s.timepoint).map(|(i, _)| i).collect();
+    let tps: Vec<usize> = pattern
+        .stops
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.timepoint)
+        .map(|(i, _)| i)
+        .collect();
     let at = |k: usize| profile.at_timepoints[tps.iter().position(|&p| p == k).unwrap()];
     pattern
         .stops
@@ -228,11 +279,21 @@ fn profile_times(pattern: &Pattern) -> Vec<StopOffset> {
             } else {
                 let left = *tps.iter().filter(|&&p| p < i).last().unwrap();
                 let right = *tps.iter().find(|&&p| p > i).unwrap();
-                let (d0, d1) = (pattern.stops[left].distance_m, pattern.stops[right].distance_m);
-                let frac = if d1 > d0 { (ps.distance_m - d0) / (d1 - d0) } else { 0.0 };
+                let (d0, d1) = (
+                    pattern.stops[left].distance_m,
+                    pattern.stops[right].distance_m,
+                );
+                let frac = if d1 > d0 {
+                    (ps.distance_m - d0) / (d1 - d0)
+                } else {
+                    0.0
+                };
                 (at(left) as f64 + frac * (at(right) as f64 - at(left) as f64)).round() as u32
             };
-            StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }
+            StopOffset {
+                arrival_secs: Some(t),
+                departure_secs: Some(t),
+            }
         })
         .collect()
 }
@@ -253,10 +314,7 @@ fn oracle_runs_on(rule: &CalendarRule, date: Date) -> bool {
         "6" => rule.days.sat,
         _ => rule.days.sun,
     };
-    let in_range = rule
-        .ranges
-        .iter()
-        .any(|r| date >= r.start && date <= r.end);
+    let in_range = rule.ranges.iter().any(|r| date >= r.start && date <= r.end);
     for e in &rule.exceptions {
         if e.date == date {
             return matches!(e.state, DayState::Added);

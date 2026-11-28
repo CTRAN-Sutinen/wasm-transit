@@ -1,14 +1,18 @@
 //! What a pick reads of the stops document. The ops are in
 //! cap-stops' OPS.md (`read_records`, `visit_warnings`).
 
-use transit_date::Date;
 use proptest::prelude::*;
-use transit_stops::stop_record::{read_records, seed, visit_warnings};
+use transit_date::Date;
 use transit_network::{Network, NetworkWarning};
+use transit_stops::stop_record::{read_records, seed, visit_warnings};
 use transit_stops::{Details, Event, EventKind, Status, Stops};
 
 fn fixture() -> Network {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/public/caps/sample-network-load.json"
+    ))
+    .unwrap();
     let load: serde_json::Value = serde_json::from_str(&text).unwrap();
     serde_json::from_value(load["network"].clone()).unwrap()
 }
@@ -22,7 +26,11 @@ fn date(n: u32) -> String {
 }
 
 fn ev(kind: EventKind, on: u32) -> Event {
-    Event { on: Some(date(on)), event: kind, ..Event::default() }
+    Event {
+        on: Some(date(on)),
+        event: kind,
+        ..Event::default()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,18 +55,34 @@ fn arb_change() -> impl Strategy<Value = Change> {
 fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
     let ids: Vec<String> = net.stops.keys().cloned().collect();
     let base = seed(net);
-    (proptest::collection::vec(proptest::option::of(arb_change()), ids.len()), proptest::option::of((0usize..6, 0u32..60))).prop_map(
-        move |(changes, planned)| {
+    (
+        proptest::collection::vec(proptest::option::of(arb_change()), ids.len()),
+        proptest::option::of((0usize..6, 0u32..60)),
+    )
+        .prop_map(move |(changes, planned)| {
             let mut doc = base.clone();
             for (id, change) in ids.iter().zip(changes) {
                 let Some(change) = change else { continue };
                 let e = match change {
                     Change::Move(on, d) => {
                         let s = &doc.stops[id][0];
-                        Event { lat: Some(s.lat.unwrap() + d as f64 * 1e-5), lon: s.lon, ..ev(EventKind::Moved, on) }
+                        Event {
+                            lat: Some(s.lat.unwrap() + d as f64 * 1e-5),
+                            lon: s.lon,
+                            ..ev(EventKind::Moved, on)
+                        }
                     }
-                    Change::Rename(on) => Event { details: Details { name: Some(format!("Renamed {on}")), ..Details::default() }, ..ev(EventKind::Changed, on) },
-                    Change::Suspend(on, len) => Event { until: len.map(|l| date(on + l)), ..ev(EventKind::Suspended, on) },
+                    Change::Rename(on) => Event {
+                        details: Details {
+                            name: Some(format!("Renamed {on}")),
+                            ..Details::default()
+                        },
+                        ..ev(EventKind::Changed, on)
+                    },
+                    Change::Suspend(on, len) => Event {
+                        until: len.map(|l| date(on + l)),
+                        ..ev(EventKind::Suspended, on)
+                    },
                     Change::Retire(on) => ev(EventKind::Retired, on),
                 };
                 doc = doc.add_event(id, e);
@@ -66,15 +90,24 @@ fn arb_stops(net: &Network) -> impl Strategy<Value = Stops> {
             if let Some((i, on)) = planned {
                 let id = &ids[i % ids.len()];
                 let s = &doc.stops[id][0];
-                doc.stops.insert(id.clone(), vec![Event { lat: s.lat, lon: s.lon, ..ev(EventKind::Planned, on) }]);
+                doc.stops.insert(
+                    id.clone(),
+                    vec![Event {
+                        lat: s.lat,
+                        lon: s.lon,
+                        ..ev(EventKind::Planned, on)
+                    }],
+                );
             }
             doc.checked().expect("a valid document")
-        },
-    )
+        })
 }
 
 fn visited(net: &Network) -> std::collections::BTreeSet<String> {
-    net.patterns.values().flat_map(|p| p.stops.iter().map(|s| s.stop.clone())).collect()
+    net.patterns
+        .values()
+        .flat_map(|p| p.stops.iter().map(|s| s.stop.clone()))
+        .collect()
 }
 
 proptest! {
@@ -149,19 +182,42 @@ fn the_warnings_name_the_stop_its_status_and_the_dates() {
     let net = fixture();
     let mut stops = seed(&net);
     stops = stops.add_event("B", ev(EventKind::Retired, 10));
-    stops = stops.add_event("A", Event { until: Some(date(5)), ..ev(EventKind::Suspended, 2) });
+    stops = stops.add_event(
+        "A",
+        Event {
+            until: Some(date(5)),
+            ..ev(EventKind::Suspended, 2)
+        },
+    );
     let stops = stops.checked().unwrap();
     let w = visit_warnings(&net, &stops, day(0), Some(day(30)));
     assert_eq!(
         w,
-        vec![NetworkWarning::StopNotInService { stop: "B".into(), status: Some("retired".into()), from: date(10), until: Some(date(30)) }],
+        vec![NetworkWarning::StopNotInService {
+            stop: "B".into(),
+            status: Some("retired".into()),
+            from: date(10),
+            until: Some(date(30))
+        }],
         "a short suspension inside the period is real time's, not the pick's"
     );
-    let stops = seed(&net).add_event("A", ev(EventKind::Suspended, 2)).checked().unwrap();
+    let stops = seed(&net)
+        .add_event("A", ev(EventKind::Suspended, 2))
+        .checked()
+        .unwrap();
     assert_eq!(
         visit_warnings(&net, &stops, day(0), Some(day(30))),
-        vec![NetworkWarning::StopNotInService { stop: "A".into(), status: Some("suspended".into()), from: date(2), until: Some(date(30)) }]
+        vec![NetworkWarning::StopNotInService {
+            stop: "A".into(),
+            status: Some("suspended".into()),
+            from: date(2),
+            until: Some(date(30))
+        }]
     );
-    let read = read_records(&net, &seed(&net).add_event("B", ev(EventKind::Retired, 10)), day(20));
+    let read = read_records(
+        &net,
+        &seed(&net).add_event("B", ev(EventKind::Retired, 10)),
+        day(20),
+    );
     assert_eq!(read.stops["B"], net.stops["B"]);
 }

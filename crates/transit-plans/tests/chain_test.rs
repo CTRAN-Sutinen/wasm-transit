@@ -5,7 +5,11 @@ use transit_date::Date;
 use transit_plans::{periods, resolve, validate, PlanInfo};
 
 fn info(id: &str, name: &str, from: Option<&str>) -> PlanInfo {
-    PlanInfo { id: id.into(), name: name.into(), effective_from: from.map(Into::into) }
+    PlanInfo {
+        id: id.into(),
+        name: name.into(),
+        effective_from: from.map(Into::into),
+    }
 }
 
 fn date(s: &str) -> Date {
@@ -18,9 +22,20 @@ fn resolution_picks_the_latest_effective_plan() {
         info("spring", "Spring 2026", Some("2026-03-01")),
         info("fall", "Fall 2026", Some("2026-09-07")),
     ];
-    assert_eq!(resolve(&chain, date("2026-01-01")).unwrap(), None, "no pick has taken effect yet");
-    assert_eq!(resolve(&chain, date("2026-03-01")).unwrap(), Some("spring".into()), "the pick date itself is in force");
-    assert_eq!(resolve(&chain, date("2026-06-01")).unwrap(), Some("spring".into()));
+    assert_eq!(
+        resolve(&chain, date("2026-01-01")).unwrap(),
+        None,
+        "no pick has taken effect yet"
+    );
+    assert_eq!(
+        resolve(&chain, date("2026-03-01")).unwrap(),
+        Some("spring".into()),
+        "the pick date itself is in force"
+    );
+    assert_eq!(
+        resolve(&chain, date("2026-06-01")).unwrap(),
+        Some("spring".into())
+    );
     assert_eq!(
         resolve(&chain, date("2026-10-24")).unwrap(),
         Some("fall".into()),
@@ -49,11 +64,25 @@ fn validation_reports_every_invariant() {
     ];
     let kinds: Vec<String> = validate(&broken)
         .iter()
-        .map(|i| serde_json::to_value(i).unwrap()["kind"].as_str().unwrap().to_string())
+        .map(|i| {
+            serde_json::to_value(i).unwrap()["kind"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
         .collect();
-    assert!(kinds.contains(&"duplicate_plan_id".to_string()), "{kinds:?}");
-    assert!(kinds.contains(&"plan_missing_effective_date".to_string()), "{kinds:?}");
-    assert!(kinds.contains(&"duplicate_effective_date".to_string()), "{kinds:?}");
+    assert!(
+        kinds.contains(&"duplicate_plan_id".to_string()),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"plan_missing_effective_date".to_string()),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"duplicate_effective_date".to_string()),
+        "{kinds:?}"
+    );
     assert!(!kinds.iter().any(|k| k.contains("undated")), "{kinds:?}");
 }
 
@@ -66,12 +95,23 @@ fn windows_are_derived_not_stored() {
     ];
     let windows = periods(&chain);
     let ids: Vec<&str> = windows.iter().map(|p| p.id.as_str()).collect();
-    assert_eq!(ids, vec!["spring", "fall"], "sorted by pick date; unversioned excluded");
+    assert_eq!(
+        ids,
+        vec!["spring", "fall"],
+        "sorted by pick date; unversioned excluded"
+    );
     assert_eq!(windows[0].effective_from, "2026-03-01");
-    assert_eq!(windows[0].until.as_deref(), Some("2026-09-07"), "the next pick closes the window");
+    assert_eq!(
+        windows[0].until.as_deref(),
+        Some("2026-09-07"),
+        "the next pick closes the window"
+    );
     assert_eq!(windows[1].until, None, "the last pick runs open-ended");
 
-    let dup = vec![info("a", "A", Some("2026-03-01")), info("x", "X", Some("2026-03-01"))];
+    let dup = vec![
+        info("a", "A", Some("2026-03-01")),
+        info("x", "X", Some("2026-03-01")),
+    ];
     let windows = periods(&dup);
     assert_eq!(windows.len(), 2);
     assert_eq!(windows[0].until.as_deref(), Some("2026-03-01"));
@@ -88,13 +128,29 @@ fn the_chain_is_order_insensitive() {
         info("fall", "Fall 2026", Some("2026-09-07")),
     ];
     for d in ["2026-01-01", "2026-04-01", "2026-12-31"] {
-        assert_eq!(resolve(&a, date(d)).unwrap(), resolve(&b, date(d)).unwrap(), "{d}");
+        assert_eq!(
+            resolve(&a, date(d)).unwrap(),
+            resolve(&b, date(d)).unwrap(),
+            "{d}"
+        );
     }
     assert_eq!(periods(&a), periods(&b));
 
-    let dup_a = vec![info("x", "X", Some("2026-03-01")), info("a", "A", Some("2026-03-01"))];
-    let dup_b = vec![info("a", "A", Some("2026-03-01")), info("x", "X", Some("2026-03-01"))];
-    assert_eq!(resolve(&dup_a, date("2026-06-01")).unwrap(), Some("x".into()));
-    assert_eq!(resolve(&dup_a, date("2026-06-01")).unwrap(), resolve(&dup_b, date("2026-06-01")).unwrap());
+    let dup_a = vec![
+        info("x", "X", Some("2026-03-01")),
+        info("a", "A", Some("2026-03-01")),
+    ];
+    let dup_b = vec![
+        info("a", "A", Some("2026-03-01")),
+        info("x", "X", Some("2026-03-01")),
+    ];
+    assert_eq!(
+        resolve(&dup_a, date("2026-06-01")).unwrap(),
+        Some("x".into())
+    );
+    assert_eq!(
+        resolve(&dup_a, date("2026-06-01")).unwrap(),
+        resolve(&dup_b, date("2026-06-01")).unwrap()
+    );
     assert_eq!(validate(&dup_a), validate(&dup_b));
 }

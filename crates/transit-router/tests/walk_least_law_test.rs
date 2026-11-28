@@ -18,10 +18,10 @@ mod support;
 
 use std::collections::BinaryHeap;
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use support::{assert_feasible, build_zip_spaced, model_day, oracle_arrival, TripSpec, INF};
+use transit_date::Date;
 use transit_router::{earliest_arrival, Itinerary, Leg, RouterNetwork};
 
 const DATE: Date = Date::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
@@ -78,10 +78,22 @@ struct Ride<'a> {
 }
 
 fn ride<'a>(net: &'a RouterNetwork, leg: &Leg) -> Ride<'a> {
-    let Leg::Transit { trip, start_secs, board_stop_id, board_secs, alight_stop_id, alight_secs, .. } = leg else {
+    let Leg::Transit {
+        trip,
+        start_secs,
+        board_stop_id,
+        board_secs,
+        alight_stop_id,
+        alight_secs,
+        ..
+    } = leg
+    else {
         unreachable!()
     };
-    let (b, a) = (net.stop_index(board_stop_id).unwrap(), net.stop_index(alight_stop_id).unwrap());
+    let (b, a) = (
+        net.stop_index(board_stop_id).unwrap(),
+        net.stop_index(alight_stop_id).unwrap(),
+    );
     for p in &net.patterns {
         for t in &p.trips {
             if &t.trip != trip || t.start_secs != *start_secs {
@@ -93,7 +105,13 @@ fn ride<'a>(net: &'a RouterNetwork, leg: &Leg) -> Ride<'a> {
             let alight = (board + 1..p.stop_positions.len())
                 .find(|&i| p.stop_positions[i] == a && t.arrivals[i] == *alight_secs)
                 .expect("the alighting is a later visit of the trip");
-            return Ride { stops: &p.stop_positions, departures: &t.departures, arrivals: &t.arrivals, board, alight };
+            return Ride {
+                stops: &p.stop_positions,
+                departures: &t.departures,
+                arrivals: &t.arrivals,
+                board,
+                alight,
+            };
         }
     }
     panic!("trip {trip} at {start_secs} is not in the network");
@@ -111,7 +129,11 @@ fn walks(it: &Itinerary) -> Vec<u32> {
 }
 
 fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> Result<(), String> {
-    let legs: Vec<&Leg> = it.legs.iter().filter(|l| matches!(l, Leg::Transit { .. })).collect();
+    let legs: Vec<&Leg> = it
+        .legs
+        .iter()
+        .filter(|l| matches!(l, Leg::Transit { .. }))
+        .collect();
     if legs.is_empty() {
         return Ok(());
     }
@@ -125,7 +147,11 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
     for p in 0..r.alight {
         let w = d[r.stops[p] as usize];
         if w < used[0] && it.depart_secs + w <= r.departures[p] {
-            return Err(format!("board at {} walking {w} s, not {} s", name(r.stops[p]), used[0]));
+            return Err(format!(
+                "board at {} walking {w} s, not {} s",
+                name(r.stops[p]),
+                used[0]
+            ));
         }
     }
     // Property 2.
@@ -138,7 +164,9 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
                 if w < used[i + 1] && a.arrivals[q] + w <= b.departures[p] {
                     return Err(format!(
                         "transfer {} → {} walking {w} s, not {} s",
-                        name(a.stops[q]), name(b.stops[p]), used[i + 1]
+                        name(a.stops[q]),
+                        name(b.stops[p]),
+                        used[i + 1]
                     ));
                 }
             }
@@ -149,7 +177,11 @@ fn walks_least(net: &RouterNetwork, it: &Itinerary, from: usize, to: usize) -> R
     for q in r.board + 1..r.stops.len() {
         let w = walks_from(net, &[(r.stops[q] as usize, 0)])[to];
         if w < *used.last().unwrap() && r.arrivals[q] + w <= it.arrival_secs {
-            return Err(format!("leave at {} walking {w} s, not {} s", name(r.stops[q]), used.last().unwrap()));
+            return Err(format!(
+                "leave at {} walking {w} s, not {} s",
+                name(r.stops[q]),
+                used.last().unwrap()
+            ));
         }
     }
     Ok(())
@@ -181,14 +213,25 @@ proptest! {
 fn the_rider_boards_the_same_bus_at_the_nearer_stop() {
     // s0 to s9 in a line, about 89 m apart (69 s on foot). The bus starts at
     // s3, passes s1, and ends at s9.
-    let trips = [TripSpec { stops: vec![3, 1, 9], start: 1_250, step: 10 }];
+    let trips = [TripSpec {
+        stops: vec![3, 1, 9],
+        start: 1_250,
+        step: 10,
+    }];
     let (network, day) = model_day(&build_zip_spaced(10, 0.0008, &trips), DATE);
     let net = RouterNetwork::build_from_day(&network, &day, DATE);
-    let it = earliest_arrival(&net, "s0", "s9", 900, 4).unwrap().expect("walk, ride");
+    let it = earliest_arrival(&net, "s0", "s9", 900, 4)
+        .unwrap()
+        .expect("walk, ride");
     assert_eq!(it.arrival_secs, 1_270);
     match &it.legs[..] {
         [Leg::Walk { to_stop_id, .. }, Leg::Transit { board_stop_id, .. }] => {
-            assert_eq!((to_stop_id.as_str(), board_stop_id.as_str()), ("s1", "s1"), "{:?}", it.legs)
+            assert_eq!(
+                (to_stop_id.as_str(), board_stop_id.as_str()),
+                ("s1", "s1"),
+                "{:?}",
+                it.legs
+            )
         }
         legs => panic!("{legs:?}"),
     }

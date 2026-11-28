@@ -5,7 +5,8 @@ use transit_version::{references, Reference};
 
 #[test]
 fn every_reference_field_is_declared() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_streets::walking::WalkTable)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_streets::walking::WalkTable)).unwrap();
     assert_eq!(
         references(&schema),
         vec![

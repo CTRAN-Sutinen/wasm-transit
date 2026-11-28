@@ -6,7 +6,8 @@ use transit_version::{references, Reference};
 
 #[test]
 fn every_reference_field_is_declared() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_alerts::ServiceAlerts)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_alerts::ServiceAlerts)).unwrap();
     assert_eq!(
         references(&schema),
         vec![
@@ -22,6 +23,7 @@ fn every_reference_field_is_declared() {
 
 #[test]
 fn an_alert_template_names_nothing() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_alerts::AlertTemplates)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_alerts::AlertTemplates)).unwrap();
     assert!(references(&schema).is_empty());
 }

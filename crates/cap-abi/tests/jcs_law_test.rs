@@ -43,11 +43,23 @@ fn reference(v: &Value) -> String {
             out.push('"');
             out
         }
-        Value::Array(items) => format!("[{}]", items.iter().map(reference).collect::<Vec<_>>().join(",")),
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(reference).collect::<Vec<_>>().join(",")
+        ),
         Value::Object(map) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-            let entries: Vec<String> = keys.iter().map(|k| format!("{}:{}", reference(&Value::String((*k).clone())), reference(&map[*k]))).collect();
+            let entries: Vec<String> = keys
+                .iter()
+                .map(|k| {
+                    format!(
+                        "{}:{}",
+                        reference(&Value::String((*k).clone())),
+                        reference(&map[*k])
+                    )
+                })
+                .collect();
             format!("{{{}}}", entries.join(","))
         }
     }
@@ -80,7 +92,10 @@ fn keys_sort_by_utf16_code_units() {
     .unwrap();
     let out: Value = serde_json::from_str(&jcs(&input)).unwrap();
     let text = jcs(&input);
-    let order: Vec<usize> = ["\\r", "\"1\"", "\u{80}", "ö", "€", "😀", "\u{fb33}"].iter().map(|k| text.find(k).unwrap()).collect();
+    let order: Vec<usize> = ["\\r", "\"1\"", "\u{80}", "ö", "€", "😀", "\u{fb33}"]
+        .iter()
+        .map(|k| text.find(k).unwrap())
+        .collect();
     assert!(order.windows(2).all(|w| w[0] < w[1]), "{text}");
     assert_eq!(out, input);
 }
@@ -103,14 +118,21 @@ fn numbers_are_written_as_ecmascript_writes_them() {
     ] {
         assert_eq!(jcs(&n), want, "{n:e}");
     }
-    assert_eq!(jcs(&u64::MAX), "18446744073709551615", "an integer type is written whole");
+    assert_eq!(
+        jcs(&u64::MAX),
+        "18446744073709551615",
+        "an integer type is written whole"
+    );
     assert!(cap_abi::jcs::to_string(&f64::NAN).is_err());
     assert!(cap_abi::jcs::to_string(&vec![f64::INFINITY]).is_err());
 }
 
 #[test]
 fn control_characters_use_the_short_escapes_else_lower_case_hex() {
-    assert_eq!(jcs(&"\u{8}\t\n\u{c}\r\u{1}\u{1f}\u{7f}\u{2028}/"), "\"\\b\\t\\n\\f\\r\\u0001\\u001f\u{7f}\u{2028}/\"");
+    assert_eq!(
+        jcs(&"\u{8}\t\n\u{c}\r\u{1}\u{1f}\u{7f}\u{2028}/"),
+        "\"\\b\\t\\n\\f\\r\\u0001\\u001f\u{7f}\u{2028}/\""
+    );
 }
 
 fn arb_json() -> impl Strategy<Value = Value> {
@@ -118,14 +140,17 @@ fn arb_json() -> impl Strategy<Value = Value> {
         Just(Value::Null),
         any::<bool>().prop_map(Value::Bool),
         any::<i64>().prop_map(|n| json!(n)),
-        any::<f64>().prop_filter("finite", |f| f.is_finite()).prop_map(|f| json!(f)),
+        any::<f64>()
+            .prop_filter("finite", |f| f.is_finite())
+            .prop_map(|f| json!(f)),
         "\\PC{0,6}".prop_map(Value::String),
         "[\\x00-\\x1f\"\\\\a-z\u{80}\u{fb33}\u{1f600}]{0,4}".prop_map(Value::String),
     ];
     leaf.prop_recursive(4, 64, 8, |inner| {
         prop_oneof![
             proptest::collection::vec(inner.clone(), 0..6).prop_map(Value::Array),
-            proptest::collection::btree_map("[a-z\u{e9}\u{fb33}\u{1f600}0-9_]{0,4}", inner, 0..8).prop_map(|m| Value::Object(m.into_iter().collect())),
+            proptest::collection::btree_map("[a-z\u{e9}\u{fb33}\u{1f600}0-9_]{0,4}", inner, 0..8)
+                .prop_map(|m| Value::Object(m.into_iter().collect())),
         ]
     })
 }
@@ -143,12 +168,20 @@ fn agrees_typed<T: serde::Serialize>(what: &str, doc: &T) {
     let value = serde_json::to_value(doc).unwrap();
     let text = jcs(doc);
     assert_eq!(text, reference(&value), "{what}");
-    assert_eq!(cap_abi::canonical_hash(doc).unwrap(), cap_abi::content_hash(text.as_bytes()), "{what}: the hash is of exactly these bytes");
+    assert_eq!(
+        cap_abi::canonical_hash(doc).unwrap(),
+        cap_abi::content_hash(text.as_bytes()),
+        "{what}: the hash is of exactly these bytes"
+    );
 }
 
 #[test]
 fn every_real_document_comes_out_as_the_reference_writes_it() {
-    let zip = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let zip = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let feed = transit_codec::Feed::from_zip_bytes(&zip).unwrap();
     let imported = transit_codec::import(&feed);
     agrees_typed("network", &imported.network);
@@ -205,7 +238,10 @@ fn arrival_order(text: &str) -> Vec<String> {
                 fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                     f.write_str("an object")
                 }
-                fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Order, A::Error> {
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut m: A,
+                ) -> Result<Order, A::Error> {
                     let mut keys = vec![];
                     while let Some(k) = m.next_key::<String>()? {
                         keys.push(k);
@@ -224,11 +260,20 @@ fn arrival_order(text: &str) -> Vec<String> {
 /// order, their bytes stream in one pass with no reordering.
 #[test]
 fn the_networks_many_records_arrive_in_canonical_order() {
-    let zip = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
-    let network = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&zip).unwrap()).network;
+    let zip = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
+    let network =
+        transit_codec::import(&transit_codec::Feed::from_zip_bytes(&zip).unwrap()).network;
     let in_order = |what: &str, text: String| {
         let keys = arrival_order(&text);
-        assert!(keys.windows(2).all(|w| cap_abi::jcs::key_order(&w[0], &w[1]).is_lt()), "{what}: {keys:?}");
+        assert!(
+            keys.windows(2)
+                .all(|w| cap_abi::jcs::key_order(&w[0], &w[1]).is_lt()),
+            "{what}: {keys:?}"
+        );
     };
     let full = transit_network::Trip {
         bikes: Some(true),
@@ -238,10 +283,20 @@ fn the_networks_many_records_arrive_in_canonical_order() {
         wheelchair: Some(true),
         ..Default::default()
     };
-    in_order("a trip with every field", serde_json::to_string(&full).unwrap());
-    let offset = transit_network::StopOffset { arrival_secs: Some(1), departure_secs: Some(2) };
+    in_order(
+        "a trip with every field",
+        serde_json::to_string(&full).unwrap(),
+    );
+    let offset = transit_network::StopOffset {
+        arrival_secs: Some(1),
+        departure_secs: Some(2),
+    };
     in_order("a stop's times", serde_json::to_string(&offset).unwrap());
-    let point = transit_network::AlignmentPoint { lat: 1.0, lon: 2.0, distance: Some(3.0) };
+    let point = transit_network::AlignmentPoint {
+        lat: 1.0,
+        lon: 2.0,
+        distance: Some(3.0),
+    };
     in_order("an alignment point", serde_json::to_string(&point).unwrap());
     for pt in network.pattern_trips.values() {
         in_order("pattern trips", serde_json::to_string(pt).unwrap());

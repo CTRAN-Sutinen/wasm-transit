@@ -6,20 +6,28 @@
 
 use std::collections::BTreeMap;
 
-use transit_date::Date;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_network::{
-    recovery_floors, validation_issues, validation_issues_under, Anchor, Block, CalendarRule, DateRange, Departs,
-    Layover, Mode, Network, NetworkError, Pattern, PatternStop, PatternTrips, RecoveryAt, RecoverySource, Route,
-    ServiceType, StopOffset, Trip, TripRef, WeekdaySet,
+    recovery_floors, validation_issues, validation_issues_under, Anchor, Block, CalendarRule,
+    DateRange, Departs, Layover, Mode, Network, NetworkError, Pattern, PatternStop, PatternTrips,
+    RecoveryAt, RecoverySource, Route, ServiceType, StopOffset, Trip, TripRef, WeekdaySet,
 };
 
 fn at(t: u32) -> StopOffset {
-    StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }
+    StopOffset {
+        arrival_secs: Some(t),
+        departure_secs: Some(t),
+    }
 }
 
 fn trip(id: &str, start_secs: u32) -> Trip {
-    Trip { id: id.into(), departs: Departs::At { start_secs }, times: vec![at(0), at(1200)], ..Default::default() }
+    Trip {
+        id: id.into(),
+        departs: Departs::At { start_secs },
+        times: vec![at(0), at(1200)],
+        ..Default::default()
+    }
 }
 
 fn pattern(route: &str) -> Pattern {
@@ -27,8 +35,18 @@ fn pattern(route: &str) -> Pattern {
         route: route.into(),
         name: format!("{route} to C"),
         stops: vec![
-            PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
-            PatternStop { stop: "C".into(), timepoint: true, distance_m: 2000.0, ..Default::default() },
+            PatternStop {
+                stop: "A".into(),
+                timepoint: true,
+                distance_m: 0.0,
+                ..Default::default()
+            },
+            PatternStop {
+                stop: "C".into(),
+                timepoint: true,
+                distance_m: 2000.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -40,16 +58,40 @@ const H: u32 = 3600;
 /// leaves 07:50 (1800 s gap). b2 runs 09:00 to 09:20 and waits the whole
 /// observed gap, 2400 s, before 10:00. C's floor is 600 s.
 fn network() -> Network {
-    let stop = |lat: f64| transit_network::Stop { name: "s".into(), lat, lon: -122.7, ..Default::default() };
+    let stop = |lat: f64| transit_network::Stop {
+        name: "s".into(),
+        lat,
+        lon: -122.7,
+        ..Default::default()
+    };
     let net = Network {
         name: "Recovery".into(),
         anchor: Anchor::NoonMinusTwelve,
-        stops: [("A".to_string(), stop(45.0)), ("C".to_string(), stop(45.02))].into_iter().collect(),
+        stops: [
+            ("A".to_string(), stop(45.0)),
+            ("C".to_string(), stop(45.02)),
+        ]
+        .into_iter()
+        .collect(),
         routes: ["5", "6"]
             .into_iter()
-            .map(|r| (r.to_string(), Route { name: r.into(), mode: Mode::Bus, ..Default::default() }))
+            .map(|r| {
+                (
+                    r.to_string(),
+                    Route {
+                        name: r.into(),
+                        mode: Mode::Bus,
+                        ..Default::default()
+                    },
+                )
+            })
             .collect(),
-        patterns: [("p5".to_string(), pattern("5")), ("p6".to_string(), pattern("6"))].into_iter().collect(),
+        patterns: [
+            ("p5".to_string(), pattern("5")),
+            ("p6".to_string(), pattern("6")),
+        ]
+        .into_iter()
+        .collect(),
         service_types: [(
             "wk".to_string(),
             ServiceType {
@@ -75,13 +117,22 @@ fn network() -> Network {
                 PatternTrips {
                     pattern: "p5".into(),
                     service_type: "wk".into(),
-                    trips: vec![trip("t0700", 7 * H), trip("t0750", 7 * H + 3000), trip("t0900", 9 * H)],
+                    trips: vec![
+                        trip("t0700", 7 * H),
+                        trip("t0750", 7 * H + 3000),
+                        trip("t0900", 9 * H),
+                    ],
                     extra: Default::default(),
                 },
             ),
             (
                 "p6-wk".to_string(),
-                PatternTrips { pattern: "p6".into(), service_type: "wk".into(), trips: vec![trip("t1000", 10 * H)], extra: Default::default() },
+                PatternTrips {
+                    pattern: "p6".into(),
+                    service_type: "wk".into(),
+                    trips: vec![trip("t1000", 10 * H)],
+                    extra: Default::default(),
+                },
             ),
         ]
         .into_iter()
@@ -90,16 +141,44 @@ fn network() -> Network {
             (
                 "b1".to_string(),
                 Block {
-                    trips: vec![TripRef { trip: "t0700".into(), extra: Default::default() }, TripRef { trip: "t0750".into(), extra: Default::default() }],
-                    layovers: vec![Layover { after_trip: 0, secs: 600, at: None, extra: Default::default() }],
+                    trips: vec![
+                        TripRef {
+                            trip: "t0700".into(),
+                            extra: Default::default(),
+                        },
+                        TripRef {
+                            trip: "t0750".into(),
+                            extra: Default::default(),
+                        },
+                    ],
+                    layovers: vec![Layover {
+                        after_trip: 0,
+                        secs: 600,
+                        at: None,
+                        extra: Default::default(),
+                    }],
                     extra: Default::default(),
                 },
             ),
             (
                 "b2".to_string(),
                 Block {
-                    trips: vec![TripRef { trip: "t0900".into(), extra: Default::default() }, TripRef { trip: "t1000".into(), extra: Default::default() }],
-                    layovers: vec![Layover { after_trip: 0, secs: 2400, at: None, extra: Default::default() }],
+                    trips: vec![
+                        TripRef {
+                            trip: "t0900".into(),
+                            extra: Default::default(),
+                        },
+                        TripRef {
+                            trip: "t1000".into(),
+                            extra: Default::default(),
+                        },
+                    ],
+                    layovers: vec![Layover {
+                        after_trip: 0,
+                        secs: 2400,
+                        at: None,
+                        extra: Default::default(),
+                    }],
                     extra: Default::default(),
                 },
             ),
@@ -126,9 +205,13 @@ fn shortfalls(issues: &[NetworkError]) -> Vec<(String, u32, u32, RecoverySource)
     issues
         .iter()
         .filter_map(|i| match i {
-            NetworkError::LayoverInfeasible { block, gap_secs, required_secs, required_by, .. } => {
-                Some((block.clone(), *gap_secs, *required_secs, *required_by))
-            }
+            NetworkError::LayoverInfeasible {
+                block,
+                gap_secs,
+                required_secs,
+                required_by,
+                ..
+            } => Some((block.clone(), *gap_secs, *required_secs, *required_by)),
             _ => None,
         })
         .collect()
@@ -137,9 +220,15 @@ fn shortfalls(issues: &[NetworkError]) -> Vec<(String, u32, u32, RecoverySource)
 #[test]
 fn the_floor_is_the_smallest_authored_layover_where_the_vehicle_waits() {
     let mut net = network();
-    assert_eq!(recovery_floors(&net), BTreeMap::from([("C".to_string(), 600)]));
+    assert_eq!(
+        recovery_floors(&net),
+        BTreeMap::from([("C".to_string(), 600)])
+    );
     net.blocks.get_mut("b1").unwrap().layovers[0].at = Some("A".into());
-    assert_eq!(recovery_floors(&net), BTreeMap::from([("A".to_string(), 600), ("C".to_string(), 2400)]));
+    assert_eq!(
+        recovery_floors(&net),
+        BTreeMap::from([("A".to_string(), 600), ("C".to_string(), 2400)])
+    );
 }
 
 proptest! {
@@ -196,7 +285,12 @@ fn the_policy_is_asked_about_the_trip_before_and_where_it_waits() {
     let net = network();
     let asked = std::cell::RefCell::new(Vec::new());
     let policy = |at: &RecoveryAt| {
-        asked.borrow_mut().push((at.route.to_string(), at.service_type.to_string(), at.run_secs, at.terminal.to_string()));
+        asked.borrow_mut().push((
+            at.route.to_string(),
+            at.service_type.to_string(),
+            at.run_secs,
+            at.terminal.to_string(),
+        ));
         None
     };
     assert_eq!(validation_issues_under(&net, &policy), vec![]);
@@ -204,6 +298,9 @@ fn the_policy_is_asked_about_the_trip_before_and_where_it_waits() {
     asked.sort();
     assert_eq!(
         asked,
-        vec![("5".to_string(), "wk".to_string(), 1200, "C".to_string()), ("5".to_string(), "wk".to_string(), 1200, "C".to_string())]
+        vec![
+            ("5".to_string(), "wk".to_string(), 1200, "C".to_string()),
+            ("5".to_string(), "wk".to_string(), 1200, "C".to_string())
+        ]
     );
 }

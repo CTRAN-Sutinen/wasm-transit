@@ -70,26 +70,59 @@ pub struct Registry<T: ?Sized> {
 }
 
 impl<T: ?Sized> Registry<T> {
-    pub(crate) const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
-        Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
+    pub(crate) const fn documents(
+        kind: &'static str,
+        load_op: &'static str,
+        retain: Retain,
+    ) -> Self {
+        Registry {
+            kind,
+            load_op,
+            derived: false,
+            retain,
+            entries: Mutex::new(Entries {
+                next: 0,
+                map: BTreeMap::new(),
+            }),
+            ahead: Mutex::new(BTreeMap::new()),
+        }
     }
 
     pub(crate) const fn derived(kind: &'static str, retain: Retain) -> Self {
-        Registry { kind, load_op: "", derived: true, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
+        Registry {
+            kind,
+            load_op: "",
+            derived: true,
+            retain,
+            entries: Mutex::new(Entries {
+                next: 0,
+                map: BTreeMap::new(),
+            }),
+            ahead: Mutex::new(BTreeMap::new()),
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Entries<T>> {
         // A panic in the middle of an op leaves nothing that the registry
         // must refuse, because it inserts entries as whole values.
-        self.entries.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub(crate) fn mark_ahead(&self, hash: &str, found: u32, how: transit_version::Ahead) {
-        self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(hash.to_string(), (found, how));
+        self.ahead
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(hash.to_string(), (found, how));
     }
 
     pub(crate) fn ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
-        self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).copied()
+        self.ahead
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(hash)
+            .copied()
     }
 
     pub fn get(&self, key: &str) -> Option<Arc<T>> {
@@ -97,7 +130,9 @@ impl<T: ?Sized> Registry<T> {
     }
 
     pub fn require(&self, hash: &str) -> Result<Arc<T>, transit_version::Refusal> {
-        self.get(hash).ok_or_else(|| transit_version::Refusal::unknown_document(self.kind, hash, self.load_op))
+        self.get(hash).ok_or_else(|| {
+            transit_version::Refusal::unknown_document(self.kind, hash, self.load_op)
+        })
     }
 
     /// A document that is already held keeps its first copy and its age.
@@ -117,8 +152,12 @@ impl<T: ?Sized> Registry<T> {
     pub(crate) fn bound(&self, n: usize, within: impl Fn(&str) -> bool) {
         let mut entries = self.lock();
         loop {
-            let mut matching: Vec<(u64, String)> =
-                entries.map.iter().filter(|(k, _)| within(k)).map(|(k, e)| (e.seq, k.clone())).collect();
+            let mut matching: Vec<(u64, String)> = entries
+                .map
+                .iter()
+                .filter(|(k, _)| within(k))
+                .map(|(k, e)| (e.seq, k.clone()))
+                .collect();
             if matching.len() <= n.max(1) {
                 break;
             }
@@ -134,10 +173,21 @@ impl<T: ?Sized> Registry<T> {
         }
         let seq = entries.next;
         entries.next += 1;
-        entries.map.insert(key, Entry { seq, inputs, value: value.clone() });
+        entries.map.insert(
+            key,
+            Entry {
+                seq,
+                inputs,
+                value: value.clone(),
+            },
+        );
         if let Retain::Last(n) = self.retain {
             while entries.map.len() > n.max(1) {
-                let oldest = entries.map.iter().min_by_key(|(_, e)| e.seq).map(|(k, _)| k.clone());
+                let oldest = entries
+                    .map
+                    .iter()
+                    .min_by_key(|(_, e)| e.seq)
+                    .map(|(k, _)| k.clone());
                 match oldest {
                     Some(key) => entries.map.remove(&key),
                     None => break,
@@ -148,7 +198,9 @@ impl<T: ?Sized> Registry<T> {
     }
 
     pub fn retain(&self, keep: impl Fn(&str, &[String]) -> bool) {
-        self.lock().map.retain(|key, entry| keep(key, &entry.inputs));
+        self.lock()
+            .map
+            .retain(|key, entry| keep(key, &entry.inputs));
     }
 
     pub fn len(&self) -> usize {
@@ -236,7 +288,12 @@ pub struct Holding {
 fn holding(registries: &[&dyn Held]) -> Vec<HeldEntry> {
     registries
         .iter()
-        .flat_map(|r| r.keys().into_iter().map(|key| HeldEntry { kind: r.kind().to_string(), key }))
+        .flat_map(|r| {
+            r.keys().into_iter().map(|key| HeldEntry {
+                kind: r.kind().to_string(),
+                key,
+            })
+        })
         .collect()
 }
 
@@ -250,12 +307,22 @@ pub fn kernel(op: u32, bytes: &[u8], registries: &[&dyn Held]) -> Option<String>
                     let keep: BTreeSet<String> = request.keep.into_iter().collect();
                     let dropped = registries
                         .iter()
-                        .flat_map(|r| r.evict(&keep).into_iter().map(|key| HeldEntry { kind: r.kind().to_string(), key }))
+                        .flat_map(|r| {
+                            r.evict(&keep).into_iter().map(|key| HeldEntry {
+                                kind: r.kind().to_string(),
+                                key,
+                            })
+                        })
                         .collect();
-                    Evicted { dropped, held: holding(registries) }
+                    Evicted {
+                        dropped,
+                        held: holding(registries),
+                    }
                 }),
         )),
-        OP_HELD => Some(crate::outcome(Ok::<_, String>(Holding { held: holding(registries) }))),
+        OP_HELD => Some(crate::outcome(Ok::<_, String>(Holding {
+            held: holding(registries),
+        }))),
         _ => None,
     }
 }
@@ -274,7 +341,10 @@ mod tests {
         let docs: Registry<u32> = Registry::documents("network", "load_network", Retain::Host);
         docs.insert("sha256:a".into(), 1);
         docs.insert("sha256:b".into(), 2);
-        assert_eq!(docs.evict(&keep(&["sha256:b"])), vec!["sha256:a".to_string()]);
+        assert_eq!(
+            docs.evict(&keep(&["sha256:b"])),
+            vec!["sha256:a".to_string()]
+        );
         assert_eq!(
             docs.require("sha256:a").unwrap_err().code,
             Some(transit_version::RefusalCode::UnknownDocument {
@@ -288,7 +358,8 @@ mod tests {
 
     #[test]
     fn registration_is_idempotent_and_keeps_the_first_copy() {
-        let docs: Registry<u32> = Registry::documents("live document", "load_live", Retain::Last(2));
+        let docs: Registry<u32> =
+            Registry::documents("live document", "load_live", Retain::Last(2));
         docs.insert("x".into(), 1);
         docs.insert("y".into(), 2);
         assert_eq!(*docs.insert("x".into(), 9), 1);
@@ -317,13 +388,18 @@ mod tests {
         assert!(kernel(0, b"", registries).is_none());
         assert!(kernel(256, b"", registries).is_none());
         let held = kernel(OP_HELD, b"", registries).unwrap();
-        assert_eq!(held, r#"{"ok":{"held":[{"kind":"network","key":"n1"},{"kind":"network","key":"n2"},{"kind":"edits","key":"e1"}]}}"#);
+        assert_eq!(
+            held,
+            r#"{"ok":{"held":[{"kind":"network","key":"n1"},{"kind":"network","key":"n2"},{"kind":"edits","key":"e1"}]}}"#
+        );
         let evicted = kernel(OP_EVICT, br#"{"keep":["n2"]}"#, registries).unwrap();
         assert_eq!(
             evicted,
             r#"{"ok":{"dropped":[{"kind":"network","key":"n1"},{"kind":"edits","key":"e1"}],"held":[{"kind":"network","key":"n2"}]}}"#
         );
-        assert!(kernel(OP_EVICT, b"not json", registries).unwrap().starts_with(r#"{"error":{"message":"invalid request"#));
+        assert!(kernel(OP_EVICT, b"not json", registries)
+            .unwrap()
+            .starts_with(r#"{"error":{"message":"invalid request"#));
     }
 
     proptest! {

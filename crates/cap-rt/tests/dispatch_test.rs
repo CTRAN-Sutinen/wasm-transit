@@ -2,15 +2,29 @@
 //! e2e fixture pair: sample-gtfs.zip and sample-rt.pb, where t10 is +120 s at A
 //! and +180 s at B, with one vehicle on t10.
 
-use cap_rt::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response};
+use cap_rt::{
+    dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response,
+};
 
 fn load_fixture() -> (String, String) {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let doc = serde_json::to_vec(&imported.network).unwrap();
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(<transit_network::Network as cap_abi::kernel::Load>::CODE, &doc)).unwrap();
-    let network_hash = loaded["ok"]["network_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
-    let (boundary_hash, _) = cap_abi::kernel::kind::<transit_codec::Boundary>().register(imported.boundary).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(
+        <transit_network::Network as cap_abi::kernel::Load>::CODE,
+        &doc,
+    ))
+    .unwrap();
+    let network_hash = loaded["ok"]["network_hash"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{loaded}"))
+        .to_string();
+    let (boundary_hash, _) = cap_abi::kernel::kind::<transit_codec::Boundary>()
+        .register(imported.boundary)
+        .unwrap();
     (network_hash, boundary_hash)
 }
 
@@ -28,10 +42,16 @@ fn decode_reports_delays_and_vehicles() {
             rt::FeedEntity {
                 id: "tu1".into(),
                 trip_update: Some(rt::TripUpdate {
-                    trip: rt::TripDescriptor { trip_id: Some("t10".into()), ..Default::default() },
+                    trip: rt::TripDescriptor {
+                        trip_id: Some("t10".into()),
+                        ..Default::default()
+                    },
                     stop_time_update: vec![rt::trip_update::StopTimeUpdate {
                         stop_id: Some("A".into()),
-                        departure: Some(rt::trip_update::StopTimeEvent { delay: Some(120), ..Default::default() }),
+                        departure: Some(rt::trip_update::StopTimeEvent {
+                            delay: Some(120),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     }],
                     ..Default::default()
@@ -41,7 +61,10 @@ fn decode_reports_delays_and_vehicles() {
             rt::FeedEntity {
                 id: "vp1".into(),
                 vehicle: Some(rt::VehiclePosition {
-                    trip: Some(rt::TripDescriptor { trip_id: Some("t10".into()), ..Default::default() }),
+                    trip: Some(rt::TripDescriptor {
+                        trip_id: Some("t10".into()),
+                        ..Default::default()
+                    }),
                     position: Some(rt::Position {
                         latitude: 45.44,
                         longitude: -73.44,
@@ -72,13 +95,19 @@ fn decode_reports_delays_and_vehicles() {
             // Position lat/lon are f32 on the wire (GTFS-rt spec).
             assert_eq!(overview.vehicle_positions[0].lat, 45.44f32 as f64);
             assert_eq!(overview.vehicle_positions[0].stop_id.as_deref(), Some("A"));
-            assert_eq!(overview.vehicle_positions[0].vehicle_id.as_deref(), Some("4201"));
+            assert_eq!(
+                overview.vehicle_positions[0].vehicle_id.as_deref(),
+                Some("4201")
+            );
             assert_eq!(overview.vehicle_positions[0].label.as_deref(), Some("4201"));
         }
         _ => panic!("decode response"),
     }
 
-    assert!(dispatch(Request::Decode { bytes: vec![0xff, 0xff] }).is_err());
+    assert!(dispatch(Request::Decode {
+        bytes: vec![0xff, 0xff]
+    })
+    .is_err());
 }
 
 #[test]
@@ -118,7 +147,9 @@ fn trip_progress_joins_schedule_and_delays() {
         trip_id: "t10".into(),
     })
     .expect("trip_progress");
-    let cap_rt::Response::TripProgress { progress: Some(p) } = progress else { panic!("progress") };
+    let cap_rt::Response::TripProgress { progress: Some(p) } = progress else {
+        panic!("progress")
+    };
     assert_eq!(p.trip_id, "t10");
     assert_eq!(p.route_id.as_deref(), Some("10"));
     assert_eq!(p.block_id.as_deref(), Some("B1"));
@@ -126,10 +157,18 @@ fn trip_progress_joins_schedule_and_delays() {
     assert_eq!(p.stops[0].stop_id, "A");
     assert_eq!(p.stops[0].scheduled_departure, Some(8 * 3600));
     assert_eq!(p.stops[0].departure_delay, Some(120));
-    assert_eq!(p.stops[0].predicted_departure, Some(8 * 3600 + 120), "08:02");
+    assert_eq!(
+        p.stops[0].predicted_departure,
+        Some(8 * 3600 + 120),
+        "08:02"
+    );
     assert_eq!(p.stops[1].stop_id, "B");
     assert_eq!(p.stops[1].arrival_delay, Some(180));
-    assert_eq!(p.stops[1].predicted_arrival, Some(8 * 3600 + 600 + 180), "08:13");
+    assert_eq!(
+        p.stops[1].predicted_arrival,
+        Some(8 * 3600 + 600 + 180),
+        "08:13"
+    );
     assert_eq!(p.worst_delay_secs, 180);
 
     let plain = cap_rt::dispatch(cap_rt::Request::TripProgress {
@@ -139,7 +178,9 @@ fn trip_progress_joins_schedule_and_delays() {
         trip_id: "t30".into(),
     })
     .expect("trip_progress");
-    let cap_rt::Response::TripProgress { progress: Some(p) } = plain else { panic!("progress") };
+    let cap_rt::Response::TripProgress { progress: Some(p) } = plain else {
+        panic!("progress")
+    };
     assert_eq!(p.stops.len(), 3);
     assert!(p.stops.iter().all(|s| s.arrival_delay.is_none()));
     assert_eq!(p.worst_delay_secs, 0);
@@ -151,7 +192,9 @@ fn trip_progress_joins_schedule_and_delays() {
         trip_id: "ghost".into(),
     })
     .expect("trip_progress");
-    let cap_rt::Response::TripProgress { progress: None } = missing else { panic!("progress") };
+    let cap_rt::Response::TripProgress { progress: None } = missing else {
+        panic!("progress")
+    };
 }
 
 #[test]
@@ -159,9 +202,12 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     let (network_hash, _) = load_fixture();
 
     let payload = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb").to_vec();
-    let cap_rt::Response::Decode { rt_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::Decode { bytes: payload.clone() }).unwrap()
-    else { panic!("decode") };
+    let cap_rt::Response::Decode { rt_hash, .. } = cap_rt::dispatch(cap_rt::Request::Decode {
+        bytes: payload.clone(),
+    })
+    .unwrap() else {
+        panic!("decode")
+    };
 
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         network_hash: network_hash.clone(),
@@ -170,19 +216,41 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         vp_hash: None,
     })
     .expect("late_trips");
-    let cap_rt::Response::LateTrips { trips } = late else { panic!("late_trips") };
+    let cap_rt::Response::LateTrips { trips } = late else {
+        panic!("late_trips")
+    };
     assert_eq!(trips.len(), 1);
     assert_eq!(trips[0].trip_id.as_deref(), Some("t10"));
     assert_eq!(trips[0].worst_delay_secs, 180);
     assert_eq!(trips[0].vehicle_label.as_deref(), Some("4201"));
-    assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"), "the internal id rides along with the label");
+    assert_eq!(
+        trips[0].vehicle_id.as_deref(),
+        Some("4201"),
+        "the internal id rides along with the label"
+    );
     assert!(trips[0].has_position, "the fixture's vehicle names t10");
-    assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "located on its own trip");
+    assert_eq!(
+        trips[0].position_trip_id.as_deref(),
+        Some("t10"),
+        "located on its own trip"
+    );
     assert_eq!(trips[0].route_name.as_deref(), Some("10"));
     assert_eq!(trips[0].start_secs, Some(28800));
-    assert_eq!(trips[0].first_stop.as_ref().map(|s| (s.id.as_str(), s.name.as_deref())), Some(("A", Some("Main & 1st"))));
+    assert_eq!(
+        trips[0]
+            .first_stop
+            .as_ref()
+            .map(|s| (s.id.as_str(), s.name.as_deref())),
+        Some(("A", Some("Main & 1st")))
+    );
     assert_eq!(trips[0].headsign.as_deref(), Some("Downtown"));
-    assert!(trips[0].near_stop.as_ref().is_some_and(|s| ["A", "B"].contains(&s.id.as_str())), "a stop of t10's own pattern");
+    assert!(
+        trips[0]
+            .near_stop
+            .as_ref()
+            .is_some_and(|s| ["A", "B"].contains(&s.id.as_str())),
+        "a stop of t10's own pattern"
+    );
 
     use prost::Message;
     use transit_rt::gtfs_rt as rt;
@@ -194,10 +262,16 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         entity: vec![rt::FeedEntity {
             id: "tu1".into(),
             trip_update: Some(rt::TripUpdate {
-                trip: rt::TripDescriptor { trip_id: Some("t20".into()), ..Default::default() },
+                trip: rt::TripDescriptor {
+                    trip_id: Some("t20".into()),
+                    ..Default::default()
+                },
                 stop_time_update: vec![rt::trip_update::StopTimeUpdate {
                     stop_id: Some("A".into()),
-                    departure: Some(rt::trip_update::StopTimeEvent { delay: Some(300), ..Default::default() }),
+                    departure: Some(rt::trip_update::StopTimeEvent {
+                        delay: Some(300),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -206,9 +280,12 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         }],
     }
     .encode_to_vec();
-    let cap_rt::Response::Decode { rt_hash: dark_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::Decode { bytes: dark }).unwrap()
-    else { panic!("decode") };
+    let cap_rt::Response::Decode {
+        rt_hash: dark_hash, ..
+    } = cap_rt::dispatch(cap_rt::Request::Decode { bytes: dark }).unwrap()
+    else {
+        panic!("decode")
+    };
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         network_hash: network_hash.clone(),
         rt_hash: dark_hash.clone(),
@@ -216,10 +293,15 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         vp_hash: None,
     })
     .expect("late_trips");
-    let cap_rt::Response::LateTrips { trips } = late else { panic!("late_trips") };
+    let cap_rt::Response::LateTrips { trips } = late else {
+        panic!("late_trips")
+    };
     assert_eq!(trips.len(), 1);
     assert_eq!(trips[0].trip_id.as_deref(), Some("t20"));
-    assert!(!trips[0].has_position, "a delay with no position is the dark signal");
+    assert!(
+        !trips[0].has_position,
+        "a delay with no position is the dark signal"
+    );
     assert_eq!(trips[0].vehicle_label, None);
     assert_eq!(trips[0].vehicle_id, None);
 
@@ -232,24 +314,42 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         vp_hash: Some(rt_hash.clone()),
     })
     .expect("late_trips");
-    let cap_rt::Response::LateTrips { trips } = late else { panic!("late_trips") };
+    let cap_rt::Response::LateTrips { trips } = late else {
+        panic!("late_trips")
+    };
     assert_eq!(trips[0].trip_id.as_deref(), Some("t20"));
     assert_eq!(trips[0].block_id.as_deref(), Some("B1"));
-    assert!(trips[0].has_position, "the block's bus is visible on the trip before: not dark");
-    assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "the trip the bus is actually on");
+    assert!(
+        trips[0].has_position,
+        "the block's bus is visible on the trip before: not dark"
+    );
+    assert_eq!(
+        trips[0].position_trip_id.as_deref(),
+        Some("t10"),
+        "the trip the bus is actually on"
+    );
     assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"));
 
     // TripUpdates and VehiclePositions are separate feeds, so a delays-only
     // snapshot with `vp_hash` finds the bus.
     let tu_only = rt::FeedMessage {
-        header: rt::FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
+        header: rt::FeedHeader {
+            gtfs_realtime_version: "2.0".into(),
+            ..Default::default()
+        },
         entity: vec![rt::FeedEntity {
             id: "tu2".into(),
             trip_update: Some(rt::TripUpdate {
-                trip: rt::TripDescriptor { trip_id: Some("t10".into()), ..Default::default() },
+                trip: rt::TripDescriptor {
+                    trip_id: Some("t10".into()),
+                    ..Default::default()
+                },
                 stop_time_update: vec![rt::trip_update::StopTimeUpdate {
                     stop_id: Some("A".into()),
-                    departure: Some(rt::trip_update::StopTimeEvent { delay: Some(240), ..Default::default() }),
+                    departure: Some(rt::trip_update::StopTimeEvent {
+                        delay: Some(240),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -258,9 +358,12 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         }],
     }
     .encode_to_vec();
-    let cap_rt::Response::Decode { rt_hash: tu_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::Decode { bytes: tu_only }).unwrap()
-    else { panic!("decode") };
+    let cap_rt::Response::Decode {
+        rt_hash: tu_hash, ..
+    } = cap_rt::dispatch(cap_rt::Request::Decode { bytes: tu_only }).unwrap()
+    else {
+        panic!("decode")
+    };
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         network_hash,
         rt_hash: tu_hash,
@@ -268,11 +371,16 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         min_delay_secs: 60,
     })
     .expect("late_trips");
-    let cap_rt::Response::LateTrips { trips } = late else { panic!("late_trips") };
+    let cap_rt::Response::LateTrips { trips } = late else {
+        panic!("late_trips")
+    };
     assert_eq!(trips.len(), 1);
     assert_eq!(trips[0].trip_id.as_deref(), Some("t10"));
     assert_eq!(trips[0].worst_delay_secs, 240, "the split snapshot's delay");
-    assert!(trips[0].has_position, "the position comes from the vp_hash snapshot");
+    assert!(
+        trips[0].has_position,
+        "the position comes from the vp_hash snapshot"
+    );
     assert_eq!(trips[0].vehicle_label.as_deref(), Some("4201"));
 }
 
@@ -320,18 +428,44 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
             with_document: None,
         })
     };
-    let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
+    let cap_rt::Response::Live {
+        live_hash,
+        live: day,
+        summary,
+    } = live(None).unwrap()
+    else {
+        panic!("live")
+    };
     let day = day.expect("the document by default");
     let canonical = cap_abi::canonical_bytes(&day).unwrap();
-    assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module answers the hash of the canonical bytes");
-    assert!(day.trips.iter().any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
+    assert_eq!(
+        live_hash,
+        format!(
+            "sha256:{:x}",
+            <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())
+        ),
+        "the module answers the hash of the canonical bytes"
+    );
+    assert!(day
+        .trips
+        .iter()
+        .any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
     assert_eq!(summary.vehicles, 1);
-    assert_eq!(summary.counts.late, 1, "+180 s is late under the default window");
+    assert_eq!(
+        summary.counts.late, 1,
+        "+180 s is late under the default window"
+    );
     assert_eq!(summary.late[0].delay_secs, 180);
     assert!(!summary.late_are_predictions);
 
-    let strict = transit_live::OnTimeWindow { early_secs: 0, late_secs: 0, very_late_secs: 5 };
-    let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
+    let strict = transit_live::OnTimeWindow {
+        early_secs: 0,
+        late_secs: 0,
+        very_late_secs: 5,
+    };
+    let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else {
+        panic!("live")
+    };
     assert_eq!(summary.counts.very_late, 1);
 
     // A host whose readers are linked beside rt declines the document and reads
@@ -347,10 +481,23 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         with_document: Some(false),
     })
     .unwrap();
-    let cap_rt::Response::Live { live_hash: same, live: none, summary: again } = bare else { panic!("live") };
+    let cap_rt::Response::Live {
+        live_hash: same,
+        live: none,
+        summary: again,
+    } = bare
+    else {
+        panic!("live")
+    };
     assert_eq!((same.as_str(), none.is_none()), (live_hash.as_str(), true));
     assert_eq!(again.counts.late, 1);
-    assert_eq!(*cap_abi::kernel::kind::<transit_live::LiveDay>().require(&live_hash).unwrap(), day, "registered under its hash");
+    assert_eq!(
+        *cap_abi::kernel::kind::<transit_live::LiveDay>()
+            .require(&live_hash)
+            .unwrap(),
+        day,
+        "registered under its hash"
+    );
 
     let err = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash: network_hash.clone(),
@@ -381,25 +528,48 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
 #[test]
 fn live_carries_the_alerts_in_force() {
     use prost::Message;
-    use transit_rt::gtfs_rt::{translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage, TranslatedString};
+    use transit_rt::gtfs_rt::{
+        translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage,
+        TranslatedString,
+    };
     let (network_hash, boundary_hash) = load_fixture();
     let feed = FeedMessage {
-        header: FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
+        header: FeedHeader {
+            gtfs_realtime_version: "2.0".into(),
+            ..Default::default()
+        },
         entity: vec![FeedEntity {
             id: "detour-10".into(),
             alert: Some(Alert {
-                informed_entity: vec![EntitySelector { route_id: Some("10".into()), ..Default::default() }],
-                header_text: Some(TranslatedString { translation: vec![Translation { text: "Route 10 detour".into(), language: None }] }),
+                informed_entity: vec![EntitySelector {
+                    route_id: Some("10".into()),
+                    ..Default::default()
+                }],
+                header_text: Some(TranslatedString {
+                    translation: vec![Translation {
+                        text: "Route 10 detour".into(),
+                        language: None,
+                    }],
+                }),
                 ..Default::default()
             }),
             ..Default::default()
         }],
     };
-    let cap_rt::Response::Decode { rt_hash: alerts_hash, overview } =
-        cap_rt::dispatch(cap_rt::Request::Decode { bytes: feed.encode_to_vec() }).unwrap()
-    else { panic!("decode") };
+    let cap_rt::Response::Decode {
+        rt_hash: alerts_hash,
+        overview,
+    } = cap_rt::dispatch(cap_rt::Request::Decode {
+        bytes: feed.encode_to_vec(),
+    })
+    .unwrap()
+    else {
+        panic!("decode")
+    };
     assert_eq!(overview.service_alerts.len(), 1);
-    let cap_rt::Response::Live { live: Some(live), .. } = cap_rt::dispatch(cap_rt::Request::Live {
+    let cap_rt::Response::Live {
+        live: Some(live), ..
+    } = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash,
         boundary_hash: Some(boundary_hash),
         rt_hash: None,
@@ -409,7 +579,10 @@ fn live_carries_the_alerts_in_force() {
         late_limit: None,
         with_document: None,
     })
-    .unwrap() else { panic!("live") };
+    .unwrap()
+    else {
+        panic!("live")
+    };
     assert_eq!(live.alerts.len(), 1);
     assert_eq!(live.alerts[0].header, "Route 10 detour");
     assert_eq!(live.alerts[0].scopes[0].route.as_deref(), Some("10"));
@@ -429,15 +602,31 @@ fn encode_alerts_writes_a_feed_that_live_reads_back() {
             "a2": { "status": "draft", "header": [{ "text": "not yet" }], "informed": [{ "route": "10" }] }
         }
     }});
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(&alerts.to_string())).unwrap();
-    let alerts_hash = loaded["ok"]["alerts_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
-    let Response::EncodeAlerts { rt_hash, feed_b64, skipped } =
-        dispatch(Request::EncodeAlerts { network_hash: network_hash.clone(), alerts_hash, timestamp: 1_800_000_000 }).unwrap()
-    else { panic!("encode_alerts") };
+    let loaded: serde_json::Value =
+        serde_json::from_str(&dispatch_json(&alerts.to_string())).unwrap();
+    let alerts_hash = loaded["ok"]["alerts_hash"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{loaded}"))
+        .to_string();
+    let Response::EncodeAlerts {
+        rt_hash,
+        feed_b64,
+        skipped,
+    } = dispatch(Request::EncodeAlerts {
+        network_hash: network_hash.clone(),
+        alerts_hash,
+        timestamp: 1_800_000_000,
+    })
+    .unwrap()
+    else {
+        panic!("encode_alerts")
+    };
     assert!(!feed_b64.is_empty());
     assert_eq!(skipped.len(), 1);
     assert_eq!((skipped[0].alert.as_str(), skipped[0].entity), ("a1", 1));
-    let Response::Live { live: Some(live), .. } = dispatch(Request::Live {
+    let Response::Live {
+        live: Some(live), ..
+    } = dispatch(Request::Live {
         network_hash,
         boundary_hash: Some(boundary_hash),
         rt_hash: None,
@@ -447,7 +636,10 @@ fn encode_alerts_writes_a_feed_that_live_reads_back() {
         late_limit: None,
         with_document: None,
     })
-    .unwrap() else { panic!("live") };
+    .unwrap()
+    else {
+        panic!("live")
+    };
     assert_eq!(live.alerts.len(), 1, "the draft is not in the feed");
     assert_eq!(live.alerts[0].header, "Route 40 detour");
     assert_eq!(live.alerts[0].scopes[0].direction.as_deref(), Some("1"));
@@ -459,18 +651,40 @@ fn read_alerts_reads_a_feed_into_the_document() {
     let doc = serde_json::json!({ "kind": "service_alerts", "schema_version": 2, "alerts": {
         "a1": { "status": "published", "header": [{ "text": "Route 10 detour" }], "informed": [{ "route": "10" }] }
     }});
-    let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(&serde_json::json!({ "op": "load_service_alerts", "alerts": doc }).to_string())).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_json(
+        &serde_json::json!({ "op": "load_service_alerts", "alerts": doc }).to_string(),
+    ))
+    .unwrap();
     let alerts_hash = loaded["ok"]["alerts_hash"].as_str().unwrap().to_string();
-    let Response::EncodeAlerts { feed_b64, .. } =
-        dispatch(Request::EncodeAlerts { network_hash: network_hash.clone(), alerts_hash: alerts_hash.clone(), timestamp: 0 }).unwrap()
-    else { panic!("encode_alerts") };
+    let Response::EncodeAlerts { feed_b64, .. } = dispatch(Request::EncodeAlerts {
+        network_hash: network_hash.clone(),
+        alerts_hash: alerts_hash.clone(),
+        timestamp: 0,
+    })
+    .unwrap() else {
+        panic!("encode_alerts")
+    };
     let bytes = base64_decode(&feed_b64);
-    let Response::ReadAlerts { alerts_hash: read_hash, skipped, dropped, .. } =
-        dispatch(Request::ReadAlerts { network_hash: network_hash.clone(), bytes }).unwrap()
-    else { panic!("read_alerts") };
+    let Response::ReadAlerts {
+        alerts_hash: read_hash,
+        skipped,
+        dropped,
+        ..
+    } = dispatch(Request::ReadAlerts {
+        network_hash: network_hash.clone(),
+        bytes,
+    })
+    .unwrap()
+    else {
+        panic!("read_alerts")
+    };
     assert_eq!(read_hash, alerts_hash);
     assert!(skipped.is_empty() && dropped.is_empty());
-    assert!(dispatch(Request::ReadAlerts { network_hash, bytes: b"garbage".to_vec() }).is_err());
+    assert!(dispatch(Request::ReadAlerts {
+        network_hash,
+        bytes: b"garbage".to_vec()
+    })
+    .is_err());
 }
 
 fn base64_decode(text: &str) -> Vec<u8> {

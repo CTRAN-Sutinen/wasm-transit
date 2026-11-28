@@ -15,8 +15,8 @@
 
 use proptest::prelude::*;
 use transit_network::{
-    apply_edits, apply_edits_reporting, pattern_alignment, Alignment, AlignmentPoint, Coord, Mode, Network,
-    NetworkEdit, Pattern, PatternStop, Redraw, Route, Stop,
+    apply_edits, apply_edits_reporting, pattern_alignment, Alignment, AlignmentPoint, Coord, Mode,
+    Network, NetworkEdit, Pattern, PatternStop, Redraw, Route, Stop,
 };
 
 const ALIGNMENT_IDS: [&str; 3] = ["sh 7", "al1", "x_line"];
@@ -30,32 +30,68 @@ struct Spec {
 }
 
 fn coord() -> impl Strategy<Value = (f64, f64)> {
-    (-800_000i32..800_000, -1_700_000i32..1_700_000).prop_map(|(a, b)| (a as f64 / 1e4, b as f64 / 1e4))
+    (-800_000i32..800_000, -1_700_000i32..1_700_000)
+        .prop_map(|(a, b)| (a as f64 / 1e4, b as f64 / 1e4))
 }
 
 fn spec() -> impl Strategy<Value = Spec> {
-    proptest::collection::vec(proptest::collection::vec(coord(), 2..=4), 0..=ALIGNMENT_IDS.len())
-        .prop_flat_map(|alignments| {
-            let n = alignments.len();
-            let pattern = (
-                if n == 0 { Just(None).boxed() } else { proptest::option::of(0..n).boxed() },
-                any::<bool>(),
-            );
-            (Just(alignments), proptest::collection::vec(pattern, 1..=5))
-        })
-        .prop_flat_map(|(alignments, patterns)| {
-            let k = patterns.len();
-            (Just(alignments), Just(patterns), 0..k, proptest::collection::vec(coord(), 2..=6))
-        })
-        .prop_map(|(alignments, patterns, target, points)| Spec { alignments, patterns, target, points })
+    proptest::collection::vec(
+        proptest::collection::vec(coord(), 2..=4),
+        0..=ALIGNMENT_IDS.len(),
+    )
+    .prop_flat_map(|alignments| {
+        let n = alignments.len();
+        let pattern = (
+            if n == 0 {
+                Just(None).boxed()
+            } else {
+                proptest::option::of(0..n).boxed()
+            },
+            any::<bool>(),
+        );
+        (Just(alignments), proptest::collection::vec(pattern, 1..=5))
+    })
+    .prop_flat_map(|(alignments, patterns)| {
+        let k = patterns.len();
+        (
+            Just(alignments),
+            Just(patterns),
+            0..k,
+            proptest::collection::vec(coord(), 2..=6),
+        )
+    })
+    .prop_map(|(alignments, patterns, target, points)| Spec {
+        alignments,
+        patterns,
+        target,
+        points,
+    })
 }
 
 fn build(spec: &Spec) -> Network {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for (i, lat) in [45.5, 45.51, 45.52].into_iter().enumerate() {
-        net.stops.insert(format!("s{i}"), Stop { name: format!("Stop {i}"), lat, lon: -122.6, ..Default::default() });
+        net.stops.insert(
+            format!("s{i}"),
+            Stop {
+                name: format!("Stop {i}"),
+                lat,
+                lon: -122.6,
+                ..Default::default()
+            },
+        );
     }
-    net.routes.insert("r0".into(), Route { name: "R".into(), mode: Mode::Bus, ..Default::default() });
+    net.routes.insert(
+        "r0".into(),
+        Route {
+            name: "R".into(),
+            mode: Mode::Bus,
+            ..Default::default()
+        },
+    );
     for (i, points) in spec.alignments.iter().enumerate() {
         net.alignments.insert(
             ALIGNMENT_IDS[i].into(),
@@ -63,9 +99,13 @@ fn build(spec: &Spec) -> Network {
                 points: points
                     .iter()
                     .enumerate()
-                    .map(|(k, &(lat, lon))| AlignmentPoint { lat, lon, distance: Some(k as f64 * 100.0) })
+                    .map(|(k, &(lat, lon))| AlignmentPoint {
+                        lat,
+                        lon,
+                        distance: Some(k as f64 * 100.0),
+                    })
                     .collect(),
-                    extra: Default::default(),
+                extra: Default::default(),
             },
         );
     }
@@ -93,11 +133,19 @@ fn build(spec: &Spec) -> Network {
 }
 
 fn line(points: &[(f64, f64)]) -> Vec<Coord> {
-    points.iter().map(|&(lat, lon)| Coord { lat, lon }).collect()
+    points
+        .iter()
+        .map(|&(lat, lon)| Coord { lat, lon })
+        .collect()
 }
 
 fn draw(spec: &Spec, redraw: Redraw) -> NetworkEdit {
-    NetworkEdit::DrawAlignment { pattern: format!("p{}", spec.target), points: line(&spec.points), redraw, id: None }
+    NetworkEdit::DrawAlignment {
+        pattern: format!("p{}", spec.target),
+        points: line(&spec.points),
+        redraw,
+        id: None,
+    }
 }
 
 fn rest(p: &Pattern) -> Pattern {
@@ -122,10 +170,19 @@ fn nothing_silent(net: &Network, next: &Network, touched: &[String]) -> Result<(
         let distances = |p: &Pattern| p.stops.iter().map(|s| s.distance_m).collect::<Vec<_>>();
         prop_assert_eq!(distances(after), distances(before));
         if touched.contains(id) {
-            prop_assert!(after.stops.iter().all(|s| !s.distance_published), "{} still claims published distances", id);
+            prop_assert!(
+                after.stops.iter().all(|s| !s.distance_published),
+                "{} still claims published distances",
+                id
+            );
         } else {
             prop_assert_eq!(after, before);
-            prop_assert_eq!(pattern_alignment(next, id), pattern_alignment(net, id), "{} moved silently", id);
+            prop_assert_eq!(
+                pattern_alignment(next, id),
+                pattern_alignment(net, id),
+                "{} moved silently",
+                id
+            );
         }
     }
     Ok(())
@@ -224,7 +281,10 @@ proptest! {
 #[test]
 fn the_new_line_takes_the_callers_id_or_the_first_free_one() {
     let spec = Spec {
-        alignments: vec![vec![(45.0, -122.0), (45.1, -122.1)], vec![(45.0, -122.0), (45.2, -122.2)]],
+        alignments: vec![
+            vec![(45.0, -122.0), (45.1, -122.1)],
+            vec![(45.0, -122.0), (45.2, -122.2)],
+        ],
         patterns: vec![(Some(0), true), (Some(0), false)],
         target: 0,
         points: vec![(45.0, -122.0), (45.05, -122.02), (45.1, -122.1)],
@@ -232,14 +292,26 @@ fn the_new_line_takes_the_callers_id_or_the_first_free_one() {
     let net = build(&spec);
     // The fixture already has `al1`, so the new id skips it.
     let minted = apply_edits_reporting(&net, &[draw(&spec, Redraw::One)]).unwrap();
-    assert_eq!(minted.network.patterns["p0"].alignment.as_deref(), Some("al2"));
+    assert_eq!(
+        minted.network.patterns["p0"].alignment.as_deref(),
+        Some("al2")
+    );
     let named = apply_edits(
         &net,
-        &[NetworkEdit::DrawAlignment { pattern: "p0".into(), points: line(&spec.points), redraw: Redraw::One, id: Some("p0-fix".into()) }],
+        &[NetworkEdit::DrawAlignment {
+            pattern: "p0".into(),
+            points: line(&spec.points),
+            redraw: Redraw::One,
+            id: Some("p0-fix".into()),
+        }],
     )
     .unwrap();
     assert_eq!(named.patterns["p0"].alignment.as_deref(), Some("p0-fix"));
-    assert_eq!(named.patterns["p1"].alignment.as_deref(), Some("sh 7"), "the other pattern keeps the old line");
+    assert_eq!(
+        named.patterns["p1"].alignment.as_deref(),
+        Some("sh 7"),
+        "the other pattern keeps the old line"
+    );
 }
 
 #[test]
@@ -248,7 +320,14 @@ fn the_edit_reads_from_json() {
         r#"{"edit":"draw_alignment","pattern":"p0","redraw":"all","points":[{"lat":45.0,"lon":-122.0},{"lat":45.1,"lon":-122.1}]}"#,
     )
     .unwrap();
-    assert!(matches!(edit, NetworkEdit::DrawAlignment { redraw: Redraw::All, id: None, .. }));
+    assert!(matches!(
+        edit,
+        NetworkEdit::DrawAlignment {
+            redraw: Redraw::All,
+            id: None,
+            ..
+        }
+    ));
     // The scope has no default.
     assert!(serde_json::from_str::<NetworkEdit>(
         r#"{"edit":"draw_alignment","pattern":"p0","points":[{"lat":45.0,"lon":-122.0},{"lat":45.1,"lon":-122.1}]}"#

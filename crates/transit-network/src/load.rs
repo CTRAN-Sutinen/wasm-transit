@@ -27,6 +27,9 @@ impl transit_version::Load for crate::Network {
     }
 
     fn answer(&self, hash: String) -> NetworkLoaded {
-        NetworkLoaded { network_hash: hash, timezone: self.timezone().map(str::to_string) }
+        NetworkLoaded {
+            network_hash: hash,
+            timezone: self.timezone().map(str::to_string),
+        }
     }
 }

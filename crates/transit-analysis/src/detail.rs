@@ -4,7 +4,7 @@ use serde::Serialize;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-use crate::{PatternTripsSummary, StopStats, RouteStats, Network, family_stats};
+use crate::{family_stats, Network, PatternTripsSummary, RouteStats, StopStats};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -46,7 +46,11 @@ pub(crate) fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDet
                 .get(&entry.pattern)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| entry.pattern.clone()),
-            trips: entry.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>() as u32,
+            trips: entry
+                .trips
+                .iter()
+                .map(|t| t.departs.instances().len())
+                .sum::<usize>() as u32,
         });
     }
 
@@ -58,8 +62,11 @@ pub(crate) fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDet
         revenue_miles: stats.revenue_miles,
         transfer_stops: stats.transfer_stops,
         routes: stats.routes.into_iter().filter(|r| r.trips > 0).collect(),
-        stops: stats.stops.into_iter().filter(|s| s.departures > 0).collect(),
+        stops: stats
+            .stops
+            .into_iter()
+            .filter(|s| s.departures > 0)
+            .collect(),
         pattern_trips,
     }
 }
-

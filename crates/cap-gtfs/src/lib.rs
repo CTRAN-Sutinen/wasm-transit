@@ -2,9 +2,9 @@
 
 use cap_abi::kernel::kind;
 use serde::{Deserialize, Serialize};
+use transit_codec::FeedInfo;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use transit_codec::FeedInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -24,7 +24,9 @@ pub enum Response {
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::FeedInfo { feed_hash } => Ok(Response::FeedInfo { info: kind::<transit_codec::Feed>().require(&feed_hash)?.info() }),
+        Request::FeedInfo { feed_hash } => Ok(Response::FeedInfo {
+            info: kind::<transit_codec::Feed>().require(&feed_hash)?.info(),
+        }),
     }
 }
 
@@ -33,7 +35,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: the feed capability has no bulk op of its own")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: the feed capability has no bulk op of its own"
+    )))
 }
 
 #[cfg(feature = "examples")]

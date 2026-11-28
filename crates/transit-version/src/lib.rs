@@ -30,7 +30,10 @@ pub trait Versioned {
     /// refusal can name it. A kind whose older copies name their version
     /// another way overrides this.
     fn version_in(value: &serde_json::Value) -> u32 {
-        value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
+        value
+            .get(Self::VERSION_FIELD)
+            .and_then(serde_json::Value::as_u64)
+            .map_or(Self::UNTAGGED, |v| v as u32)
     }
     /// A format change ships in two releases. Release A reads
     /// vN and vN+1 and writes vN, and release B writes vN+1. So a rollback
@@ -40,7 +43,10 @@ pub trait Versioned {
     /// step that it reverses.
     fn step_down(next: serde_json::Value) -> Result<serde_json::Value, String> {
         let _ = next;
-        Err(format!("{} has no step down from a newer version", Self::KIND))
+        Err(format!(
+            "{} has no step down from a newer version",
+            Self::KIND
+        ))
     }
 }
 
@@ -206,7 +212,9 @@ impl schemars::JsonSchema for Extra {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(transparent)]
 pub struct Version<const N: u32>(pub u32);
 
@@ -304,12 +312,25 @@ mod tests {
 
     #[test]
     fn the_tag_writes_its_kind_reads_an_absent_one_as_itself_and_refuses_another() {
-        let thing = Thing { kind: ThingKind, schema_version: Default::default(), n: 3 };
+        let thing = Thing {
+            kind: ThingKind,
+            schema_version: Default::default(),
+            n: 3,
+        };
         let text = serde_json::to_string(&thing).unwrap();
         assert_eq!(text, r#"{"kind":"thing","schema_version":1,"n":3}"#);
-        assert_eq!(serde_json::from_str::<Thing>(r#"{"n":3}"#).unwrap(), thing, "absent tags read as the kind, v1");
-        let err = serde_json::from_str::<Thing>(r#"{"kind":"other","n":3}"#).unwrap_err().to_string();
-        assert!(err.contains(r#"a "other" document is not a "thing" document"#), "{err}");
+        assert_eq!(
+            serde_json::from_str::<Thing>(r#"{"n":3}"#).unwrap(),
+            thing,
+            "absent tags read as the kind, v1"
+        );
+        let err = serde_json::from_str::<Thing>(r#"{"kind":"other","n":3}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(r#"a "other" document is not a "thing" document"#),
+            "{err}"
+        );
     }
 
     #[derive(serde::Deserialize)]
@@ -325,7 +346,8 @@ mod tests {
     #[test]
     fn a_read_notes_the_fields_it_does_not_know_and_keeps_them() {
         let text = r#"{"n":1,"later":true,"inner":[{"n":2,"newer":"x"},{"n":3}]}"#;
-        let (record, names) = super::noting_unknown(|| serde_json::from_str::<Record>(text).unwrap());
+        let (record, names) =
+            super::noting_unknown(|| serde_json::from_str::<Record>(text).unwrap());
         assert_eq!(names, vec!["later".to_string(), "newer".to_string()]);
         assert_eq!(record.extra.names().collect::<Vec<_>>(), ["later"]);
         assert_eq!(record.inner[0].extra.names().collect::<Vec<_>>(), ["newer"]);

@@ -2,12 +2,13 @@
 //! in cap-stops' OPS.md (`records`, `take_stops`).
 
 use transit_date::Date;
-use transit_stops::stop_record::{read_records, records};
 use transit_network::{apply_edits, Network, NetworkEdit};
+use transit_stops::stop_record::{read_records, records};
 use transit_stops::{Details, Event, EventKind, Stops};
 
 fn network() -> Network {
-    serde_json::from_str(include_str!("../../../testdata/network.json")).expect("testdata network parses")
+    serde_json::from_str(include_str!("../../../testdata/network.json"))
+        .expect("testdata network parses")
 }
 
 fn day(s: &str) -> Date {
@@ -20,7 +21,11 @@ fn planned(on: &str, lat: f64, lon: f64, name: &str, code: &str) -> Event {
         event: EventKind::Planned,
         lat: Some(lat),
         lon: Some(lon),
-        details: Details { name: Some(name.into()), code: Some(code.into()), ..Details::default() },
+        details: Details {
+            name: Some(name.into()),
+            code: Some(code.into()),
+            ..Details::default()
+        },
         ..Event::default()
     }
 }
@@ -29,18 +34,40 @@ fn planned(on: &str, lat: f64, lon: f64, name: &str, code: &str) -> Event {
 /// N2 is planned 2027-01-04.
 fn doc() -> Stops {
     Stops::empty()
-        .add_event("N1", planned("2026-09-01", 45.58, -122.348, "Washougal TC", "9906"))
-        .add_event("N1", Event { on: Some("2026-11-13".into()), event: EventKind::InService, ..Event::default() })
+        .add_event(
+            "N1",
+            planned("2026-09-01", 45.58, -122.348, "Washougal TC", "9906"),
+        )
+        .add_event(
+            "N1",
+            Event {
+                on: Some("2026-11-13".into()),
+                event: EventKind::InService,
+                ..Event::default()
+            },
+        )
         .add_event(
             "N1",
             Event {
                 on: Some("2026-12-01".into()),
                 event: EventKind::Changed,
-                details: Details { name: Some("Washougal Transit Center".into()), ..Details::default() },
+                details: Details {
+                    name: Some("Washougal Transit Center".into()),
+                    ..Details::default()
+                },
                 ..Event::default()
             },
         )
-        .add_event("N2", planned("2027-01-04", 45.6727, -122.506, "East Fourth Plain TC", "9901"))
+        .add_event(
+            "N2",
+            planned(
+                "2027-01-04",
+                45.6727,
+                -122.506,
+                "East Fourth Plain TC",
+                "9901",
+            ),
+        )
 }
 
 #[test]
@@ -49,12 +76,35 @@ fn a_stop_taken_in_is_the_record_a_pick_reads() {
     for on in ["2026-11-13", "2026-12-05"] {
         let taken = records(&stops, &["N1".to_string()], day(on));
         let stop = taken.get("N1").expect("N1 is there on the day");
-        let plan = apply_edits(&network(), &[NetworkEdit::UpsertStop { id: "N1".into(), stop: stop.clone() }]).unwrap();
-        assert_eq!(read_records(&plan, &stops, day(on)).stops["N1"], *stop, "on {on}");
+        let plan = apply_edits(
+            &network(),
+            &[NetworkEdit::UpsertStop {
+                id: "N1".into(),
+                stop: stop.clone(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(
+            read_records(&plan, &stops, day(on)).stops["N1"],
+            *stop,
+            "on {on}"
+        );
     }
-    assert_eq!(records(&stops, &["N1".to_string()], day("2026-11-13"))["N1"].name, "Washougal TC");
-    assert_eq!(records(&stops, &["N1".to_string()], day("2026-12-05"))["N1"].name, "Washougal Transit Center");
-    assert_eq!(records(&stops, &["N1".to_string()], day("2026-12-05"))["N1"].info.code.as_deref(), Some("9906"));
+    assert_eq!(
+        records(&stops, &["N1".to_string()], day("2026-11-13"))["N1"].name,
+        "Washougal TC"
+    );
+    assert_eq!(
+        records(&stops, &["N1".to_string()], day("2026-12-05"))["N1"].name,
+        "Washougal Transit Center"
+    );
+    assert_eq!(
+        records(&stops, &["N1".to_string()], day("2026-12-05"))["N1"]
+            .info
+            .code
+            .as_deref(),
+        Some("9906")
+    );
 }
 
 #[test]
@@ -64,7 +114,11 @@ fn a_stop_not_there_yet_or_not_held_is_not_answered() {
     let before = records(&stops, &ids, day("2026-08-31"));
     assert!(before.is_empty(), "nothing is there yet: {before:?}");
     let now = records(&stops, &ids, day("2026-11-13"));
-    assert_eq!(now.keys().collect::<Vec<_>>(), vec!["N1"], "N2 is planned later; Z is not held");
+    assert_eq!(
+        now.keys().collect::<Vec<_>>(),
+        vec!["N1"],
+        "N2 is planned later; Z is not held"
+    );
     assert!(records(&stops, &ids, day("2027-01-04")).contains_key("N2"));
 }
 
@@ -74,8 +128,18 @@ use transit_stops::stop_record::take_stops;
 fn a_stop_the_plan_holds_is_not_taken_and_the_rest_are_taken_once_in_order() {
     let stops = doc();
     let net = network();
-    let held = net.stops.keys().next().expect("the plan holds a stop").clone();
-    let ids = vec!["N1".to_string(), held.clone(), "N1".to_string(), "N2".to_string()];
+    let held = net
+        .stops
+        .keys()
+        .next()
+        .expect("the plan holds a stop")
+        .clone();
+    let ids = vec![
+        "N1".to_string(),
+        held.clone(),
+        "N1".to_string(),
+        "N2".to_string(),
+    ];
     let edits = take_stops(&net, &stops, &ids, day("2027-01-04")).expect("all there");
     let named: Vec<&str> = edits
         .iter()
@@ -86,8 +150,14 @@ fn a_stop_the_plan_holds_is_not_taken_and_the_rest_are_taken_once_in_order() {
         .collect();
     assert_eq!(named, vec!["N1", "N2"]);
     let plan = apply_edits(&net, &edits).unwrap();
-    assert_eq!(plan.stops["N1"], records(&stops, &["N1".to_string()], day("2027-01-04"))["N1"]);
-    assert_eq!(plan.stops[&held], net.stops[&held], "a held stop is unchanged");
+    assert_eq!(
+        plan.stops["N1"],
+        records(&stops, &["N1".to_string()], day("2027-01-04"))["N1"]
+    );
+    assert_eq!(
+        plan.stops[&held], net.stops[&held],
+        "a held stop is unchanged"
+    );
 }
 
 #[test]
@@ -100,5 +170,8 @@ fn a_take_with_a_stop_not_answered_is_refused_naming_each() {
 
 #[test]
 fn a_take_of_nothing_is_no_edits() {
-    assert_eq!(take_stops(&network(), &doc(), &[], day("2026-11-13")).unwrap(), vec![]);
+    assert_eq!(
+        take_stops(&network(), &doc(), &[], day("2026-11-13")).unwrap(),
+        vec![]
+    );
 }

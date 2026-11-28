@@ -1,7 +1,7 @@
 //! Editing the stops document by adding one event.
 
-use transit_date::Date;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_stops::{Details, Event, EventKind, Status, Stops};
 
 fn day(n: u32) -> Date {
@@ -15,20 +15,52 @@ fn date(n: u32) -> String {
 /// Kind 0 is in service from before any record, 1 planned, 2 permitted, and
 /// 3 planned and then moved.
 fn stop(kind: u8, on: u32, i: usize) -> Vec<Event> {
-    let point = |e: Event| Event { lat: Some(45.0 + i as f64 / 100.0), lon: Some(-122.0), ..e };
-    let named = Details { name: Some(format!("stop {i}")), wheelchair: Some(i % 2 == 0), ..Details::default() };
-    let begun = |kind: EventKind| point(Event { on: Some(date(on)), event: kind, details: named.clone(), ..Event::default() });
+    let point = |e: Event| Event {
+        lat: Some(45.0 + i as f64 / 100.0),
+        lon: Some(-122.0),
+        ..e
+    };
+    let named = Details {
+        name: Some(format!("stop {i}")),
+        wheelchair: Some(i % 2 == 0),
+        ..Details::default()
+    };
+    let begun = |kind: EventKind| {
+        point(Event {
+            on: Some(date(on)),
+            event: kind,
+            details: named.clone(),
+            ..Event::default()
+        })
+    };
     match kind {
-        0 => vec![point(Event { event: EventKind::InService, details: named.clone(), ..Event::default() })],
+        0 => vec![point(Event {
+            event: EventKind::InService,
+            details: named.clone(),
+            ..Event::default()
+        })],
         1 => vec![begun(EventKind::Planned)],
         2 => vec![begun(EventKind::Permitted)],
-        _ => vec![begun(EventKind::Planned), Event { on: Some(date(on + 3)), event: EventKind::Moved, lat: Some(46.0), lon: Some(-122.0), ..Event::default() }],
+        _ => vec![
+            begun(EventKind::Planned),
+            Event {
+                on: Some(date(on + 3)),
+                event: EventKind::Moved,
+                lat: Some(46.0),
+                lon: Some(-122.0),
+                ..Event::default()
+            },
+        ],
     }
 }
 
 fn arb_doc() -> impl Strategy<Value = Stops> {
     proptest::collection::vec((0u8..4, 0u32..20), 1..6).prop_map(|stops| Stops {
-        stops: stops.into_iter().enumerate().map(|(i, (kind, on))| (format!("s{i}"), stop(kind, on, i))).collect(),
+        stops: stops
+            .into_iter()
+            .enumerate()
+            .map(|(i, (kind, on))| (format!("s{i}"), stop(kind, on, i)))
+            .collect(),
         ..Stops::default()
     })
 }
@@ -62,20 +94,55 @@ proptest! {
 
 #[test]
 fn a_suspension_added_suspends_the_stop_and_a_new_id_begins_a_stop() {
-    let doc = Stops { stops: [("o".to_string(), stop(0, 0, 0))].into(), ..Stops::default() };
-    let suspended = doc.add_event("o", Event { on: Some(date(3)), event: EventKind::Suspended, until: Some(date(5)), ..Event::default() });
+    let doc = Stops {
+        stops: [("o".to_string(), stop(0, 0, 0))].into(),
+        ..Stops::default()
+    };
+    let suspended = doc.add_event(
+        "o",
+        Event {
+            on: Some(date(3)),
+            event: EventKind::Suspended,
+            until: Some(date(5)),
+            ..Event::default()
+        },
+    );
     let suspended = suspended.checked().unwrap();
-    assert_eq!(suspended.stop_on("o", day(4)).unwrap().status, Status::Suspended);
-    assert_eq!(suspended.stop_on("o", day(5)).unwrap().status, Status::InService);
-    let back = suspended.add_event("o", Event { on: Some(date(4)), event: EventKind::InService, ..Event::default() });
-    assert!(back.checked().is_ok(), "a return on a suspended date is a valid write");
+    assert_eq!(
+        suspended.stop_on("o", day(4)).unwrap().status,
+        Status::Suspended
+    );
+    assert_eq!(
+        suspended.stop_on("o", day(5)).unwrap().status,
+        Status::InService
+    );
+    let back = suspended.add_event(
+        "o",
+        Event {
+            on: Some(date(4)),
+            event: EventKind::InService,
+            ..Event::default()
+        },
+    );
+    assert!(
+        back.checked().is_ok(),
+        "a return on a suspended date is a valid write"
+    );
     let fresh = doc.add_event("n", stop(1, 2, 1)[0].clone());
     assert_eq!(fresh.stops["n"], stop(1, 2, 1));
 }
 
 #[test]
 fn a_new_stop_is_refused_an_id_the_document_holds() {
-    let doc = Stops::default().add_event("A", Event { event: EventKind::InService, lat: Some(45.0), lon: Some(-122.0), ..Event::default() });
+    let doc = Stops::default().add_event(
+        "A",
+        Event {
+            event: EventKind::InService,
+            lat: Some(45.0),
+            lon: Some(-122.0),
+            ..Event::default()
+        },
+    );
     let refusal = doc.refuse_taken("A").expect("A is held");
     assert_eq!(refusal.stop, "A");
     assert_eq!(refusal.problem, transit_stops::Problem::StopExists);
@@ -86,5 +153,15 @@ fn a_new_stop_is_refused_an_id_the_document_holds() {
 #[test]
 fn every_status_is_listed_in_its_order() {
     let names: Vec<&str> = Status::ALL.iter().map(|s| s.as_str()).collect();
-    assert_eq!(names, ["planned", "permitted", "built", "in_service", "suspended", "retired"]);
+    assert_eq!(
+        names,
+        [
+            "planned",
+            "permitted",
+            "built",
+            "in_service",
+            "suspended",
+            "retired"
+        ]
+    );
 }

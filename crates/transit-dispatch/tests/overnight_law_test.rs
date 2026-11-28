@@ -10,8 +10,8 @@ use transit_date::Date;
 use transit_dispatch::{grouped_board_at, stop_board_at, BoardAt, Overnight, ServiceDay, Wait};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
-    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType, Stop,
-    StopOffset, TimingProfile, Trip, WeekdaySet,
+    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route,
+    ServiceType, Stop, StopOffset, TimingProfile, Trip, WeekdaySet,
 };
 use transit_sync::{EditRecord, EditStatus, TripCancel};
 
@@ -27,12 +27,34 @@ fn date(s: &str) -> Date {
 /// at 00:50).
 /// Route r2 runs Friday only: "owl" starts at 24:50 (X at 25:00).
 fn network() -> Network {
-    let plain = |name: &str| Stop { name: name.into(), lat: 45.5, lon: -122.5, ..Default::default() };
-    let stops: BTreeMap<String, Stop> =
-        [("A", "Origin"), ("X", "The Stop"), ("T", "Terminal")].iter().map(|(id, n)| (id.to_string(), plain(n))).collect();
-    let mut net = Network { name: "Overnight laws".into(), stops, ..Default::default() };
-    let every = WeekdaySet { mon: true, tue: true, wed: true, thu: true, fri: true, sat: true, sun: true };
-    let friday = WeekdaySet { fri: true, ..Default::default() };
+    let plain = |name: &str| Stop {
+        name: name.into(),
+        lat: 45.5,
+        lon: -122.5,
+        ..Default::default()
+    };
+    let stops: BTreeMap<String, Stop> = [("A", "Origin"), ("X", "The Stop"), ("T", "Terminal")]
+        .iter()
+        .map(|(id, n)| (id.to_string(), plain(n)))
+        .collect();
+    let mut net = Network {
+        name: "Overnight laws".into(),
+        stops,
+        ..Default::default()
+    };
+    let every = WeekdaySet {
+        mon: true,
+        tue: true,
+        wed: true,
+        thu: true,
+        fri: true,
+        sat: true,
+        sun: true,
+    };
+    let friday = WeekdaySet {
+        fri: true,
+        ..Default::default()
+    };
     for (st, days) in [("daily", every), ("friday", friday)] {
         net.service_types.insert(
             st.into(),
@@ -40,7 +62,11 @@ fn network() -> Network {
                 name: st.into(),
                 rule: CalendarRule {
                     days,
-                    ranges: vec![DateRange { start: date("2026-10-01"), end: date("2026-11-30"), extra: Default::default() }],
+                    ranges: vec![DateRange {
+                        start: date("2026-10-01"),
+                        end: date("2026-11-30"),
+                        extra: Default::default(),
+                    }],
                     exceptions: vec![],
                     extra: Default::default(),
                 },
@@ -49,8 +75,21 @@ fn network() -> Network {
         );
     }
     let offsets = [0u32, 600, 1_200];
-    for (rid, st, trips) in [("r1", "daily", vec![("late", 88_500u32), ("dawn", 0), ("early", 2_400)]), ("r2", "friday", vec![("owl", 89_400)])] {
-        net.routes.insert(rid.into(), Route { name: rid[1..].into(), ..Default::default() });
+    for (rid, st, trips) in [
+        (
+            "r1",
+            "daily",
+            vec![("late", 88_500u32), ("dawn", 0), ("early", 2_400)],
+        ),
+        ("r2", "friday", vec![("owl", 89_400)]),
+    ] {
+        net.routes.insert(
+            rid.into(),
+            Route {
+                name: rid[1..].into(),
+                ..Default::default()
+            },
+        );
         net.patterns.insert(
             rid.into(),
             Pattern {
@@ -61,9 +100,19 @@ fn network() -> Network {
                 stops: ["A", "X", "T"]
                     .iter()
                     .enumerate()
-                    .map(|(i, s)| PatternStop { stop: s.to_string(), timepoint: true, distance_m: i as f64 * 1000.0, ..Default::default() })
+                    .map(|(i, s)| PatternStop {
+                        stop: s.to_string(),
+                        timepoint: true,
+                        distance_m: i as f64 * 1000.0,
+                        ..Default::default()
+                    })
                     .collect(),
-                timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.to_vec(), extra: Default::default() }],
+                timing: vec![TimingProfile {
+                    start_secs: 0,
+                    end_secs: 172_800,
+                    at_timepoints: offsets.to_vec(),
+                    extra: Default::default(),
+                }],
                 extra: Default::default(),
             },
         );
@@ -77,11 +126,17 @@ fn network() -> Network {
                     .map(|(id, s)| Trip {
                         id: id.into(),
                         departs: Departs::At { start_secs: s },
-                        times: offsets.iter().map(|&t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).collect(),
+                        times: offsets
+                            .iter()
+                            .map(|&t| StopOffset {
+                                arrival_secs: Some(t),
+                                departure_secs: Some(t),
+                            })
+                            .collect(),
                         ..Default::default()
                     })
                     .collect(),
-                    extra: Default::default(),
+                extra: Default::default(),
             },
         );
     }
@@ -126,7 +181,13 @@ fn cancel_late_on(on: &str) -> EditRecord {
     EditRecord {
         id: "c-late".into(),
         diversion: None,
-        cancel: Some(TripCancel { id: "cancel-late".into(), trip_id: "late".into(), start_secs: None, date: date(on), extra: Default::default() }),
+        cancel: Some(TripCancel {
+            id: "cancel-late".into(),
+            trip_id: "late".into(),
+            start_secs: None,
+            date: date(on),
+            extra: Default::default(),
+        }),
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
@@ -142,10 +203,18 @@ fn ask<'a>(
     from_secs: u32,
 ) -> BoardAt<'a> {
     BoardAt {
-        today: ServiceDay { date: SAT, trips: &sat.trips, edits: sat.edits.as_ref() },
+        today: ServiceDay {
+            date: SAT,
+            trips: &sat.trips,
+            edits: sat.edits.as_ref(),
+        },
         from_secs,
         previous: Some(Overnight {
-            day: ServiceDay { date: FRI, trips: &fri.trips, edits: fri.edits.as_ref() },
+            day: ServiceDay {
+                date: FRI,
+                trips: &fri.trips,
+                edits: fri.edits.as_ref(),
+            },
             from_secs: prev_secs,
             length_secs: length,
         }),
@@ -153,11 +222,24 @@ fn ask<'a>(
 }
 
 fn days(net: &Network, records: &[EditRecord]) -> (transit_dispatch::Day, transit_dispatch::Day) {
-    (transit_dispatch::day(net, date(SAT), records).unwrap(), transit_dispatch::day(net, date(FRI), records).unwrap())
+    (
+        transit_dispatch::day(net, date(SAT), records).unwrap(),
+        transit_dispatch::day(net, date(FRI), records).unwrap(),
+    )
 }
 
 fn rows(board: &transit_dispatch::StopBoard) -> Vec<(String, String, u32)> {
-    board.rows.iter().map(|r| (r.departure.trip.clone(), r.departure.date.clone().unwrap(), r.departure.departure_secs)).collect()
+    board
+        .rows
+        .iter()
+        .map(|r| {
+            (
+                r.departure.trip.clone(),
+                r.departure.date.clone().unwrap(),
+                r.departure.departure_secs,
+            )
+        })
+        .collect()
 }
 
 #[test]
@@ -177,12 +259,23 @@ fn law1_the_previous_days_after_midnight_departures_are_on_the_board() {
     );
     let alone = stop_board_at(
         &net,
-        &BoardAt { today: ServiceDay { date: SAT, trips: &sat.trips, edits: None }, from_secs: 1_800, previous: None },
+        &BoardAt {
+            today: ServiceDay {
+                date: SAT,
+                trips: &sat.trips,
+                edits: None,
+            },
+            from_secs: 1_800,
+            previous: None,
+        },
         "X",
         10,
         None,
     );
-    assert!(alone.rows.iter().all(|r| r.departure.date.as_deref() == Some(SAT)));
+    assert!(alone
+        .rows
+        .iter()
+        .all(|r| r.departure.date.as_deref() == Some(SAT)));
     assert_eq!(alone.rows[0].departure.trip, "early");
 }
 
@@ -201,9 +294,21 @@ fn law2_rows_order_by_the_wait_on_each_rows_own_clock() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
     let board = stop_board_at(&net, &ask(&sat, &fri, 88_200, 86_400, 1_800), "X", 10, None);
-    assert_eq!(board.rows[0].wait, Wait::Minutes { minutes: 15 }, "Friday's 24:45 at Saturday 00:30");
-    assert_eq!(board.rows[1].wait, Wait::Minutes { minutes: 20 }, "Saturday's 00:50");
-    assert_eq!(board.rows[2].wait, Wait::Minutes { minutes: 30 }, "Friday's 25:00");
+    assert_eq!(
+        board.rows[0].wait,
+        Wait::Minutes { minutes: 15 },
+        "Friday's 24:45 at Saturday 00:30"
+    );
+    assert_eq!(
+        board.rows[1].wait,
+        Wait::Minutes { minutes: 20 },
+        "Saturday's 00:50"
+    );
+    assert_eq!(
+        board.rows[2].wait,
+        Wait::Minutes { minutes: 30 },
+        "Friday's 25:00"
+    );
 }
 
 /// A live trip stating the previous date (GTFS-rt `start_date`) predicts,
@@ -215,28 +320,54 @@ fn law3_live_data_joins_the_previous_days_instance_by_its_date() {
     let (sat, fri) = days(&net, &[]);
     let at = ask(&sat, &fri, 88_200, 86_400, 1_800);
     let friday_late = |board: &transit_dispatch::StopBoard| {
-        board.rows.iter().find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(FRI)).cloned()
+        board
+            .rows
+            .iter()
+            .find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(FRI))
+            .cloned()
     };
 
     let dated = live(vec![late_live(Some(FRI), 120, false)]);
     let board = stop_board_at(&net, &at, "X", 10, Some(&dated));
     let row = friday_late(&board).expect("Friday's late is on the board");
-    assert_eq!((row.expected_secs, row.delay_secs), (Some(89_220), Some(120)));
+    assert_eq!(
+        (row.expected_secs, row.delay_secs),
+        (Some(89_220), Some(120))
+    );
 
     // Stating no date: the current service day's (Saturday's) trip. It never
     // touches Friday's.
     let undated = live(vec![late_live(None, 120, false)]);
     let board = stop_board_at(&net, &at, "X", 10, Some(&undated));
     let row = friday_late(&board).expect("Friday's late is on the board");
-    assert_eq!(row.expected_secs, None, "an undated live trip is not the previous day's");
-    let saturday = board.rows.iter().find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(SAT)).unwrap();
+    assert_eq!(
+        row.expected_secs, None,
+        "an undated live trip is not the previous day's"
+    );
+    let saturday = board
+        .rows
+        .iter()
+        .find(|r| r.departure.trip == "late" && r.departure.date.as_deref() == Some(SAT))
+        .unwrap();
     assert_eq!(saturday.delay_secs, Some(120), "it is Saturday's instance");
 
     // A cancel stating Friday takes Friday's instance off. A cancel
     // stating no date does not.
-    let board = stop_board_at(&net, &at, "X", 10, Some(&live(vec![late_live(Some(FRI), 0, true)])));
+    let board = stop_board_at(
+        &net,
+        &at,
+        "X",
+        10,
+        Some(&live(vec![late_live(Some(FRI), 0, true)])),
+    );
     assert!(friday_late(&board).is_none());
-    let board = stop_board_at(&net, &at, "X", 10, Some(&live(vec![late_live(None, 0, true)])));
+    let board = stop_board_at(
+        &net,
+        &at,
+        "X",
+        10,
+        Some(&live(vec![late_live(None, 0, true)])),
+    );
     assert!(friday_late(&board).is_some());
 }
 
@@ -246,10 +377,23 @@ fn law4_the_previous_days_edits_are_the_previous_days() {
     let records = [cancel_late_on(FRI)];
     let (sat, fri) = days(&net, &records);
     let board = stop_board_at(&net, &ask(&sat, &fri, 88_200, 86_400, 1_800), "X", 10, None);
-    assert!(!rows(&board).contains(&("late".into(), FRI.into(), 89_100)), "Friday's cancel takes Friday's late off");
-    assert!(rows(&board).contains(&("late".into(), SAT.into(), 89_100)), "Saturday's late runs");
-    let skipped = board.skipped.iter().find(|s| s.departure.trip == "late").expect("listed as skipped");
-    assert_eq!((skipped.departure.date.as_deref(), skipped.cancel.as_deref()), (Some(FRI), Some("cancel-late")));
+    assert!(
+        !rows(&board).contains(&("late".into(), FRI.into(), 89_100)),
+        "Friday's cancel takes Friday's late off"
+    );
+    assert!(
+        rows(&board).contains(&("late".into(), SAT.into(), 89_100)),
+        "Saturday's late runs"
+    );
+    let skipped = board
+        .skipped
+        .iter()
+        .find(|s| s.departure.trip == "late")
+        .expect("listed as skipped");
+    assert_eq!(
+        (skipped.departure.date.as_deref(), skipped.cancel.as_deref()),
+        (Some(FRI), Some("cancel-late"))
+    );
 }
 
 /// Before a fall-back day's anchor the instant precedes the date's clock. Waits
@@ -264,8 +408,16 @@ fn law5_the_fall_back_hour_counts_waits_from_the_true_instant() {
     // At 00:30 on the wall, Friday's clock reads 24:30. Saturday's clock reads
     // -00:30, which the host clamps to 0.
     let board = stop_board_at(&net, &ask(&sat, &fri, 88_200, 90_000, 0), "X", 10, None);
-    let dawn = board.rows.iter().find(|r| r.departure.trip == "dawn").expect("Saturday's 00:10 has not left");
-    assert_eq!(dawn.wait, Wait::Minutes { minutes: 40 }, "00:10 on Saturday's clock is 40 minutes off, not 10");
+    let dawn = board
+        .rows
+        .iter()
+        .find(|r| r.departure.trip == "dawn")
+        .expect("Saturday's 00:10 has not left");
+    assert_eq!(
+        dawn.wait,
+        Wait::Minutes { minutes: 40 },
+        "00:10 on Saturday's clock is 40 minutes off, not 10"
+    );
     assert_eq!(board.rows[0].departure.trip, "late");
     assert_eq!(board.rows[0].wait, Wait::Minutes { minutes: 15 });
 }
@@ -275,13 +427,38 @@ fn law6_a_route_only_the_previous_day_runs_has_its_group() {
     let net = network();
     let (sat, fri) = days(&net, &[]);
     let board = grouped_board_at(&net, &ask(&sat, &fri, 88_200, 86_400, 1_800), "X", 3, None);
-    let owl = board.groups.iter().find(|g| g.route == "r2").expect("Friday's owl route still runs");
+    let owl = board
+        .groups
+        .iter()
+        .find(|g| g.route == "r2")
+        .expect("Friday's owl route still runs");
     assert_eq!(owl.departures.len(), 1);
-    assert_eq!((owl.departures[0].departure.trip.as_str(), owl.departures[0].departure.date.as_deref()), ("owl", Some(FRI)));
+    assert_eq!(
+        (
+            owl.departures[0].departure.trip.as_str(),
+            owl.departures[0].departure.date.as_deref()
+        ),
+        ("owl", Some(FRI))
+    );
     let r1 = board.groups.iter().find(|g| g.route == "r1").unwrap();
-    let order: Vec<_> = r1.departures.iter().map(|r| (r.departure.trip.as_str(), r.departure.date.as_deref().unwrap())).collect();
+    let order: Vec<_> = r1
+        .departures
+        .iter()
+        .map(|r| {
+            (
+                r.departure.trip.as_str(),
+                r.departure.date.as_deref().unwrap(),
+            )
+        })
+        .collect();
     assert_eq!(order, [("late", FRI), ("early", SAT), ("late", SAT)]);
 
-    let later = grouped_board_at(&net, &ask(&sat, &fri, 100_000, 86_400, 13_600), "X", 3, None);
+    let later = grouped_board_at(
+        &net,
+        &ask(&sat, &fri, 100_000, 86_400, 13_600),
+        "X",
+        3,
+        None,
+    );
     assert!(later.groups.iter().all(|g| g.route != "r2"));
 }

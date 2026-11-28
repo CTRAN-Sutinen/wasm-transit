@@ -1,8 +1,8 @@
 use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use std::collections::{BTreeSet, BTreeMap};
-use transit_date::Date;
 
 use crate::Network;
 
@@ -77,10 +77,13 @@ pub fn stop_gaps(net: &Network, date: Date, stop_id: &str) -> StopGaps {
         gaps_by_hour.entry(w[0] / 3600).or_default().push(gap);
     }
     let departures_by_hour: BTreeMap<u32, u32> =
-        departures.iter().copied().fold(BTreeMap::new(), |mut m, d| {
-            *m.entry(d / 3600).or_default() += 1;
-            m
-        });
+        departures
+            .iter()
+            .copied()
+            .fold(BTreeMap::new(), |mut m, d| {
+                *m.entry(d / 3600).or_default() += 1;
+                m
+            });
     let mut hours: BTreeSet<u32> = departures_by_hour.keys().copied().collect();
     hours.extend(gaps_by_hour.keys().copied());
     let hourly = hours
@@ -98,7 +101,11 @@ pub fn stop_gaps(net: &Network, date: Date, stop_id: &str) -> StopGaps {
         .collect();
     StopGaps {
         stop_id: stop_id.to_string(),
-        name: net.stops.get(stop_id).map(|s| s.name.clone()).unwrap_or_default(),
+        name: net
+            .stops
+            .get(stop_id)
+            .map(|s| s.name.clone())
+            .unwrap_or_default(),
         departures: departures.len() as u32,
         first_departure_secs: spine.first().copied(),
         last_departure_secs: spine.last().copied(),
@@ -118,4 +125,3 @@ pub struct StopWait {
     pub longest_wait_secs: u32,
     pub wait_from_secs: u32,
 }
-

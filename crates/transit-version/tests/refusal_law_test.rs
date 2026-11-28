@@ -9,7 +9,15 @@ use transit_version::{refused, write_refused, Refusal, RefusalCode as Code};
 #[test]
 fn two_versions_ahead_is_newer_and_unread() {
     let r = refused("network", 4, 2);
-    assert_eq!(r.code, Some(Code::NewerVersion { kind: "network".into(), found: 4, reads: 2, read: false }));
+    assert_eq!(
+        r.code,
+        Some(Code::NewerVersion {
+            kind: "network".into(),
+            found: 4,
+            reads: 2,
+            read: false
+        })
+    );
 }
 
 /// 2. A document one version ahead that the build cannot read is refused the
@@ -17,14 +25,30 @@ fn two_versions_ahead_is_newer_and_unread() {
 #[test]
 fn one_version_ahead_unreadable_is_newer_and_unread() {
     let r = refused("watchlist", 3, 2);
-    assert_eq!(r.code, Some(Code::NewerVersion { kind: "watchlist".into(), found: 3, reads: 2, read: false }));
+    assert_eq!(
+        r.code,
+        Some(Code::NewerVersion {
+            kind: "watchlist".into(),
+            found: 3,
+            reads: 2,
+            read: false
+        })
+    );
 }
 
 /// 3. A write over a document read one version ahead is refused as read.
 #[test]
 fn a_write_over_a_read_ahead_copy_is_newer_and_read() {
     let r = write_refused("network", 3, 2);
-    assert_eq!(r.code, Some(Code::NewerVersion { kind: "network".into(), found: 3, reads: 2, read: true }));
+    assert_eq!(
+        r.code,
+        Some(Code::NewerVersion {
+            kind: "network".into(),
+            found: 3,
+            reads: 2,
+            read: true
+        })
+    );
 }
 
 /// 4. An older document asks for a migration, which no host acts on, so it
@@ -39,7 +63,10 @@ fn an_older_document_has_no_code() {
 #[test]
 fn the_shape_is_a_message_and_an_optional_code() {
     let plain = Refusal::from("invalid request".to_string());
-    assert_eq!(serde_json::to_value(&plain).unwrap(), json!({"message": "invalid request"}));
+    assert_eq!(
+        serde_json::to_value(&plain).unwrap(),
+        json!({"message": "invalid request"})
+    );
     let coded = refused("network", 4, 2);
     assert_eq!(
         serde_json::to_value(&coded).unwrap(),

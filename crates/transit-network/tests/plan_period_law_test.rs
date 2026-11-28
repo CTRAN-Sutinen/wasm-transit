@@ -13,11 +13,11 @@
 //! 5. A `through` before `effective_from`, or not a date, is a named error,
 //!    and the input is untouched.
 
-use transit_date::{Days, Date, Weekday};
 use proptest::prelude::*;
+use transit_date::{Date, Days, Weekday};
 use transit_network::{
-    apply_edits, CalendarException, CalendarRule, DateRange, DayState, Network, NetworkEdit, PlanMeta, ServiceType,
-    WeekdaySet,
+    apply_edits, CalendarException, CalendarRule, DateRange, DayState, Network, NetworkEdit,
+    PlanMeta, ServiceType, WeekdaySet,
 };
 
 fn day0() -> Date {
@@ -45,7 +45,11 @@ fn gen_type() -> impl Strategy<Value = GenType> {
         proptest::collection::vec((0i64..200, 0i64..120), 0..3),
         proptest::collection::vec((0i64..400, any::<bool>()), 0..4),
     )
-        .prop_map(|(days, ranges, exceptions)| GenType { days, ranges, exceptions })
+        .prop_map(|(days, ranges, exceptions)| GenType {
+            days,
+            ranges,
+            exceptions,
+        })
 }
 
 fn service_type(g: &GenType) -> ServiceType {
@@ -53,15 +57,39 @@ fn service_type(g: &GenType) -> ServiceType {
     let mut exceptions: Vec<CalendarException> = Vec::new();
     for &(o, added) in &g.exceptions {
         if exceptions.iter().all(|e| e.date != d(o)) {
-            exceptions.push(CalendarException { date: d(o), state: if added { DayState::Added } else { DayState::Removed }, extra: Default::default() });
+            exceptions.push(CalendarException {
+                date: d(o),
+                state: if added {
+                    DayState::Added
+                } else {
+                    DayState::Removed
+                },
+                extra: Default::default(),
+            });
         }
     }
     exceptions.sort_by_key(|e| e.date);
     ServiceType {
         name: "T".into(),
         rule: CalendarRule {
-            days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun },
-            ranges: g.ranges.iter().map(|&(s, len)| DateRange { start: d(s), end: d(s + len), extra: Default::default() }).collect(),
+            days: WeekdaySet {
+                mon,
+                tue,
+                wed,
+                thu,
+                fri,
+                sat,
+                sun,
+            },
+            ranges: g
+                .ranges
+                .iter()
+                .map(|&(s, len)| DateRange {
+                    start: d(s),
+                    end: d(s + len),
+                    extra: Default::default(),
+                })
+                .collect(),
             exceptions,
             extra: Default::default(),
         },
@@ -70,7 +98,10 @@ fn service_type(g: &GenType) -> ServiceType {
 }
 
 fn network(types: &[GenType]) -> Network {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for (i, g) in types.iter().enumerate() {
         net.service_types.insert(format!("t{i}"), service_type(g));
     }
@@ -94,7 +125,8 @@ fn runs(rule: &CalendarRule, date: Date) -> bool {
     if let Some(e) = rule.exceptions.iter().find(|e| e.date == date) {
         return e.state == DayState::Added;
     }
-    flagged(&rule.days, date.weekday()) && rule.ranges.iter().any(|r| r.start <= date && date <= r.end)
+    flagged(&rule.days, date.weekday())
+        && rule.ranges.iter().any(|r| r.start <= date && date <= r.end)
 }
 
 fn weekly(rule: &CalendarRule) -> bool {
@@ -109,7 +141,12 @@ fn weekly_by(rule: &CalendarRule, through: Date) -> bool {
 
 fn set_plan(from: i64, through: Option<Date>) -> NetworkEdit {
     NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "winter".into(), name: "Winter".into(), effective_from: Some(d(from)), extra: Default::default() },
+        plan: PlanMeta {
+            id: "winter".into(),
+            name: "Winter".into(),
+            effective_from: Some(d(from)),
+            extra: Default::default(),
+        },
         through: through.map(iso),
     }
 }
@@ -222,10 +259,18 @@ proptest! {
 fn a_period_end_that_is_not_a_date_is_refused() {
     let net = network(&[]);
     let edit = NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "w".into(), name: "W".into(), effective_from: Some(d(0)), extra: Default::default() },
+        plan: PlanMeta {
+            id: "w".into(),
+            name: "W".into(),
+            effective_from: Some(d(0)),
+            extra: Default::default(),
+        },
         through: Some("2027-02-30".into()),
     };
-    assert!(apply_edits(&net, &[edit]).expect_err("refused").reason.contains("invalid date"));
+    assert!(apply_edits(&net, &[edit])
+        .expect_err("refused")
+        .reason
+        .contains("invalid date"));
 }
 
 #[test]
@@ -286,15 +331,37 @@ fn the_winter_fork_runs_past_the_import_calendar() {
     );
     let pick = Date::from_ymd_opt(2027, 1, 25).unwrap();
     let edit = NetworkEdit::SetPlan {
-        plan: PlanMeta { id: "winter-2027".into(), name: "Winter 2027".into(), effective_from: Some(pick), extra: Default::default() },
+        plan: PlanMeta {
+            id: "winter-2027".into(),
+            name: "Winter 2027".into(),
+            effective_from: Some(pick),
+            extra: Default::default(),
+        },
         through: Some("2027-05-29".into()),
     };
     let next = apply_edits(&net, &[edit]).unwrap();
     assert!(!net.service_types["1-WKDY"].rule.runs_on(pick));
-    assert!(next.service_types["1-WKDY"].rule.runs_on(pick), "the weekday runs on the pick's date");
+    assert!(
+        next.service_types["1-WKDY"].rule.runs_on(pick),
+        "the weekday runs on the pick's date"
+    );
     let weekday = &next.service_types["1-WKDY"].rule.ranges;
-    assert_eq!((weekday.len(), weekday[0].start, weekday[0].end.to_string()), (1, pick, "2027-05-29".into()), "the weekday's calendar is the period");
-    assert!(next.service_types["4-NYE"].rule.exceptions.is_empty(), "last year's holiday leaves; next year's is the planner's");
-    assert!(next.service_types["1-WKDY/30"].rule.ranges.is_empty(), "a closed period before the pick leaves the calendar");
-    assert_eq!(next.service_types.len(), 3, "every key stays: trips still name them");
+    assert_eq!(
+        (weekday.len(), weekday[0].start, weekday[0].end.to_string()),
+        (1, pick, "2027-05-29".into()),
+        "the weekday's calendar is the period"
+    );
+    assert!(
+        next.service_types["4-NYE"].rule.exceptions.is_empty(),
+        "last year's holiday leaves; next year's is the planner's"
+    );
+    assert!(
+        next.service_types["1-WKDY/30"].rule.ranges.is_empty(),
+        "a closed period before the pick leaves the calendar"
+    );
+    assert_eq!(
+        next.service_types.len(),
+        3,
+        "every key stays: trips still name them"
+    );
 }

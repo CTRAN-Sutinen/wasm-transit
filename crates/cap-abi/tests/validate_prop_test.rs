@@ -38,7 +38,13 @@ fn valid_manifest() -> CapManifest {
             migrates: migrates
                 .iter()
                 .map(|(k, steps)| {
-                    ((*k).to_string(), steps.iter().map(|&(f, t)| MigrationSpec { from: f, to: t }).collect())
+                    (
+                        (*k).to_string(),
+                        steps
+                            .iter()
+                            .map(|&(f, t)| MigrationSpec { from: f, to: t })
+                            .collect(),
+                    )
                 })
                 .collect(),
             purpose: String::new(),
@@ -50,13 +56,22 @@ fn valid_manifest() -> CapManifest {
         kernel: 1,
         kernel_ops: vec![],
         capabilities: vec![
-            cap("gtfs", &format!("sha256:{}", hex(1)),
-                &["load_feed", "departures"], &[],
+            cap(
+                "gtfs",
+                &format!("sha256:{}", hex(1)),
+                &["load_feed", "departures"],
+                &[],
                 &[("feed", &[1]), ("watchlist", &[1, 2])],
-                &[("watchlist", &[(1, 2)])]),
-            cap("router", &format!("sha256:{}", hex(2)),
-                &["load_feed", "plan"], &[("feed", "gtfs")],
-                &[("feed", &[1])], &[]),
+                &[("watchlist", &[(1, 2)])],
+            ),
+            cap(
+                "router",
+                &format!("sha256:{}", hex(2)),
+                &["load_feed", "plan"],
+                &[("feed", "gtfs")],
+                &[("feed", &[1])],
+                &[],
+            ),
         ],
         assemblies: vec![],
     }
@@ -78,12 +93,22 @@ fn linked(ui: &str, capabilities: &[&str]) -> cap_abi::manifest::LinkedAssembly 
 #[test]
 fn a_linked_assembly_is_closed_known_and_pinned() {
     let mut manifest = valid_manifest();
-    manifest.assemblies = vec![linked("rider", &["gtfs", "router"]), linked("feed", &["gtfs"])];
-    assert!(validate_assembly(&manifest).is_ok(), "{:?}", validate_assembly(&manifest));
+    manifest.assemblies = vec![
+        linked("rider", &["gtfs", "router"]),
+        linked("feed", &["gtfs"]),
+    ];
+    assert!(
+        validate_assembly(&manifest).is_ok(),
+        "{:?}",
+        validate_assembly(&manifest)
+    );
 
     let mut open = valid_manifest();
     open.assemblies = vec![linked("rider", &["router"])];
-    assert!(rejects_with(&open, "closure"), "the router reads the feed the gtfs capability produces");
+    assert!(
+        rejects_with(&open, "closure"),
+        "the router reads the feed the gtfs capability produces"
+    );
 
     let mut unknown = valid_manifest();
     unknown.assemblies = vec![linked("rider", &["gtfs", "ghost"])];
@@ -151,39 +176,70 @@ proptest! {
 /// Property 3, one mutation at a time.
 #[test]
 fn every_single_break_is_caught_by_name() {
-    assert!(validate_assembly(&valid_manifest()).is_ok(), "baseline must be valid");
+    assert!(
+        validate_assembly(&valid_manifest()).is_ok(),
+        "baseline must be valid"
+    );
 
     let cases: Vec<(&str, Box<dyn Fn(&mut CapManifest)>)> = vec![
         ("kernel", Box::new(|m| m.kernel = 2)),
-        ("unique_ids", Box::new(|m| m.capabilities[1].id = "gtfs".into())),
-        ("hash_format", Box::new(|m| m.capabilities[0].hash = "not-a-hash".into())),
-        ("hash_pinned_url", Box::new(|m| m.capabilities[0].url = "caps/other.wasm".into())),
+        (
+            "unique_ids",
+            Box::new(|m| m.capabilities[1].id = "gtfs".into()),
+        ),
+        (
+            "hash_format",
+            Box::new(|m| m.capabilities[0].hash = "not-a-hash".into()),
+        ),
+        (
+            "hash_pinned_url",
+            Box::new(|m| m.capabilities[0].url = "caps/other.wasm".into()),
+        ),
         ("ops", Box::new(|m| m.capabilities[0].ops.clear())),
-        ("closure", Box::new(|m| {
-            m.capabilities[1].consumes.insert("feed".into(), "ghost".into());
-        })),
-        ("producer_speaks", Box::new(|m| {
-            m.capabilities[0].speaks.remove("feed");
-        })),
-        ("version_coherence", Box::new(|m| {
-            // The consumer can no longer read or migrate from v2.
-            m.capabilities[1].speaks.insert("feed".into(), vec![2]);
-        })),
-        ("version_coherence", Box::new(|m| {
-            // Migration path removed while the producer still speaks
-            // a version the consumer cannot read.
-            m.capabilities[0].speaks.insert("feed".into(), vec![1, 2]);
-            m.capabilities[1].speaks.insert("feed".into(), vec![1]);
-        })),
-        ("speaks", Box::new(|m| {
-            m.capabilities[0].speaks.insert("watchlist".into(), vec![]);
-        })),
-        ("migrates", Box::new(|m| {
-            m.capabilities[0].migrates.insert(
-                "watchlist".into(),
-                vec![MigrationSpec { from: 2, to: 1 }],
-            );
-        })),
+        (
+            "closure",
+            Box::new(|m| {
+                m.capabilities[1]
+                    .consumes
+                    .insert("feed".into(), "ghost".into());
+            }),
+        ),
+        (
+            "producer_speaks",
+            Box::new(|m| {
+                m.capabilities[0].speaks.remove("feed");
+            }),
+        ),
+        (
+            "version_coherence",
+            Box::new(|m| {
+                // The consumer can no longer read or migrate from v2.
+                m.capabilities[1].speaks.insert("feed".into(), vec![2]);
+            }),
+        ),
+        (
+            "version_coherence",
+            Box::new(|m| {
+                // Migration path removed while the producer still speaks
+                // a version the consumer cannot read.
+                m.capabilities[0].speaks.insert("feed".into(), vec![1, 2]);
+                m.capabilities[1].speaks.insert("feed".into(), vec![1]);
+            }),
+        ),
+        (
+            "speaks",
+            Box::new(|m| {
+                m.capabilities[0].speaks.insert("watchlist".into(), vec![]);
+            }),
+        ),
+        (
+            "migrates",
+            Box::new(|m| {
+                m.capabilities[0]
+                    .migrates
+                    .insert("watchlist".into(), vec![MigrationSpec { from: 2, to: 1 }]);
+            }),
+        ),
     ];
     for (check, mutate) in cases {
         let mut manifest = valid_manifest();
@@ -191,7 +247,9 @@ fn every_single_break_is_caught_by_name() {
         assert!(
             rejects_with(&manifest, check),
             "mutation for {check:?} was not caught (got {:?})",
-            validate_assembly(&manifest).err().map(|i| i.iter().map(|x| x.check.clone()).collect::<Vec<_>>())
+            validate_assembly(&manifest)
+                .err()
+                .map(|i| i.iter().map(|x| x.check.clone()).collect::<Vec<_>>())
         );
     }
 }

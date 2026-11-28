@@ -11,11 +11,13 @@
 //!    that the active plan rides.
 //! 4. The text is not empty.
 
-use transit_date::Date;
 use proptest::collection::vec;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_network::MaterializedTrip;
-use transit_router::{diverted_instances, earliest_arrival, plan_notice, Leg, NoticeKind, RouterNetwork};
+use transit_router::{
+    diverted_instances, earliest_arrival, plan_notice, Leg, NoticeKind, RouterNetwork,
+};
 
 #[path = "prop_support.rs"]
 mod support;

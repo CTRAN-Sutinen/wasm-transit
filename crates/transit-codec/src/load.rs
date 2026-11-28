@@ -20,7 +20,9 @@ impl transit_version::Load for crate::Boundary {
     }
 
     fn answer(&self, hash: String) -> BoundaryLoaded {
-        BoundaryLoaded { boundary_hash: hash }
+        BoundaryLoaded {
+            boundary_hash: hash,
+        }
     }
 }
 
@@ -47,6 +49,9 @@ impl transit_version::Load for crate::Feed {
     }
 
     fn answer(&self, hash: String) -> FeedLoaded {
-        FeedLoaded { feed_hash: hash, summary: self.summary() }
+        FeedLoaded {
+            feed_hash: hash,
+            summary: self.summary(),
+        }
     }
 }

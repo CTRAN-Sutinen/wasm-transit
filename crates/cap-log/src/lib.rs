@@ -25,7 +25,10 @@ pub enum Request {
         #[cfg_attr(feature = "bindings", ts(type = "any"))]
         next: serde_json::Value,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ seq: number, text: string }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(optional, type = "Array<{ seq: number, text: string }>")
+        )]
         unread: Option<serde_json::Value>,
     },
     Fold {
@@ -33,7 +36,10 @@ pub enum Request {
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional, type = "any"))]
         checkpoint: Option<serde_json::Value>,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, text: string }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ seq: number, text: string }>")
+        )]
         entries: serde_json::Value,
     },
     Revert {
@@ -41,14 +47,23 @@ pub enum Request {
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional, type = "any"))]
         checkpoint: Option<serde_json::Value>,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, text: string }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ seq: number, text: string }>")
+        )]
         entries: serde_json::Value,
         #[cfg_attr(feature = "bindings", ts(type = "number"))]
         target: u64,
         #[cfg_attr(feature = "bindings", ts(type = "any"))]
         header: serde_json::Value,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ kind: string, id: string, version: number, after?: unknown }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                optional,
+                type = "Array<{ kind: string, id: string, version: number, after?: unknown }>"
+            )
+        )]
         written: Option<serde_json::Value>,
     },
     CloseGap {
@@ -56,24 +71,53 @@ pub enum Request {
         header: serde_json::Value,
     },
     References {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"
+            )
+        )]
         kinds: serde_json::Value,
-        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"
+            )
+        )]
         folds: serde_json::Value,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "Record<string, Array<{ seq: number, text: string }>>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                optional,
+                type = "Record<string, Array<{ seq: number, text: string }>>"
+            )
+        )]
         entries: Option<serde_json::Value>,
         #[serde(default)]
         #[cfg_attr(feature = "bindings", ts(optional))]
         log: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "{ seq: number, text: string }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(optional, type = "{ seq: number, text: string }")
+        )]
         entry: Option<serde_json::Value>,
     },
     Naming {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ store_kind: string, log?: string, records?: Array<{ kind: string, collection: string }>, references?: Array<{ path: string, target: string }> }>"
+            )
+        )]
         kinds: serde_json::Value,
-        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Record<string, Record<string, Record<string, { version: number, value: unknown }>>>"
+            )
+        )]
         folds: serde_json::Value,
         hashes: Vec<String>,
     },
@@ -93,45 +137,77 @@ pub enum Response {
         #[cfg_attr(feature = "bindings", ts(optional, type = "number"))]
         landed: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "{ kind: string, id: string, seq: number }"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(optional, type = "{ kind: string, id: string, seq: number }")
+        )]
         overlap: Option<transit_log::Overlap>,
     },
     Fold {
         #[cfg_attr(feature = "bindings", ts(type = "number"))]
         seq: u64,
         checkpoint: String,
-        #[cfg_attr(feature = "bindings", ts(type = "Record<string, Record<string, { version: number, value: unknown }>>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Record<string, Record<string, { version: number, value: unknown }>>")
+        )]
         records: Records,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ seq: number, reason: string }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(type = "Array<{ seq: number, reason: string }>")
+        )]
         quarantined: Vec<Quarantined>,
     },
     Revert {
         entry: String,
         changes: usize,
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ kind: string, id: string, now?: { version: number, value: unknown }, prior?: { version: number, value: unknown } }>"
+            )
+        )]
         states: Vec<transit_log::RevertState>,
     },
     CloseGap {
         entry: String,
     },
     References {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string, entry?: { log: string, seq: number } }>"
+            )
+        )]
         broken: Vec<transit_log::Broken>,
         /// Absent with `entry`.
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        #[cfg_attr(feature = "bindings", ts(optional, type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                optional,
+                type = "Array<{ log: string, kind: string, id: string, version: number, reads: number }>"
+            )
+        )]
         unjudged: Vec<transit_log::Unjudged>,
     },
     Naming {
-        #[cfg_attr(feature = "bindings", ts(type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>"))]
+        #[cfg_attr(
+            feature = "bindings",
+            ts(
+                type = "Array<{ log: string, kind: string, id: string, field: string, target: string, names: string }>"
+            )
+        )]
         references: Vec<transit_log::Naming>,
     },
-
 }
 
 use cap_abi::record_hash;
 
-fn checkpoint_of(log: &str, value: Option<serde_json::Value>) -> Result<Checkpoint, cap_abi::Refusal> {
+fn checkpoint_of(
+    log: &str,
+    value: Option<serde_json::Value>,
+) -> Result<Checkpoint, cap_abi::Refusal> {
     match value {
         None => Ok(Checkpoint::empty(log)),
         Some(v) => {
@@ -144,44 +220,91 @@ fn checkpoint_of(log: &str, value: Option<serde_json::Value>) -> Result<Checkpoi
     }
 }
 
-fn parse<T: serde::de::DeserializeOwned>(what: &str, value: serde_json::Value) -> Result<T, String> {
+fn parse<T: serde::de::DeserializeOwned>(
+    what: &str,
+    value: serde_json::Value,
+) -> Result<T, String> {
     serde_json::from_value(value).map_err(|e| format!("{what}: {e}"))
 }
 
 pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
     match request {
-        Request::Compose { checkpoint, header, next, unread } => {
+        Request::Compose {
+            checkpoint,
+            header,
+            next,
+            unread,
+        } => {
             let header: Header = parse("header", header)?;
             let next: Vec<KindRecords> = parse("next", next)?;
-            let unread: Vec<Stored> = parse("unread", unread.unwrap_or(serde_json::Value::Array(Vec::new())))?;
-            let write = transit_log::Write { checkpoint, header, unread, references: None, read: None, now: None, today: None };
-            let received = transit_log::receive(&write, &next, &record_hash, &|e| cap_abi::canonical_bytes(e))?;
-            Ok(Response::Compose { entry: received.entry, changes: received.changes, landed: received.landed, overlap: received.overlap })
+            let unread: Vec<Stored> = parse(
+                "unread",
+                unread.unwrap_or(serde_json::Value::Array(Vec::new())),
+            )?;
+            let write = transit_log::Write {
+                checkpoint,
+                header,
+                unread,
+                references: None,
+                read: None,
+                now: None,
+                today: None,
+            };
+            let received = transit_log::receive(&write, &next, &record_hash, &|e| {
+                cap_abi::canonical_bytes(e)
+            })?;
+            Ok(Response::Compose {
+                entry: received.entry,
+                changes: received.changes,
+                landed: received.landed,
+                overlap: received.overlap,
+            })
         }
-        Request::References { kinds, folds, entries, log, entry } => {
+        Request::References {
+            kinds,
+            folds,
+            entries,
+            log,
+            entry,
+        } => {
             let kinds: Vec<transit_log::KindReferences> = parse("kinds", kinds)?;
             let folds: std::collections::BTreeMap<String, Records> = parse("folds", folds)?;
             let mut broken = transit_log::broken(&kinds, &folds);
             if let Some(entry) = entry {
                 let log = log.ok_or("an entry needs its log")?;
                 let entry: Stored = parse("entry", entry)?;
-                return Ok(Response::References { broken: transit_log::touched(broken, &kinds, &log, &entry), unjudged: Vec::new() });
+                return Ok(Response::References {
+                    broken: transit_log::touched(broken, &kinds, &log, &entry),
+                    unjudged: Vec::new(),
+                });
             }
             let unjudged = transit_log::unjudged(&kinds, &folds);
             if let Some(entries) = entries {
-                let entries: std::collections::BTreeMap<String, Vec<Stored>> = parse("entries", entries)?;
+                let entries: std::collections::BTreeMap<String, Vec<Stored>> =
+                    parse("entries", entries)?;
                 transit_log::blame(&mut broken, &kinds, &entries);
             }
             Ok(Response::References { broken, unjudged })
         }
-        Request::Naming { kinds, folds, hashes } => {
+        Request::Naming {
+            kinds,
+            folds,
+            hashes,
+        } => {
             let kinds: Vec<transit_log::KindReferences> = parse("kinds", kinds)?;
             let folds: std::collections::BTreeMap<String, Records> = parse("folds", folds)?;
-            Ok(Response::Naming { references: transit_log::naming(&kinds, &folds, &hashes) })
+            Ok(Response::Naming {
+                references: transit_log::naming(&kinds, &folds, &hashes),
+            })
         }
-        Request::Fold { log, checkpoint, entries } => {
+        Request::Fold {
+            log,
+            checkpoint,
+            entries,
+        } => {
             let entries: Vec<Stored> = parse("entries", entries)?;
-            let folded = transit_log::fold(checkpoint_of(&log, checkpoint)?, &entries, &record_hash)?;
+            let folded =
+                transit_log::fold(checkpoint_of(&log, checkpoint)?, &entries, &record_hash)?;
             Ok(Response::Fold {
                 seq: folded.fold.seq,
                 checkpoint: cap_abi::canonical_bytes(&folded.fold)?,
@@ -189,41 +312,92 @@ pub fn dispatch(request: Request) -> Result<Response, cap_abi::Refusal> {
                 quarantined: folded.quarantined,
             })
         }
-        Request::Revert { log, checkpoint, entries, target, header, written } => {
+        Request::Revert {
+            log,
+            checkpoint,
+            entries,
+            target,
+            header,
+            written,
+        } => {
             let entries: Vec<Stored> = parse("entries", entries)?;
             let header: Header = parse("header", header)?;
             let start = checkpoint_of(&log, checkpoint)?;
             if target <= start.seq {
-                return Err(format!("entry {target} is not after the checkpoint at {}", start.seq).into());
+                return Err(format!(
+                    "entry {target} is not after the checkpoint at {}",
+                    start.seq
+                )
+                .into());
             }
-            let at = entries.iter().position(|e| e.seq == target).ok_or_else(|| format!("entry {target} is not in the entries given"))?;
+            let at = entries
+                .iter()
+                .position(|e| e.seq == target)
+                .ok_or_else(|| format!("entry {target} is not in the entries given"))?;
             let before = transit_log::fold(start.clone(), &entries[..at], &record_hash)?;
             if before.fold.seq != target - 1 {
-                return Err(format!("the entries before {target} end at {}: the log has a gap", before.fold.seq).into());
+                return Err(format!(
+                    "the entries before {target} end at {}: the log has a gap",
+                    before.fold.seq
+                )
+                .into());
             }
             let head = transit_log::fold(start, &entries, &record_hash)?;
             if let Some(q) = head.quarantined.iter().find(|q| q.seq == target) {
-                return Err(format!("entry {target} is quarantined ({}): it changed nothing to revert", q.reason).into());
+                return Err(format!(
+                    "entry {target} is quarantined ({}): it changed nothing to revert",
+                    q.reason
+                )
+                .into());
             }
             if header.seq != head.fold.seq + 1 {
-                return Err(format!("the entry's seq is {}, and the log's head is {}", header.seq, head.fold.seq).into());
+                return Err(format!(
+                    "the entry's seq is {}, and the log's head is {}",
+                    header.seq, head.fold.seq
+                )
+                .into());
             }
             let entry = transit_log::read_entry(&log, &entries[at])?;
-            let written: Vec<transit_log::Written> = parse("written", written.unwrap_or(serde_json::Value::Array(Vec::new())))?;
-            let states = transit_log::revert_states(&before.fold, &head.fold, &entry, &record_hash)?;
+            let written: Vec<transit_log::Written> = parse(
+                "written",
+                written.unwrap_or(serde_json::Value::Array(Vec::new())),
+            )?;
+            let states =
+                transit_log::revert_states(&before.fold, &head.fold, &entry, &record_hash)?;
             let changes = transit_log::revert_with(&states, &written, &record_hash)?;
             if changes.is_empty() {
                 return Err(format!("entry {target} changed no record").into());
             }
             let n = changes.len();
-            Ok(Response::Revert { entry: cap_abi::canonical_bytes(&transit_log::Entry::new(header, changes, Some(target)))?, changes: n, states })
+            Ok(Response::Revert {
+                entry: cap_abi::canonical_bytes(&transit_log::Entry::new(
+                    header,
+                    changes,
+                    Some(target),
+                ))?,
+                changes: n,
+                states,
+            })
         }
         Request::CloseGap { header } => {
             let header: Header = parse("header", header)?;
-            if header.intent.note.as_deref().is_none_or(|n| n.trim().is_empty()) {
-                return Err("an entry that closes a gap names its cause (header.intent.note)".into());
+            if header
+                .intent
+                .note
+                .as_deref()
+                .is_none_or(|n| n.trim().is_empty())
+            {
+                return Err(
+                    "an entry that closes a gap names its cause (header.intent.note)".into(),
+                );
             }
-            Ok(Response::CloseGap { entry: cap_abi::canonical_bytes(&transit_log::Entry::new(header, Vec::new(), None))? })
+            Ok(Response::CloseGap {
+                entry: cap_abi::canonical_bytes(&transit_log::Entry::new(
+                    header,
+                    Vec::new(),
+                    None,
+                ))?,
+            })
         }
     }
 }

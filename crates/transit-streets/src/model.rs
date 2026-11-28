@@ -13,9 +13,7 @@ use ts_rs::TS;
 
 use crate::StreetError;
 
-transit_version::kind_tag!(
-    StreetsKind = "streets"
-);
+transit_version::kind_tag!(StreetsKind = "streets");
 
 impl transit_version::Versioned for Streets {
     const KIND: &'static str = "streets";
@@ -41,8 +39,17 @@ pub struct Streets {
 impl Streets {
     /// Counts (ways, segments, distinct points) without building the graph.
     pub fn counts(&self) -> (u32, u32, u32) {
-        let segments = self.ways.iter().map(|w| w.points.len().saturating_sub(1) as u32).sum();
-        let nodes = self.ways.iter().flat_map(|w| &w.points).collect::<std::collections::HashSet<_>>().len() as u32;
+        let segments = self
+            .ways
+            .iter()
+            .map(|w| w.points.len().saturating_sub(1) as u32)
+            .sum();
+        let nodes = self
+            .ways
+            .iter()
+            .flat_map(|w| &w.points)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as u32;
         (self.ways.len() as u32, segments, nodes)
     }
 }
@@ -104,7 +111,12 @@ const LON_MAX: i32 = 180_000_000;
 
 impl Way {
     fn key(&self) -> (&[[i32; 2]], bool, &'static str, Option<&str>) {
-        (&self.points, self.oneway, self.class.as_str(), self.name.as_deref())
+        (
+            &self.points,
+            self.oneway,
+            self.class.as_str(),
+            self.name.as_deref(),
+        )
     }
 
     pub(crate) fn orient(&mut self) {
@@ -121,7 +133,11 @@ impl Streets {
         }
         ways.sort_by(|a, b| a.key().cmp(&b.key()));
         ways.dedup();
-        Streets { kind: Default::default(), schema_version: Default::default(), ways }
+        Streets {
+            kind: Default::default(),
+            schema_version: Default::default(),
+            ways,
+        }
     }
 
     /// Checks canonical form, so a registered document hashes as the import
@@ -135,7 +151,11 @@ impl Streets {
             if way.points.windows(2).any(|p| p[0] == p[1]) {
                 return bad("a point repeated in a row");
             }
-            if way.points.iter().any(|[lat, lon]| lat.abs() > LAT_MAX || lon.abs() > LON_MAX) {
+            if way
+                .points
+                .iter()
+                .any(|[lat, lon]| lat.abs() > LAT_MAX || lon.abs() > LON_MAX)
+            {
                 return bad("a point off the globe");
             }
             if !way.oneway && way.points.iter().rev().lt(way.points.iter()) {

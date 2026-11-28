@@ -11,7 +11,8 @@ fn overview(trip: &str, updates: Vec<StopUpdateView>) -> RtOverview {
         trip_updates: 1,
         vehicles: 0,
         alerts: 0,
-        trips: vec![TripUpdateView { start_date: None,
+        trips: vec![TripUpdateView {
+            start_date: None,
             trip_id: Some(trip.into()),
             route_id: None,
             start_time: None,
@@ -35,16 +36,42 @@ fn update(stop: &str, seq: u32, delay: i32) -> StopUpdateView {
 
 #[test]
 fn a_stated_delay_carries_downstream_not_upstream() {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     let (net, boundary) = (&imported.network, &imported.boundary);
     // t30 runs A(1) → C(2) → B(3). The feed only mentions C.
-    let p = trip_progress(net, boundary, &overview("t30", vec![update("C", 2, 240)]), "t30").unwrap();
-    let by_stop: Vec<_> = p.stops.iter().map(|s| (s.stop_id.as_str(), s.departure_delay)).collect();
-    assert_eq!(by_stop, vec![("A", None), ("C", Some(240)), ("B", Some(240))]);
-    assert_eq!(p.stops[2].predicted_arrival, Some(8 * 3600 + 50 * 60 + 240), "08:54");
+    let p = trip_progress(
+        net,
+        boundary,
+        &overview("t30", vec![update("C", 2, 240)]),
+        "t30",
+    )
+    .unwrap();
+    let by_stop: Vec<_> = p
+        .stops
+        .iter()
+        .map(|s| (s.stop_id.as_str(), s.departure_delay))
+        .collect();
+    assert_eq!(
+        by_stop,
+        vec![("A", None), ("C", Some(240)), ("B", Some(240))]
+    );
+    assert_eq!(
+        p.stops[2].predicted_arrival,
+        Some(8 * 3600 + 50 * 60 + 240),
+        "08:54"
+    );
 
-    let p = trip_progress(net, boundary, &overview("t30", vec![update("A", 1, 300), update("B", 3, 60)]), "t30").unwrap();
+    let p = trip_progress(
+        net,
+        boundary,
+        &overview("t30", vec![update("A", 1, 300), update("B", 3, 60)]),
+        "t30",
+    )
+    .unwrap();
     let by_stop: Vec<_> = p.stops.iter().map(|s| s.departure_delay).collect();
     assert_eq!(by_stop, vec![Some(300), Some(300), Some(60)]);
 }

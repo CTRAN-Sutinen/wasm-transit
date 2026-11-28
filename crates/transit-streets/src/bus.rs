@@ -4,7 +4,12 @@
 
 use crate::StreetClass;
 
-pub const CONFIRM: [StreetClass; 4] = [StreetClass::Unknown, StreetClass::Path, StreetClass::Steps, StreetClass::Track];
+pub const CONFIRM: [StreetClass; 4] = [
+    StreetClass::Unknown,
+    StreetClass::Path,
+    StreetClass::Steps,
+    StreetClass::Track,
+];
 
 pub fn confirms(class: StreetClass) -> bool {
     CONFIRM.contains(&class)

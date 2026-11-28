@@ -25,42 +25,42 @@ use ts_rs::TS;
 use transit_network::Network;
 
 mod stats;
-pub use stats::{RouteStats, StopStats, NetworkStats, network_stats};
 use stats::family_stats;
+pub use stats::{network_stats, NetworkStats, RouteStats, StopStats};
 
 mod findings;
 pub use findings::{
-    FindingParams, FrequencyHole, LongWait, CostlyMiss, HoleRow, WaitRow, route_frequency,
-    hub_connections, network_findings
+    hub_connections, network_findings, route_frequency, CostlyMiss, FindingParams, FrequencyHole,
+    HoleRow, LongWait, WaitRow, RouteConnections, NetworkFindings, RouteFrequency, RouteFrequencyRow,
 };
 
 mod coverage;
 pub mod load;
 
-pub use coverage::{
-    coverage, coverage_compare, parse_layer, unserved_points, CoverageDelta, CoverageSide, CoverageStats,
-    CoverageWindow, LayerField, LayerReading, Rings, UnservedPlaces, UnservedPoint, WeightedLayer, Weights,
-};
 use coverage::coverage_of_members;
+pub use coverage::{
+    coverage, coverage_compare, parse_layer, unserved_points, CoverageDelta, CoverageSide,
+    CoverageStats, CoverageWindow, LayerField, LayerReading, Rings, UnservedPlaces, UnservedPoint,
+    WeightedLayer, Weights,
+};
 
 mod calendar;
-pub use calendar::{
-    day_types, DayTypeGroup, plan_compare, type_coverage, service_type_overview
-};
 use calendar::service_type_summaries;
+pub use calendar::{day_types, plan_compare, service_type_overview, type_coverage, DayTypeGroup,
+CombinationCoverage, DayType, DayTypeComparison};
 
 mod stops;
-pub use stops::{StopHourGaps, StopGaps, StopWait, stop_gaps};
+pub use stops::{stop_gaps, StopGaps, StopHourGaps, StopWait};
 
 mod transfers;
 pub use transfers::{
-    longest_waits, HourlyTrips, HourlyTypeTrips, MissedConnection, missed_connections,
-    timed_transfers, TransferWindow, hourly_trips, route_overlap,
+    hourly_trips, longest_waits, missed_connections, route_overlap, timed_transfers, HourlyTrips,
+    HourlyTypeTrips, MissedConnection, TransferWindow, RouteOverlap, TimedTransfer
 };
 
 mod detail;
-pub use detail::{ServiceTypeDetail, service_type_detail};
 use detail::pooled_detail;
+pub use detail::{service_type_detail, ServiceTypeDetail};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -206,16 +206,35 @@ pub struct RouteChange {
 
 /// The baseline side pools the same members, whether or not they run together
 /// there.
-pub fn service_type_compare(base: &Network, proposal: &Network, members: &[String]) -> Option<ServiceTypeComparison> {
+pub fn service_type_compare(
+    base: &Network,
+    proposal: &Network,
+    members: &[String],
+) -> Option<ServiceTypeComparison> {
     let combination = transit_network::service_combination(proposal, members)?;
     let p = pooled_detail(proposal, &combination.members);
     let b = pooled_detail(base, &combination.members);
-    let base_days = transit_network::service_combination(base, &combination.members).map_or(0, |c| c.dates.len() as u32);
+    let base_days = transit_network::service_combination(base, &combination.members)
+        .map_or(0, |c| c.dates.len() as u32);
     let proposal_days = combination.dates.len() as u32;
     let same = |x: &RouteStats, y: &RouteStats| {
-        (x.name.as_str(), x.patterns, x.stops, x.trips, x.first_start_secs, x.last_arrival_secs, x.typical_headway_secs)
-            == (y.name.as_str(), y.patterns, y.stops, y.trips, y.first_start_secs, y.last_arrival_secs, y.typical_headway_secs)
-            && (x.revenue_hours - y.revenue_hours).abs() < 1e-9
+        (
+            x.name.as_str(),
+            x.patterns,
+            x.stops,
+            x.trips,
+            x.first_start_secs,
+            x.last_arrival_secs,
+            x.typical_headway_secs,
+        ) == (
+            y.name.as_str(),
+            y.patterns,
+            y.stops,
+            y.trips,
+            y.first_start_secs,
+            y.last_arrival_secs,
+            y.typical_headway_secs,
+        ) && (x.revenue_hours - y.revenue_hours).abs() < 1e-9
     };
     let mut rows: BTreeMap<String, (Option<RouteStats>, Option<RouteStats>)> = BTreeMap::new();
     for r in &b.routes {
@@ -233,8 +252,17 @@ pub fn service_type_compare(base: &Network, proposal: &Network, members: &[Strin
                 continue;
             }
         }
-        let name = proposal.as_ref().or(base.as_ref()).map(|r| r.name.clone()).unwrap_or_default();
-        routes.push(RouteChange { route_id, name, base, proposal });
+        let name = proposal
+            .as_ref()
+            .or(base.as_ref())
+            .map(|r| r.name.clone())
+            .unwrap_or_default();
+        routes.push(RouteChange {
+            route_id,
+            name,
+            base,
+            proposal,
+        });
     }
     let totals = |d: &ServiceTypeDetail, days: u32| ComparedTotals {
         days,
@@ -281,7 +309,8 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
                 if !members.contains(entry.service_type.as_str()) {
                     continue;
                 }
-                let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
+                let Ok(materialized) = transit_network::materialize_service(net, schedule_id)
+                else {
                     continue;
                 };
                 for trip in materialized {
@@ -308,9 +337,6 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
         .collect()
 }
 
-
-
-
 /// None below four times, because a median over fewer than three gaps is a
 /// headway nobody runs. The median, not the span average, keeps a busy hour and
 /// a quiet evening in proportion.
@@ -328,9 +354,6 @@ fn median_gap_secs(times: &[u32]) -> Option<u32> {
     Some(gaps[gaps.len() / 2])
 }
 
-
-
-
 const METERS_PER_MILE: f64 = 1609.344;
 
 /// Zero for a pattern with no distances.
@@ -343,7 +366,6 @@ fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f
         _ => 0.0,
     }
 }
-
 
 fn usable_transfer_pairs(pooled: &BTreeMap<&str, Vec<u32>>) -> u32 {
     let usable = |from: &[u32], to: &[u32]| {

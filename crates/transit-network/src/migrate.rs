@@ -19,7 +19,9 @@ use serde_json::{json, Value};
 use crate::model::{Pattern, StopOffset};
 
 pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
-    let Some(root) = doc.as_object_mut() else { return Ok(()) };
+    let Some(root) = doc.as_object_mut() else {
+        return Ok(());
+    };
     migrate_paths(root);
     if let Some(old) = root.remove("schedules") {
         root.entry("pattern_trips").or_insert(old);
@@ -37,12 +39,20 @@ pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
     };
     if let Some(pts) = root.get_mut("pattern_trips").and_then(Value::as_object_mut) {
         for (key, pt) in pts.iter_mut() {
-            let Some(pt) = pt.as_object_mut() else { continue };
+            let Some(pt) = pt.as_object_mut() else {
+                continue;
+            };
             if pt.contains_key("trips") {
                 continue;
             }
-            let departures = pt.remove("departures").or_else(|| pt.remove("schedule")).unwrap_or(Value::Null);
-            let pattern = pt.get("pattern").and_then(Value::as_str).and_then(|p| patterns.get(p));
+            let departures = pt
+                .remove("departures")
+                .or_else(|| pt.remove("schedule"))
+                .unwrap_or(Value::Null);
+            let pattern = pt
+                .get("pattern")
+                .and_then(Value::as_str)
+                .and_then(|p| patterns.get(p));
             let trips: Vec<Value> = old_starts(&departures)
                 .into_iter()
                 .map(|start| {
@@ -58,9 +68,14 @@ pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
     }
     if let Some(blocks) = root.get_mut("blocks").and_then(Value::as_object_mut) {
         for block in blocks.values_mut() {
-            let Some(refs) = block.get_mut("trips").and_then(Value::as_array_mut) else { continue };
+            let Some(refs) = block.get_mut("trips").and_then(Value::as_array_mut) else {
+                continue;
+            };
             for r in refs.iter_mut() {
-                let pt = r.get("pattern_trips").or_else(|| r.get("schedule")).and_then(Value::as_str);
+                let pt = r
+                    .get("pattern_trips")
+                    .or_else(|| r.get("schedule"))
+                    .and_then(Value::as_str);
                 let start = r.get("start_secs").and_then(Value::as_u64);
                 if let (Some(pt), Some(start)) = (pt, start) {
                     *r = json!({"trip": format!("{pt}@{start}")});
@@ -77,7 +92,11 @@ fn old_starts(departures: &Value) -> Vec<u32> {
         Some("exact_times") => departures
             .get("starts")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect()
+            })
             .unwrap_or_default(),
         Some("headway_bands") => departures
             .get("bands")
@@ -85,9 +104,11 @@ fn old_starts(departures: &Value) -> Vec<u32> {
             .map(|bands| {
                 let mut out = Vec::new();
                 for b in bands {
-                    let (Some(start), Some(end), Some(headway)) =
-                        (num(b, "start_secs"), num(b, "end_secs"), num(b, "headway_secs"))
-                    else {
+                    let (Some(start), Some(end), Some(headway)) = (
+                        num(b, "start_secs"),
+                        num(b, "end_secs"),
+                        num(b, "headway_secs"),
+                    ) else {
                         continue;
                     };
                     if headway == 0 {
@@ -125,7 +146,10 @@ fn profile_times(pattern: &Pattern, start: u32) -> Vec<StopOffset> {
                 }
                 _ => None,
             };
-            StopOffset { arrival_secs: t, departure_secs: t }
+            StopOffset {
+                arrival_secs: t,
+                departure_secs: t,
+            }
         })
         .collect()
 }
@@ -134,8 +158,12 @@ fn migrate_paths(root: &mut serde_json::Map<String, Value>) {
     let mut lines: Vec<(String, Value)> = Vec::new();
     if let Some(patterns) = root.get_mut("patterns").and_then(Value::as_object_mut) {
         for (id, pattern) in patterns.iter_mut() {
-            let Some(pattern) = pattern.as_object_mut() else { continue };
-            let Some(path) = pattern.remove("path") else { continue };
+            let Some(pattern) = pattern.as_object_mut() else {
+                continue;
+            };
+            let Some(path) = pattern.remove("path") else {
+                continue;
+            };
             if path.is_null() {
                 continue;
             }

@@ -3,24 +3,34 @@
 //! 20, 40 (route 40 runs directions 0 and 1), stops A B C SA SB, trip t10 at
 //! 08:00.
 
-use prost::Message;
 use proptest::prelude::*;
+use prost::Message;
+use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlert, ServiceAlerts};
 use transit_codec::Boundary;
 use transit_live::{AlertScope, LiveAlert, OnTimeWindow};
-use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
 use transit_network::{Departs, Network};
 use transit_rt::{decode_overview, encode_alerts, live_day};
 
 fn network() -> (Network, Boundary) {
-    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!(
+        "../../../web/e2e/fixtures/sample-gtfs.zip"
+    ))
+    .unwrap();
     let imported = transit_codec::import(&feed);
     (imported.network, imported.boundary)
 }
 
 fn live_of(net: &Network, boundary: &Boundary, bytes: &[u8]) -> transit_live::LiveDay {
     let rt = decode_overview(bytes).unwrap();
-    live_day(net, boundary, None, None, Some(&rt), OnTimeWindow::default())
+    live_day(
+        net,
+        boundary,
+        None,
+        None,
+        Some(&rt),
+        OnTimeWindow::default(),
+    )
 }
 
 fn expected_scope(net: &Network, e: &AlertEntity) -> AlertScope {
@@ -42,7 +52,11 @@ fn expected_scope(net: &Network, e: &AlertEntity) -> AlertScope {
 }
 
 fn first_text(texts: &[AlertText]) -> Option<String> {
-    texts.iter().find(|t| t.lang.is_none()).or(texts.first()).map(|t| t.text.clone())
+    texts
+        .iter()
+        .find(|t| t.lang.is_none())
+        .or(texts.first())
+        .map(|t| t.text.clone())
 }
 
 fn expected(net: &Network, id: &str, a: &ServiceAlert) -> LiveAlert {
@@ -61,51 +75,100 @@ fn expected(net: &Network, id: &str, a: &ServiceAlert) -> LiveAlert {
 
 fn arb_entity() -> impl Strategy<Value = AlertEntity> {
     prop_oneof![
-        prop::sample::select(vec!["10", "20", "40"]).prop_map(|r| AlertEntity { route: Some(r.into()), ..Default::default() }),
-        prop::sample::select(vec!["0", "1"])
-            .prop_map(|d| AlertEntity { route: Some("40".into()), direction: Some(d.into()), ..Default::default() }),
-        prop::sample::select(vec!["A", "B", "C", "SA", "SB"]).prop_map(|s| AlertEntity { stop: Some(s.into()), ..Default::default() }),
-        (prop::sample::select(vec!["10", "20"]), prop::sample::select(vec!["A", "B", "C"]))
-            .prop_map(|(r, s)| AlertEntity { route: Some(r.into()), stop: Some(s.into()), ..Default::default() }),
-        proptest::option::of(Just("2026-11-19"))
-            .prop_map(|d| AlertEntity { trip: Some("t10".into()), date: d.map(String::from), ..Default::default() }),
+        prop::sample::select(vec!["10", "20", "40"]).prop_map(|r| AlertEntity {
+            route: Some(r.into()),
+            ..Default::default()
+        }),
+        prop::sample::select(vec!["0", "1"]).prop_map(|d| AlertEntity {
+            route: Some("40".into()),
+            direction: Some(d.into()),
+            ..Default::default()
+        }),
+        prop::sample::select(vec!["A", "B", "C", "SA", "SB"]).prop_map(|s| AlertEntity {
+            stop: Some(s.into()),
+            ..Default::default()
+        }),
+        (
+            prop::sample::select(vec!["10", "20"]),
+            prop::sample::select(vec!["A", "B", "C"])
+        )
+            .prop_map(|(r, s)| AlertEntity {
+                route: Some(r.into()),
+                stop: Some(s.into()),
+                ..Default::default()
+            }),
+        proptest::option::of(Just("2026-11-19")).prop_map(|d| AlertEntity {
+            trip: Some("t10".into()),
+            date: d.map(String::from),
+            ..Default::default()
+        }),
     ]
 }
 
 fn arb_period() -> impl Strategy<Value = AlertPeriod> {
-    (proptest::option::of(0u64..2000), proptest::option::of(0u64..2000)).prop_map(|(a, b)| match (a, b) {
-        (Some(a), Some(b)) => AlertPeriod { start: Some(a.min(b)), end: Some(a.max(b)) },
-        (a, b) => AlertPeriod { start: a, end: b },
-    })
+    (
+        proptest::option::of(0u64..2000),
+        proptest::option::of(0u64..2000),
+    )
+        .prop_map(|(a, b)| match (a, b) {
+            (Some(a), Some(b)) => AlertPeriod {
+                start: Some(a.min(b)),
+                end: Some(a.max(b)),
+            },
+            (a, b) => AlertPeriod { start: a, end: b },
+        })
 }
 
 fn arb_texts() -> impl Strategy<Value = Vec<AlertText>> {
-    prop::sample::subsequence(vec![None, Some("en"), Some("es"), Some("ru")], 1..4).prop_map(|langs| {
-        langs.into_iter().map(|l| AlertText { lang: l.map(String::from), text: format!("Detour ({})", l.unwrap_or("default")) }).collect()
-    })
+    prop::sample::subsequence(vec![None, Some("en"), Some("es"), Some("ru")], 1..4).prop_map(
+        |langs| {
+            langs
+                .into_iter()
+                .map(|l| AlertText {
+                    lang: l.map(String::from),
+                    text: format!("Detour ({})", l.unwrap_or("default")),
+                })
+                .collect()
+        },
+    )
 }
 
 fn arb_alert() -> impl Strategy<Value = ServiceAlert> {
     (
-        prop::sample::select(vec![AlertStatus::Draft, AlertStatus::Published, AlertStatus::Published, AlertStatus::Retired]),
-        prop::sample::select(vec![AlertCause::Unknown, AlertCause::Construction, AlertCause::Weather]),
-        prop::sample::select(vec![AlertEffect::Unknown, AlertEffect::Detour, AlertEffect::NoService]),
+        prop::sample::select(vec![
+            AlertStatus::Draft,
+            AlertStatus::Published,
+            AlertStatus::Published,
+            AlertStatus::Retired,
+        ]),
+        prop::sample::select(vec![
+            AlertCause::Unknown,
+            AlertCause::Construction,
+            AlertCause::Weather,
+        ]),
+        prop::sample::select(vec![
+            AlertEffect::Unknown,
+            AlertEffect::Detour,
+            AlertEffect::NoService,
+        ]),
         prop::sample::select(vec![AlertSeverity::Unknown, AlertSeverity::Warning]),
         arb_texts(),
         prop::collection::vec(arb_period(), 0..3),
         prop::collection::vec(arb_entity(), 1..4),
     )
-        .prop_map(|(status, cause, effect, severity, header, communication, informed)| ServiceAlert {
-            status,
-            cause,
-            effect,
-            severity,
-            description: header.clone(),
-            header,
-            communication,
-            informed,
-            ..Default::default()
-        })
+        .prop_map(
+            |(status, cause, effect, severity, header, communication, informed)| ServiceAlert {
+                status,
+                cause,
+                effect,
+                severity,
+                description: header.clone(),
+                header,
+                communication,
+                informed,
+                ..Default::default()
+            },
+        )
 }
 
 proptest! {
@@ -155,17 +218,30 @@ fn the_agency_and_a_route_type_round_trip() {
     let (net, boundary) = network();
     let mut a = ServiceAlert {
         status: AlertStatus::Published,
-        header: vec![AlertText { lang: None, text: "Snow".into() }],
+        header: vec![AlertText {
+            lang: None,
+            text: "Snow".into(),
+        }],
         informed: vec![AlertEntity::default()],
         ..Default::default()
     };
     let doc = ServiceAlerts::default().put("agency", a.clone());
     let day = live_of(&net, &boundary, &encode_alerts(&net, &doc, 0).bytes);
     assert_eq!(day.alerts[0].scopes, vec![AlertScope::default()]);
-    a.informed = vec![AlertEntity { route_type: Some(3), ..Default::default() }];
+    a.informed = vec![AlertEntity {
+        route_type: Some(3),
+        ..Default::default()
+    }];
     let doc = ServiceAlerts::default().put("buses", a);
     let day = live_of(&net, &boundary, &encode_alerts(&net, &doc, 0).bytes);
-    let routes: Vec<_> = net.routes.keys().map(|r| AlertScope { route: Some(r.clone()), ..Default::default() }).collect();
+    let routes: Vec<_> = net
+        .routes
+        .keys()
+        .map(|r| AlertScope {
+            route: Some(r.clone()),
+            ..Default::default()
+        })
+        .collect();
     assert_eq!(day.alerts[0].scopes, routes);
 }
 
@@ -174,20 +250,43 @@ fn the_feed_holds_the_published_alerts_not_yet_ended() {
     let (net, _) = network();
     let alert = |status, end: Option<u64>| ServiceAlert {
         status,
-        header: vec![AlertText { lang: None, text: "x".into() }],
-        communication: vec![AlertPeriod { start: Some(0), end }],
-        informed: vec![AlertEntity { route: Some("10".into()), ..Default::default() }],
+        header: vec![AlertText {
+            lang: None,
+            text: "x".into(),
+        }],
+        communication: vec![AlertPeriod {
+            start: Some(0),
+            end,
+        }],
+        informed: vec![AlertEntity {
+            route: Some("10".into()),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let doc = ServiceAlerts::default()
         .put("draft", alert(AlertStatus::Draft, None))
         .put("ended", alert(AlertStatus::Published, Some(50)))
-        .put("later", ServiceAlert { communication: vec![AlertPeriod { start: Some(500), end: None }], ..alert(AlertStatus::Published, None) })
+        .put(
+            "later",
+            ServiceAlert {
+                communication: vec![AlertPeriod {
+                    start: Some(500),
+                    end: None,
+                }],
+                ..alert(AlertStatus::Published, None)
+            },
+        )
         .put("open", alert(AlertStatus::Published, None))
         .put("withdrawn", alert(AlertStatus::Retired, None));
-    let msg = transit_rt::gtfs_rt::FeedMessage::decode(encode_alerts(&net, &doc, 100).bytes.as_slice()).unwrap();
+    let msg =
+        transit_rt::gtfs_rt::FeedMessage::decode(encode_alerts(&net, &doc, 100).bytes.as_slice())
+            .unwrap();
     assert_eq!(msg.header.timestamp, Some(100));
-    assert_eq!(msg.header.incrementality, Some(transit_rt::gtfs_rt::feed_header::Incrementality::FullDataset as i32));
+    assert_eq!(
+        msg.header.incrementality,
+        Some(transit_rt::gtfs_rt::feed_header::Incrementality::FullDataset as i32)
+    );
     let ids: Vec<_> = msg.entity.iter().map(|e| e.id.as_str()).collect();
     assert_eq!(ids, ["later", "open"]);
 }
@@ -200,19 +299,35 @@ fn an_entity_that_cannot_be_written_is_named_not_widened() {
         "a1",
         ServiceAlert {
             status: AlertStatus::Published,
-            header: vec![AlertText { lang: None, text: "x".into() }],
+            header: vec![AlertText {
+                lang: None,
+                text: "x".into(),
+            }],
             informed: vec![
-                AlertEntity { route: Some("40".into()), direction: Some("2".into()), ..Default::default() },
-                AlertEntity { route: Some("10".into()), ..Default::default() },
+                AlertEntity {
+                    route: Some("40".into()),
+                    direction: Some("2".into()),
+                    ..Default::default()
+                },
+                AlertEntity {
+                    route: Some("10".into()),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         },
     );
     let encoded = encode_alerts(&net, &doc, 0);
     assert_eq!(encoded.skipped.len(), 1);
-    assert_eq!((encoded.skipped[0].alert.as_str(), encoded.skipped[0].entity), ("a1", 0));
+    assert_eq!(
+        (encoded.skipped[0].alert.as_str(), encoded.skipped[0].entity),
+        ("a1", 0)
+    );
     let msg = transit_rt::gtfs_rt::FeedMessage::decode(encoded.bytes.as_slice()).unwrap();
-    assert_eq!(msg.entity[0].alert.as_ref().unwrap().informed_entity.len(), 1);
+    assert_eq!(
+        msg.entity[0].alert.as_ref().unwrap().informed_entity.len(),
+        1
+    );
 }
 
 proptest! {
@@ -240,58 +355,123 @@ proptest! {
 #[test]
 fn a_feed_another_app_wrote_reads_into_the_document() {
     use transit_rt::gtfs_rt::{
-        alert, translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage, TimeRange, TranslatedString,
-        TripDescriptor,
+        alert, translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader,
+        FeedMessage, TimeRange, TranslatedString, TripDescriptor,
     };
     let (net, _) = network();
-    let text = |s: &str, lang: &str| TranslatedString { translation: vec![Translation { text: s.into(), language: Some(lang.into()) }] };
-    #[allow(deprecated)]
-    let entity = |id: &str, informed: Vec<EntitySelector>, header: Option<TranslatedString>| FeedEntity {
-        id: id.into(),
-        alert: Some(Alert {
-            active_period: vec![TimeRange { start: Some(100), end: None }],
-            informed_entity: informed,
-            effect: Some(alert::Effect::NoService as i32),
-            header_text: header,
-            ..Default::default()
-        }),
-        ..Default::default()
+    let text = |s: &str, lang: &str| TranslatedString {
+        translation: vec![Translation {
+            text: s.into(),
+            language: Some(lang.into()),
+        }],
     };
+    #[allow(deprecated)]
+    let entity =
+        |id: &str, informed: Vec<EntitySelector>, header: Option<TranslatedString>| FeedEntity {
+            id: id.into(),
+            alert: Some(Alert {
+                active_period: vec![TimeRange {
+                    start: Some(100),
+                    end: None,
+                }],
+                informed_entity: informed,
+                effect: Some(alert::Effect::NoService as i32),
+                header_text: header,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
     let feed = FeedMessage {
-        header: FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
+        header: FeedHeader {
+            gtfs_realtime_version: "2.0".into(),
+            ..Default::default()
+        },
         entity: vec![
             entity(
                 "a1",
                 vec![
-                    EntitySelector { agency_id: Some("1".into()), ..Default::default() },
-                    EntitySelector { route_id: Some("40".into()), direction_id: Some(1), ..Default::default() },
-                    EntitySelector { direction_id: Some(0), ..Default::default() },
                     EntitySelector {
-                        trip: Some(TripDescriptor { trip_id: Some("t10".into()), start_date: Some("20261119".into()), start_time: Some("08:00:00".into()), ..Default::default() }),
+                        agency_id: Some("1".into()),
+                        ..Default::default()
+                    },
+                    EntitySelector {
+                        route_id: Some("40".into()),
+                        direction_id: Some(1),
+                        ..Default::default()
+                    },
+                    EntitySelector {
+                        direction_id: Some(0),
+                        ..Default::default()
+                    },
+                    EntitySelector {
+                        trip: Some(TripDescriptor {
+                            trip_id: Some("t10".into()),
+                            start_date: Some("20261119".into()),
+                            start_time: Some("08:00:00".into()),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     },
                 ],
                 Some(text("Closed", "")),
             ),
-            entity("no-entity", vec![EntitySelector { direction_id: Some(0), ..Default::default() }], Some(text("x", "en"))),
-            entity("no-header", vec![EntitySelector { route_id: Some("10".into()), ..Default::default() }], None),
+            entity(
+                "no-entity",
+                vec![EntitySelector {
+                    direction_id: Some(0),
+                    ..Default::default()
+                }],
+                Some(text("x", "en")),
+            ),
+            entity(
+                "no-header",
+                vec![EntitySelector {
+                    route_id: Some("10".into()),
+                    ..Default::default()
+                }],
+                None,
+            ),
         ],
     };
     let read = transit_rt::read_alerts(&net, &feed.encode_to_vec()).unwrap();
     let a = &read.alerts.alerts["a1"];
-    assert_eq!(a.header, vec![AlertText { lang: None, text: "Closed".into() }]);
-    assert_eq!(a.communication, vec![AlertPeriod { start: Some(100), end: None }]);
+    assert_eq!(
+        a.header,
+        vec![AlertText {
+            lang: None,
+            text: "Closed".into()
+        }]
+    );
+    assert_eq!(
+        a.communication,
+        vec![AlertPeriod {
+            start: Some(100),
+            end: None
+        }]
+    );
     assert_eq!(a.effect, AlertEffect::NoService);
     assert_eq!(
         a.informed,
         vec![
             AlertEntity::default(),
-            AlertEntity { route: Some("40".into()), direction: Some("1".into()), ..Default::default() },
-            AlertEntity { trip: Some("t10".into()), date: Some("2026-11-19".into()), start_secs: Some(28_800), ..Default::default() },
+            AlertEntity {
+                route: Some("40".into()),
+                direction: Some("1".into()),
+                ..Default::default()
+            },
+            AlertEntity {
+                trip: Some("t10".into()),
+                date: Some("2026-11-19".into()),
+                start_secs: Some(28_800),
+                ..Default::default()
+            },
         ]
     );
     assert_eq!(read.skipped.len(), 2);
-    assert_eq!((read.skipped[0].alert.as_str(), read.skipped[0].entity), ("a1", 2));
+    assert_eq!(
+        (read.skipped[0].alert.as_str(), read.skipped[0].entity),
+        ("a1", 2)
+    );
     let dropped: Vec<&str> = read.dropped.iter().map(|d| d.alert.as_str()).collect();
     assert_eq!(dropped, ["no-entity", "no-header"]);
     assert!(read.alerts.clone().checked().is_ok());
@@ -342,24 +522,63 @@ proptest! {
 #[test]
 fn route_and_stop_in_one_entity_select_one_scope() {
     let (net, _) = network();
-    let reading = transit_rt::entity_reading(&net, &AlertEntity { route: Some("10".into()), stop: Some("A".into()), ..Default::default() });
-    assert_eq!(reading.scopes, vec![AlertScope { route: Some("10".into()), stop: Some("A".into()), ..Default::default() }]);
+    let reading = transit_rt::entity_reading(
+        &net,
+        &AlertEntity {
+            route: Some("10".into()),
+            stop: Some("A".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        reading.scopes,
+        vec![AlertScope {
+            route: Some("10".into()),
+            stop: Some("A".into()),
+            ..Default::default()
+        }]
+    );
 }
 
 #[test]
 fn an_entity_names_what_it_selects() {
     let (net, _) = network();
     let named = |e: AlertEntity| transit_rt::entity_reading(&net, &e).names;
-    let n = named(AlertEntity { route: Some("10".into()), stop: Some("A".into()), ..Default::default() });
+    let n = named(AlertEntity {
+        route: Some("10".into()),
+        stop: Some("A".into()),
+        ..Default::default()
+    });
     assert_eq!(n.route.as_ref().map(|r| r.name.as_str()), Some("10"));
-    assert_eq!(n.stop.as_ref().map(|s| (s.name.as_str(), s.bays)), Some(("Main & 1st", 0)));
+    assert_eq!(
+        n.stop.as_ref().map(|s| (s.name.as_str(), s.bays)),
+        Some(("Main & 1st", 0))
+    );
     assert!(!n.agency);
-    let station = named(AlertEntity { stop: Some("STN".into()), ..Default::default() });
-    assert_eq!(station.stop.as_ref().map(|s| (s.name.as_str(), s.bays)), Some(("Main Station", 2)));
-    let trip = named(AlertEntity { trip: Some("t10".into()), ..Default::default() });
+    let station = named(AlertEntity {
+        stop: Some("STN".into()),
+        ..Default::default()
+    });
+    assert_eq!(
+        station.stop.as_ref().map(|s| (s.name.as_str(), s.bays)),
+        Some(("Main Station", 2))
+    );
+    let trip = named(AlertEntity {
+        trip: Some("t10".into()),
+        ..Default::default()
+    });
     let t = trip.trip.unwrap();
-    assert_eq!((t.start_secs, t.headsign.as_deref(), t.route.as_deref()), (Some(28800), Some("Downtown"), Some("10")));
+    assert_eq!(
+        (t.start_secs, t.headsign.as_deref(), t.route.as_deref()),
+        (Some(28800), Some("Downtown"), Some("10"))
+    );
     assert!(named(AlertEntity::default()).agency);
-    let gone = named(AlertEntity { stop: Some("nope".into()), ..Default::default() });
-    assert_eq!(gone.stop.map(|s| (s.name, s.known)), Some(("nope".to_string(), false)));
+    let gone = named(AlertEntity {
+        stop: Some("nope".into()),
+        ..Default::default()
+    });
+    assert_eq!(
+        gone.stop.map(|s| (s.name, s.known)),
+        Some(("nope".to_string(), false))
+    );
 }

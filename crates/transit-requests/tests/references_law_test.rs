@@ -6,7 +6,8 @@ use transit_version::{references, Reference};
 
 #[test]
 fn every_reference_field_is_declared() {
-    let schema = serde_json::to_value(schemars::schema_for!(transit_requests::StopRequests)).unwrap();
+    let schema =
+        serde_json::to_value(schemars::schema_for!(transit_requests::StopRequests)).unwrap();
     assert_eq!(
         references(&schema),
         vec![

@@ -65,16 +65,32 @@ pub enum Response {
 pub const KINDS: &[(&str, u32)] = &[
     (transit_network::KIND, transit_network::SCHEMA_VERSION),
     (transit_sync::KIND, transit_sync::SCHEMA_VERSION),
-    (transit_rider::watchlist::KIND, transit_rider::watchlist::SCHEMA_VERSION),
-    (transit_alerts::version::KIND, transit_alerts::ALERTS_VERSION),
-    (transit_requests::version::KIND, transit_requests::SCHEMA_VERSION),
+    (
+        transit_rider::watchlist::KIND,
+        transit_rider::watchlist::SCHEMA_VERSION,
+    ),
+    (
+        transit_alerts::version::KIND,
+        transit_alerts::ALERTS_VERSION,
+    ),
+    (
+        transit_requests::version::KIND,
+        transit_requests::SCHEMA_VERSION,
+    ),
 ];
 
 fn current(kind: &str) -> Result<u32, String> {
-    KINDS.iter().find(|(k, _)| *k == kind).map(|(_, v)| *v).ok_or_else(|| {
-        let known: Vec<&str> = KINDS.iter().map(|(k, _)| *k).collect();
-        format!("no migration chain for kind {kind:?} (known: {})", known.join(", "))
-    })
+    KINDS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, v)| *v)
+        .ok_or_else(|| {
+            let known: Vec<&str> = KINDS.iter().map(|(k, _)| *k).collect();
+            format!(
+                "no migration chain for kind {kind:?} (known: {})",
+                known.join(", ")
+            )
+        })
 }
 
 fn version_of(kind: &str, doc: &serde_json::Value) -> Result<u32, String> {
@@ -88,30 +104,56 @@ fn version_of(kind: &str, doc: &serde_json::Value) -> Result<u32, String> {
     }
 }
 
-fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::Value, Vec<MigrationNote>), String> {
+fn migrate(
+    kind: &str,
+    doc: serde_json::Value,
+    to: u32,
+) -> Result<(serde_json::Value, Vec<MigrationNote>), String> {
     match kind {
         transit_network::KIND => {
             let (doc, notes) = transit_network::migrate_to(doc, to)?;
-            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            let notes = notes.into_iter().map(|n| MigrationNote {
+                from: n.from,
+                kind: n.kind,
+                field: n.field,
+                count: n.count,
+            });
             Ok((doc, notes.collect()))
         }
         transit_sync::KIND => {
             let (doc, notes) = transit_sync::version::migrate_to(doc, to)?;
-            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            let notes = notes.into_iter().map(|n| MigrationNote {
+                from: n.from,
+                kind: n.kind,
+                field: n.field,
+                count: n.count,
+            });
             Ok((doc, notes.collect()))
         }
         transit_rider::watchlist::KIND => {
             let (doc, notes) = transit_rider::watchlist::migrate_to(doc, to)?;
-            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            let notes = notes.into_iter().map(|n| MigrationNote {
+                from: n.from,
+                kind: n.kind,
+                field: n.field,
+                count: n.count,
+            });
             Ok((doc, notes.collect()))
         }
         transit_alerts::version::KIND => {
             let (doc, notes) = transit_alerts::version::migrate_to(doc, to)?;
-            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            let notes = notes.into_iter().map(|n| MigrationNote {
+                from: n.from,
+                kind: n.kind,
+                field: n.field,
+                count: n.count,
+            });
             Ok((doc, notes.collect()))
         }
         // No step of this chain loses anything.
-        transit_requests::version::KIND => Ok((transit_requests::version::migrate_to(doc, to)?, Vec::new())),
+        transit_requests::version::KIND => {
+            Ok((transit_requests::version::migrate_to(doc, to)?, Vec::new()))
+        }
         _ => Err(current(kind).err().unwrap_or_default()),
     }
 }
@@ -119,12 +161,18 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
 /// Hashes through the type (RFC 8785), as every module that loads the
 /// document does.
 fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), String> {
-    fn typed<T: serde::de::DeserializeOwned + Serialize>(doc: &serde_json::Value) -> Result<(String, String), String> {
+    fn typed<T: serde::de::DeserializeOwned + Serialize>(
+        doc: &serde_json::Value,
+    ) -> Result<(String, String), String> {
         // The kernel's parse is the one deserializer for the type in a linked
         // assembly.
         let text = serde_json::to_string(doc).expect("documents serialize");
-        let typed: T = cap_abi::parse_document(text.as_bytes()).map_err(|e| format!("the migrated document does not read: {e}"))?;
-        Ok((cap_abi::canonical_bytes(&typed)?, cap_abi::canonical_hash(&typed)?))
+        let typed: T = cap_abi::parse_document(text.as_bytes())
+            .map_err(|e| format!("the migrated document does not read: {e}"))?;
+        Ok((
+            cap_abi::canonical_bytes(&typed)?,
+            cap_abi::canonical_hash(&typed)?,
+        ))
     }
     match kind {
         transit_network::KIND => typed::<transit_network::Network>(doc),
@@ -150,7 +198,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let reads = current(&kind)?;
             let to = to.unwrap_or(reads);
             if to > reads {
-                return Err(format!("{kind} v{to} is newer than this build (it reads up to v{reads})"));
+                return Err(format!(
+                    "{kind} v{to} is newer than this build (it reads up to v{reads})"
+                ));
             }
             let from = version_of(&kind, &document)?;
             if from > reads {
@@ -159,12 +209,26 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 ));
             }
             let (document, notes) = migrate(&kind, document, to)?;
-            let (canonical, document_hash) = if to == reads { canonical(&kind, &document)? } else { loose(&document)? };
-            Ok(Response::Migrate { document, canonical, document_hash, from, to, notes })
+            let (canonical, document_hash) = if to == reads {
+                canonical(&kind, &document)?
+            } else {
+                loose(&document)?
+            };
+            Ok(Response::Migrate {
+                document,
+                canonical,
+                document_hash,
+                from,
+                to,
+                notes,
+            })
         }
         Request::Version { kind, document } => {
             let reads = current(&kind)?;
-            Ok(Response::Version { version: version_of(&kind, &document)?, reads })
+            Ok(Response::Version {
+                version: version_of(&kind, &document)?,
+                reads,
+            })
         }
     }
 }
@@ -174,7 +238,9 @@ pub fn dispatch_json(text: &str) -> String {
 }
 
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    cap_abi::outcome::<(), String>(Err(format!("unknown bulk op {op}: migrate takes its document inline")))
+    cap_abi::outcome::<(), String>(Err(format!(
+        "unknown bulk op {op}: migrate takes its document inline"
+    )))
 }
 
 #[cfg(feature = "examples")]

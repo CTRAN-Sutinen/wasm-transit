@@ -8,7 +8,9 @@ use ts_rs::TS;
 use crate::model::{Coord, Network};
 
 pub fn pattern_alignment(network: &Network, pattern: &str) -> Vec<Coord> {
-    let Some(p) = network.patterns.get(pattern) else { return Vec::new() };
+    let Some(p) = network.patterns.get(pattern) else {
+        return Vec::new();
+    };
     authored_alignment(network, pattern)
         .unwrap_or_else(|| stops_line(network, p.stops.iter().map(|ps| ps.stop.as_str())))
 }
@@ -16,25 +18,43 @@ pub fn pattern_alignment(network: &Network, pattern: &str) -> Vec<Coord> {
 pub fn authored_alignment(network: &Network, pattern: &str) -> Option<Vec<Coord>> {
     let id = network.patterns.get(pattern)?.alignment.as_ref()?;
     let points = &network.alignments.get(id)?.points;
-    (points.len() >= 2).then(|| points.iter().map(|p| Coord { lat: p.lat, lon: p.lon }).collect())
+    (points.len() >= 2).then(|| {
+        points
+            .iter()
+            .map(|p| Coord {
+                lat: p.lat,
+                lon: p.lon,
+            })
+            .collect()
+    })
 }
 
 pub fn pattern_stop_points(network: &Network, pattern: &str) -> Vec<Coord> {
     network
         .patterns
         .get(pattern)
-        .map(|p| p.stops.iter().filter_map(|ps| stop_point(network, &ps.stop)).collect())
+        .map(|p| {
+            p.stops
+                .iter()
+                .filter_map(|ps| stop_point(network, &ps.stop))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 pub fn stop_point(network: &Network, stop: &str) -> Option<Coord> {
-    network.stops.get(stop).map(|s| Coord { lat: s.lat, lon: s.lon })
+    network.stops.get(stop).map(|s| Coord {
+        lat: s.lat,
+        lon: s.lon,
+    })
 }
 
 pub fn stops_line<'a>(network: &Network, stops: impl IntoIterator<Item = &'a str>) -> Vec<Coord> {
     let mut out: Vec<Coord> = Vec::new();
     for stop in stops {
-        let Some(c) = stop_point(network, stop) else { continue };
+        let Some(c) = stop_point(network, stop) else {
+            continue;
+        };
         if out.last().is_some_and(|l| l.lat == c.lat && l.lon == c.lon) {
             continue;
         }
@@ -82,10 +102,9 @@ pub struct RouteLines {
 pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLines> {
     let runs = |pattern: &str| {
         members.map_or(true, |m| {
-            network
-                .pattern_trips
-                .values()
-                .any(|pt| pt.pattern == pattern && !pt.trips.is_empty() && m.contains(&pt.service_type))
+            network.pattern_trips.values().any(|pt| {
+                pt.pattern == pattern && !pt.trips.is_empty() && m.contains(&pt.service_type)
+            })
         })
     };
     let mut out = Vec::new();
@@ -101,7 +120,12 @@ pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLi
             }
         }
         if !lines.is_empty() {
-            out.push(RouteLines { route_id: route_id.clone(), name: route.name.clone(), color: route.color.clone(), lines });
+            out.push(RouteLines {
+                route_id: route_id.clone(),
+                name: route.name.clone(),
+                color: route.color.clone(),
+                lines,
+            });
         }
     }
     out
@@ -110,18 +134,33 @@ pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLi
 pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<EntityFocus> {
     let patterns: Vec<&str> = match kind {
         EntityKind::Stop => {
-            return stop_point(network, id).map(|c| EntityFocus { lines: vec![], points: vec![c] });
+            return stop_point(network, id).map(|c| EntityFocus {
+                lines: vec![],
+                points: vec![c],
+            });
         }
-        EntityKind::Pattern => network.patterns.get_key_value(id).map(|(k, _)| vec![k.as_str()])?,
+        EntityKind::Pattern => network
+            .patterns
+            .get_key_value(id)
+            .map(|(k, _)| vec![k.as_str()])?,
         EntityKind::PatternTrips => vec![network.pattern_trips.get(id)?.pattern.as_str()],
         EntityKind::Route => {
             network.routes.get(id)?;
-            network.patterns.iter().filter(|(_, p)| p.route == id).map(|(k, _)| k.as_str()).collect()
+            network
+                .patterns
+                .iter()
+                .filter(|(_, p)| p.route == id)
+                .map(|(k, _)| k.as_str())
+                .collect()
         }
         EntityKind::ServiceType => {
             network.service_types.get(id)?;
-            let mut ids: Vec<&str> =
-                network.pattern_trips.values().filter(|s| s.service_type == id).map(|s| s.pattern.as_str()).collect();
+            let mut ids: Vec<&str> = network
+                .pattern_trips
+                .values()
+                .filter(|s| s.service_type == id)
+                .map(|s| s.pattern.as_str())
+                .collect();
             ids.sort();
             ids.dedup();
             ids

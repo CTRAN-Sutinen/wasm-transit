@@ -1,14 +1,14 @@
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlerts};
 use transit_alerts::{AlertCause, AlertEffect, AlertPeriod, AlertSeverity};
+use transit_alerts::{AlertEntity, AlertStatus, AlertText, ServiceAlerts};
 use transit_network::Network;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
 use crate::gtfs_rt::{
-    alert, feed_header::Incrementality, translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader,
-    FeedMessage, TimeRange, TranslatedString, TripDescriptor,
+    alert, feed_header::Incrementality, translated_string::Translation, Alert, EntitySelector,
+    FeedEntity, FeedHeader, FeedMessage, TimeRange, TranslatedString, TripDescriptor,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,14 +98,26 @@ fn names(network: &Network, e: &AlertEntity, scopes: &[transit_live::AlertScope]
     let route_name = |id: &str| network.routes.get(id).map(|r| r.label().to_string());
     EntityNames {
         agency: e.route.is_none() && e.route_type.is_none() && e.stop.is_none() && e.trip.is_none(),
-        route: e.route.as_ref().map(|id| EntityRoute { id: id.clone(), name: route_name(id).unwrap_or_else(|| id.clone()), known: network.routes.contains_key(id) }),
+        route: e.route.as_ref().map(|id| EntityRoute {
+            id: id.clone(),
+            name: route_name(id).unwrap_or_else(|| id.clone()),
+            known: network.routes.contains_key(id),
+        }),
         route_type: e.route_type,
         direction: e.direction.clone(),
         stop: e.stop.as_ref().map(|id| EntityStop {
             id: id.clone(),
-            name: network.stops.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.clone()),
+            name: network
+                .stops
+                .get(id)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| id.clone()),
             known: network.stops.contains_key(id),
-            bays: network.stops.values().filter(|s| s.parent.as_deref() == Some(id.as_str())).count() as u32,
+            bays: network
+                .stops
+                .values()
+                .filter(|s| s.parent.as_deref() == Some(id.as_str()))
+                .count() as u32,
         }),
         trip: e.trip.as_ref().map(|id| {
             let found = network.trip(id);
@@ -114,7 +126,9 @@ fn names(network: &Network, e: &AlertEntity, scopes: &[transit_live::AlertScope]
                 id: id.clone(),
                 known: found.is_some(),
                 route: pattern.and_then(|p| route_name(&p.route)),
-                start_secs: e.start_secs.or_else(|| scopes.first().and_then(|s| s.start_secs)),
+                start_secs: e
+                    .start_secs
+                    .or_else(|| scopes.first().and_then(|s| s.start_secs)),
                 date: e.date.clone(),
                 headsign: found.and_then(|(_, _, t)| t.headsign.clone()),
             }
@@ -130,9 +144,17 @@ pub fn entity_reading(network: &Network, e: &AlertEntity) -> EntityReading {
         Ok(s) => {
             let view = crate::overview::informed_view(&s);
             let scopes = crate::live::resolve_scope(network, &view);
-            EntityReading { names: names(network, e, &scopes), published: Ok(view), scopes }
+            EntityReading {
+                names: names(network, e, &scopes),
+                published: Ok(view),
+                scopes,
+            }
         }
-        Err(reason) => EntityReading { names: names(network, e, &[]), published: Err(reason), scopes: Vec::new() },
+        Err(reason) => EntityReading {
+            names: names(network, e, &[]),
+            published: Err(reason),
+            scopes: Vec::new(),
+        },
     }
 }
 
@@ -148,7 +170,11 @@ pub fn encode_alerts(network: &Network, alerts: &ServiceAlerts, timestamp: u64) 
         for (i, e) in a.informed.iter().enumerate() {
             match selector(network, &agency, e) {
                 Ok(s) => informed.push(s),
-                Err(reason) => skipped.push(SkippedEntity { alert: id.clone(), entity: i as u32, reason }),
+                Err(reason) => skipped.push(SkippedEntity {
+                    alert: id.clone(),
+                    entity: i as u32,
+                    reason,
+                }),
             }
         }
         if informed.is_empty() {
@@ -162,7 +188,8 @@ pub fn encode_alerts(network: &Network, alerts: &ServiceAlerts, timestamp: u64) 
                 informed_entity: informed,
                 cause: (a.cause != AlertCause::Unknown).then(|| cause(a.cause) as i32),
                 effect: (a.effect != AlertEffect::Unknown).then(|| effect(a.effect) as i32),
-                severity_level: (a.severity != AlertSeverity::Unknown).then(|| severity(a.severity) as i32),
+                severity_level: (a.severity != AlertSeverity::Unknown)
+                    .then(|| severity(a.severity) as i32),
                 header_text: translated(&a.header),
                 description_text: translated(&a.description),
                 url: translated(&a.url),
@@ -180,16 +207,31 @@ pub fn encode_alerts(network: &Network, alerts: &ServiceAlerts, timestamp: u64) 
         },
         entity,
     };
-    EncodedAlerts { bytes: message.encode_to_vec(), skipped }
+    EncodedAlerts {
+        bytes: message.encode_to_vec(),
+        skipped,
+    }
 }
 
 fn ranges(periods: &[AlertPeriod]) -> Vec<TimeRange> {
-    periods.iter().map(|p| TimeRange { start: p.start, end: p.end }).collect()
+    periods
+        .iter()
+        .map(|p| TimeRange {
+            start: p.start,
+            end: p.end,
+        })
+        .collect()
 }
 
 fn translated(texts: &[AlertText]) -> Option<TranslatedString> {
     (!texts.is_empty()).then(|| TranslatedString {
-        translation: texts.iter().map(|t| Translation { text: t.text.clone(), language: t.lang.clone() }).collect(),
+        translation: texts
+            .iter()
+            .map(|t| Translation {
+                text: t.text.clone(),
+                language: t.lang.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -199,13 +241,17 @@ fn clock(secs: u32) -> String {
 }
 
 fn selector(network: &Network, agency: &str, e: &AlertEntity) -> Result<EntitySelector, String> {
-    let whole_agency = e.route.is_none() && e.route_type.is_none() && e.stop.is_none() && e.trip.is_none();
+    let whole_agency =
+        e.route.is_none() && e.route_type.is_none() && e.stop.is_none() && e.trip.is_none();
     let direction_id = match (&e.direction, &e.route) {
         (None, _) => None,
         (Some(_), None) => return Err("a direction needs a route".into()),
         (Some(d), Some(r)) => {
-            let route = network.routes.get(r).ok_or_else(|| format!("route {r:?} is not in the network, so direction {d:?} has no code"))?;
-            let code = transit_codec::gtfs_direction(route, d).ok_or_else(|| format!("route {r:?} direction {d:?} has no GTFS direction_id"))?;
+            let route = network.routes.get(r).ok_or_else(|| {
+                format!("route {r:?} is not in the network, so direction {d:?} has no code")
+            })?;
+            let code = transit_codec::gtfs_direction(route, d)
+                .ok_or_else(|| format!("route {r:?} direction {d:?} has no GTFS direction_id"))?;
             Some(u32::from(code))
         }
     };
@@ -298,16 +344,26 @@ pub fn read_alerts(network: &Network, bytes: &[u8]) -> crate::Result<ReadAlerts>
         for (i, e) in alert.informed_entity.iter().enumerate() {
             match read_selector(network, e) {
                 Ok(a) => informed.push(a),
-                Err(reason) => skipped.push(SkippedEntity { alert: id.clone(), entity: i as u32, reason }),
+                Err(reason) => skipped.push(SkippedEntity {
+                    alert: id.clone(),
+                    entity: i as u32,
+                    reason,
+                }),
             }
         }
         let header = texts(alert.header_text.as_ref());
         if informed.is_empty() {
-            dropped.push(DroppedAlert { alert: id, reason: "no informed entity could be read".into() });
+            dropped.push(DroppedAlert {
+                alert: id,
+                reason: "no informed entity could be read".into(),
+            });
             continue;
         }
         if !header.iter().any(|t| !t.text.trim().is_empty()) {
-            dropped.push(DroppedAlert { alert: id, reason: "no header text".into() });
+            dropped.push(DroppedAlert {
+                alert: id,
+                reason: "no header text".into(),
+            });
             continue;
         }
         doc.alerts.insert(
@@ -327,14 +383,21 @@ pub fn read_alerts(network: &Network, bytes: &[u8]) -> crate::Result<ReadAlerts>
             },
         );
     }
-    Ok(ReadAlerts { alerts: doc, skipped, dropped })
+    Ok(ReadAlerts {
+        alerts: doc,
+        skipped,
+        dropped,
+    })
 }
 
 fn texts(text: Option<&TranslatedString>) -> Vec<AlertText> {
     text.map(|t| {
         t.translation
             .iter()
-            .map(|x| AlertText { lang: x.language.clone().filter(|l| !l.is_empty()), text: x.text.clone() })
+            .map(|x| AlertText {
+                lang: x.language.clone().filter(|l| !l.is_empty()),
+                text: x.text.clone(),
+            })
             .collect()
     })
     .unwrap_or_default()
@@ -343,34 +406,64 @@ fn texts(text: Option<&TranslatedString>) -> Vec<AlertText> {
 fn read_selector(network: &Network, e: &EntitySelector) -> Result<AlertEntity, String> {
     let route_type = match e.route_type {
         None => None,
-        Some(t) => Some(u16::try_from(t).map_err(|_| format!("route_type {t} is not a GTFS route type"))?),
+        Some(t) => {
+            Some(u16::try_from(t).map_err(|_| format!("route_type {t} is not a GTFS route type"))?)
+        }
     };
     let direction = match (e.direction_id, &e.route_id) {
         (None, _) => None,
-        (Some(_), None) => return Err("a direction_id with no route_id names nothing (the GTFS-rt spec)".into()),
+        (Some(_), None) => {
+            return Err("a direction_id with no route_id names nothing (the GTFS-rt spec)".into())
+        }
         (Some(code), Some(r)) => {
-            let route = network.routes.get(r).ok_or_else(|| format!("route {r:?} is not in the network, so direction_id {code} names nothing"))?;
-            Some(transit_codec::model_direction(route, code).ok_or_else(|| format!("route {r:?} has no direction with direction_id {code}"))?.clone())
+            let route = network.routes.get(r).ok_or_else(|| {
+                format!("route {r:?} is not in the network, so direction_id {code} names nothing")
+            })?;
+            Some(
+                transit_codec::model_direction(route, code)
+                    .ok_or_else(|| {
+                        format!("route {r:?} has no direction with direction_id {code}")
+                    })?
+                    .clone(),
+            )
         }
     };
     let (trip, date, start_secs) = match &e.trip {
         None => (None, None, None),
         Some(t) => {
-            let trip = t.trip_id.clone().ok_or("a trip with no trip_id names nothing")?;
+            let trip = t
+                .trip_id
+                .clone()
+                .ok_or("a trip with no trip_id names nothing")?;
             let date = match &t.start_date {
                 None => None,
                 Some(d) => Some(
-                    transit_codec::parse_gtfs_date(d).filter(|_| d.trim() == d).ok_or_else(|| format!("start_date {d:?} is not YYYYMMDD"))?.to_string(),
+                    transit_codec::parse_gtfs_date(d)
+                        .filter(|_| d.trim() == d)
+                        .ok_or_else(|| format!("start_date {d:?} is not YYYYMMDD"))?
+                        .to_string(),
                 ),
             };
             let start = match &t.start_time {
                 None => None,
-                Some(s) => Some(crate::progress::parse_time(s).ok_or_else(|| format!("start_time {s:?} is not HH:MM:SS"))?),
+                Some(s) => Some(
+                    crate::progress::parse_time(s)
+                        .ok_or_else(|| format!("start_time {s:?} is not HH:MM:SS"))?,
+                ),
             };
             (Some(trip), date, start)
         }
     };
-    let entity = AlertEntity { route: e.route_id.clone(), route_type, direction, stop: e.stop_id.clone(), trip, date, start_secs, ..Default::default() };
+    let entity = AlertEntity {
+        route: e.route_id.clone(),
+        route_type,
+        direction,
+        stop: e.stop_id.clone(),
+        trip,
+        date,
+        start_secs,
+        ..Default::default()
+    };
     if entity == AlertEntity::default() && e.agency_id.is_none() {
         return Err("the entity names nothing".into());
     }

@@ -9,12 +9,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::Date;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_network::{
-    apply_edits, materialize_service, migrate_network, validation_issues, Block, CalendarRule, DateRange,
-    Departs, HeadwayBand, Layover, MaterializedTrip, Mode, Network, NetworkEdit, Pattern, PatternStop,
-    PatternTrips, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
+    apply_edits, materialize_service, migrate_network, validation_issues, Block, CalendarRule,
+    DateRange, Departs, HeadwayBand, Layover, MaterializedTrip, Mode, Network, NetworkEdit,
+    Pattern, PatternStop, PatternTrips, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip,
+    TripRef, WeekdaySet,
 };
 
 #[derive(Clone, Debug)]
@@ -44,28 +45,48 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
             proptest::collection::vec(any::<bool>(), n),
         )
     });
-    (proptest::collection::vec(pattern, 1..=2), any::<bool>()).prop_flat_map(|(patterns, with_blocks)| {
-        let shapes: Vec<usize> = patterns.iter().map(|(stops, _)| stops.len()).collect();
-        let trip = (0..patterns.len()).prop_flat_map(move |p| {
-            let n = shapes[p];
+    (proptest::collection::vec(pattern, 1..=2), any::<bool>()).prop_flat_map(
+        |(patterns, with_blocks)| {
+            let shapes: Vec<usize> = patterns.iter().map(|(stops, _)| stops.len()).collect();
+            let trip = (0..patterns.len()).prop_flat_map(move |p| {
+                let n = shapes[p];
+                (
+                    Just(p),
+                    any::<bool>(),
+                    proptest::option::weighted(
+                        0.85,
+                        (5u32 * 3600..26 * 3600).prop_map(|s| s - s % 600),
+                    ),
+                    (
+                        6u32 * 3600..10 * 3600,
+                        3600u32..4 * 3600,
+                        600u32..1800,
+                        any::<bool>(),
+                    ),
+                    proptest::collection::vec((60u32..900, 0u32..120, 0u8..4), n),
+                )
+                    .prop_map(
+                        |(pattern, saturday, start_secs, (s, len, h, exact), rows)| GenTrip {
+                            pattern,
+                            saturday,
+                            start_secs,
+                            every: (s - s % 60, s - s % 60 + len, h - h % 60, exact),
+                            rows,
+                        },
+                    )
+            });
             (
-                Just(p),
-                any::<bool>(),
-                proptest::option::weighted(0.85, (5u32 * 3600..26 * 3600).prop_map(|s| s - s % 600)),
-                (6u32 * 3600..10 * 3600, 3600u32..4 * 3600, 600u32..1800, any::<bool>()),
-                proptest::collection::vec((60u32..900, 0u32..120, 0u8..4), n),
+                Just(patterns),
+                proptest::collection::vec(trip, 0..=8),
+                Just(with_blocks),
             )
-                .prop_map(|(pattern, saturday, start_secs, (s, len, h, exact), rows)| GenTrip {
-                    pattern,
-                    saturday,
-                    start_secs,
-                    every: (s - s % 60, s - s % 60 + len, h - h % 60, exact),
-                    rows,
+                .prop_map(|(patterns, trips, with_blocks)| Spec {
+                    patterns,
+                    trips,
+                    with_blocks,
                 })
-        });
-        (Just(patterns), proptest::collection::vec(trip, 0..=8), Just(with_blocks))
-            .prop_map(|(patterns, trips, with_blocks)| Spec { patterns, trips, with_blocks })
-    })
+        },
+    )
 }
 
 fn offsets(rows: &[(u32, u32, u8)], timepoints: &[bool]) -> Vec<StopOffset> {
@@ -78,9 +99,17 @@ fn offsets(rows: &[(u32, u32, u8)], timepoints: &[bool]) -> Vec<StopOffset> {
                 t += leg;
             }
             let arrival = t;
-            let dwell = if i == 0 || i == last { dwell % 2 * 60 } else { dwell };
+            let dwell = if i == 0 || i == last {
+                dwell % 2 * 60
+            } else {
+                dwell
+            };
             t += dwell;
-            let shown = if i == 0 || i == last || timepoints[i] { 0 } else { shown };
+            let shown = if i == 0 || i == last || timepoints[i] {
+                0
+            } else {
+                shown
+            };
             StopOffset {
                 arrival_secs: (shown == 0 || shown == 1).then_some(arrival),
                 departure_secs: (shown == 0 || shown == 2).then_some(t),
@@ -90,18 +119,35 @@ fn offsets(rows: &[(u32, u32, u8)], timepoints: &[bool]) -> Vec<StopOffset> {
 }
 
 fn end_offset(trip: &Trip) -> u32 {
-    trip.times.last().and_then(|o| o.arrival_secs).expect("last stop carries an arrival")
+    trip.times
+        .last()
+        .and_then(|o| o.arrival_secs)
+        .expect("last stop carries an arrival")
 }
 
 fn build(spec: &Spec) -> Network {
-    let mut net = Network { name: "Generated".into(), ..Default::default() };
+    let mut net = Network {
+        name: "Generated".into(),
+        ..Default::default()
+    };
     for i in 0..6 {
         net.stops.insert(
             format!("s{i}"),
-            Stop { name: format!("Stop {i}"), lat: 45.5 + i as f64 * 0.01, lon: -122.6, ..Default::default() },
+            Stop {
+                name: format!("Stop {i}"),
+                lat: 45.5 + i as f64 * 0.01,
+                lon: -122.6,
+                ..Default::default()
+            },
         );
     }
-    net.routes.insert("r0".into(), Route { mode: Mode::Bus, ..Default::default() });
+    net.routes.insert(
+        "r0".into(),
+        Route {
+            mode: Mode::Bus,
+            ..Default::default()
+        },
+    );
     for (p, (stops, flags)) in spec.patterns.iter().enumerate() {
         let n = stops.len();
         let timepoints = (0..n).filter(|&i| flags[i] || i == 0 || i == n - 1).count() as u32;
@@ -136,25 +182,42 @@ fn build(spec: &Spec) -> Network {
         extra: Default::default(),
     };
     let weekday = WeekdaySet::weekdays();
-    let saturday = WeekdaySet { sat: true, ..WeekdaySet::none() };
+    let saturday = WeekdaySet {
+        sat: true,
+        ..WeekdaySet::none()
+    };
     for (id, days) in [("wk", weekday), ("sa", saturday)] {
         net.service_types.insert(
             id.into(),
             ServiceType {
                 name: id.into(),
-                rule: CalendarRule { days, ranges: vec![range.clone()], exceptions: vec![], extra: Default::default() },
+                rule: CalendarRule {
+                    days,
+                    ranges: vec![range.clone()],
+                    exceptions: vec![],
+                    extra: Default::default(),
+                },
                 extra: Default::default(),
             },
         );
     }
     for (i, t) in spec.trips.iter().enumerate() {
-        let timepoints: Vec<bool> = net.patterns[&format!("p{}", t.pattern)].stops.iter().map(|s| s.timepoint).collect();
+        let timepoints: Vec<bool> = net.patterns[&format!("p{}", t.pattern)]
+            .stops
+            .iter()
+            .map(|s| s.timepoint)
+            .collect();
         let service = if t.saturday { "sa" } else { "wk" };
         let key = format!("{service}:p{}", t.pattern);
         let departs = match t.start_secs {
             Some(start_secs) => Departs::At { start_secs },
             None => Departs::Every {
-                bands: vec![HeadwayBand { start_secs: t.every.0, end_secs: t.every.1, headway_secs: t.every.2, extra: Default::default() }],
+                bands: vec![HeadwayBand {
+                    start_secs: t.every.0,
+                    end_secs: t.every.1,
+                    headway_secs: t.every.2,
+                    extra: Default::default(),
+                }],
                 exact: t.every.3,
             },
         };
@@ -167,7 +230,12 @@ fn build(spec: &Spec) -> Network {
                 extra: Default::default(),
             })
             .trips
-            .push(Trip { id: format!("t{i}"), departs, times: offsets(&t.rows, &timepoints), ..Default::default() });
+            .push(Trip {
+                id: format!("t{i}"),
+                departs,
+                times: offsets(&t.rows, &timepoints),
+                ..Default::default()
+            });
     }
     if spec.with_blocks {
         add_blocks(&mut net);
@@ -185,9 +253,13 @@ fn add_blocks(net: &mut Network) {
     for pt in net.pattern_trips.values() {
         for trip in &pt.trips {
             match (&trip.departs, pt.service_type.as_str()) {
-                (Departs::At { start_secs }, "wk") => weekday.push((*start_secs, start_secs + end_offset(trip), trip.id.clone())),
+                (Departs::At { start_secs }, "wk") => {
+                    weekday.push((*start_secs, start_secs + end_offset(trip), trip.id.clone()))
+                }
                 (Departs::At { start_secs }, "sa") => saturday.push((*start_secs, trip.id.clone())),
-                (Departs::Every { bands, .. }, "wk") if every.is_none() && bands[0].headway_secs >= end_offset(trip) => {
+                (Departs::Every { bands, .. }, "wk")
+                    if every.is_none() && bands[0].headway_secs >= end_offset(trip) =>
+                {
                     every = Some(trip.id.clone())
                 }
                 _ => {}
@@ -202,19 +274,47 @@ fn add_blocks(net: &mut Network) {
             if t.0 < last.1 {
                 continue;
             }
-            layovers.push(Layover { after_trip: chain.len() - 1, secs: (t.0 - last.1).min(300), at: None, extra: Default::default() });
+            layovers.push(Layover {
+                after_trip: chain.len() - 1,
+                secs: (t.0 - last.1).min(300),
+                at: None,
+                extra: Default::default(),
+            });
         }
         chain.push(t);
     }
     let chained: BTreeSet<String> = if chain.len() >= 2 {
-        let trips = chain.iter().map(|(_, _, id)| TripRef { trip: id.clone(), extra: Default::default() }).collect();
-        net.blocks.insert("b0".into(), Block { trips, layovers, extra: Default::default() });
+        let trips = chain
+            .iter()
+            .map(|(_, _, id)| TripRef {
+                trip: id.clone(),
+                extra: Default::default(),
+            })
+            .collect();
+        net.blocks.insert(
+            "b0".into(),
+            Block {
+                trips,
+                layovers,
+                extra: Default::default(),
+            },
+        );
         chain.iter().map(|(_, _, id)| id.clone()).collect()
     } else {
         BTreeSet::new()
     };
     if let Some(id) = every {
-        net.blocks.insert("b1".into(), Block { trips: vec![TripRef { trip: id, extra: Default::default() }], layovers: vec![], extra: Default::default() });
+        net.blocks.insert(
+            "b1".into(),
+            Block {
+                trips: vec![TripRef {
+                    trip: id,
+                    extra: Default::default(),
+                }],
+                layovers: vec![],
+                extra: Default::default(),
+            },
+        );
     }
     let free = weekday.iter().find(|(_, _, id)| !chained.contains(id));
     if let (Some((_, _, wk)), Some((_, sa))) = (free, saturday.first()) {
@@ -222,8 +322,14 @@ fn add_blocks(net: &mut Network) {
             "b2".into(),
             Block {
                 trips: vec![
-                    TripRef { trip: wk.clone(), extra: Default::default() },
-                    TripRef { trip: sa.clone(), extra: Default::default() },
+                    TripRef {
+                        trip: wk.clone(),
+                        extra: Default::default(),
+                    },
+                    TripRef {
+                        trip: sa.clone(),
+                        extra: Default::default(),
+                    },
                 ],
                 layovers: vec![],
                 extra: Default::default(),
@@ -245,7 +351,9 @@ fn oracle_instances(departs: &Departs) -> Vec<u32> {
                 let n = if b.headway_secs == 0 {
                     0
                 } else {
-                    b.end_secs.saturating_sub(b.start_secs).div_ceil(b.headway_secs)
+                    b.end_secs
+                        .saturating_sub(b.start_secs)
+                        .div_ceil(b.headway_secs)
                 };
                 (0..n).map(move |k| b.start_secs + k * b.headway_secs)
             })
@@ -266,18 +374,39 @@ fn trip<'a>(net: &'a Network, id: &str) -> Option<(&'a str, &'a PatternTrips, &'
 
 /// Scheduled times are exact, a one-sided row repeats its side, an unscheduled
 /// row sits between its neighbors, and the trip runs forward.
-fn check_instance(pattern: &Pattern, trip: &Trip, start: u32, got: &MaterializedTrip) -> Result<(), TestCaseError> {
+fn check_instance(
+    pattern: &Pattern,
+    trip: &Trip,
+    start: u32,
+    got: &MaterializedTrip,
+) -> Result<(), TestCaseError> {
     prop_assert_eq!(&got.trip, &trip.id);
     prop_assert_eq!(got.start_secs, start);
-    prop_assert_eq!(got.stop_times.len(), pattern.stops.len(), "one stop time per pattern stop");
+    prop_assert_eq!(
+        got.stop_times.len(),
+        pattern.stops.len(),
+        "one stop time per pattern stop"
+    );
     for (i, (st, ps)) in got.stop_times.iter().zip(&pattern.stops).enumerate() {
         prop_assert_eq!(&st.stop, &ps.stop);
         prop_assert_eq!(st.timepoint, ps.timepoint);
         let o = &trip.times[i];
         match (o.arrival_secs, o.departure_secs) {
             (Some(a), Some(d)) => {
-                prop_assert_eq!(st.arrival_secs, start + a, "trip {} stop {}: its own arrival", trip.id, i);
-                prop_assert_eq!(st.departure_secs, start + d, "trip {} stop {}: its own departure", trip.id, i);
+                prop_assert_eq!(
+                    st.arrival_secs,
+                    start + a,
+                    "trip {} stop {}: its own arrival",
+                    trip.id,
+                    i
+                );
+                prop_assert_eq!(
+                    st.departure_secs,
+                    start + d,
+                    "trip {} stop {}: its own departure",
+                    trip.id,
+                    i
+                );
             }
             (Some(a), None) => {
                 prop_assert_eq!((st.arrival_secs, st.departure_secs), (start + a, start + a));
@@ -286,13 +415,20 @@ fn check_instance(pattern: &Pattern, trip: &Trip, start: u32, got: &Materialized
                 prop_assert_eq!((st.arrival_secs, st.departure_secs), (start + d, start + d));
             }
             (None, None) => {
-                prop_assert_eq!(st.arrival_secs, st.departure_secs, "an unscheduled stop has one time");
+                prop_assert_eq!(
+                    st.arrival_secs,
+                    st.departure_secs,
+                    "an unscheduled stop has one time"
+                );
             }
         }
     }
     for pair in got.stop_times.windows(2) {
         prop_assert!(pair[0].arrival_secs <= pair[0].departure_secs);
-        prop_assert!(pair[0].departure_secs <= pair[1].arrival_secs, "the trip runs forward");
+        prop_assert!(
+            pair[0].departure_secs <= pair[1].arrival_secs,
+            "the trip runs forward"
+        );
     }
     Ok(())
 }
@@ -642,29 +778,46 @@ fn old_spec() -> impl Strategy<Value = OldSpec> {
             Just(n),
             proptest::collection::vec(any::<bool>(), n),
             (8u32 * 3600..16 * 3600).prop_map(|s| s - s % 600),
-            (proptest::collection::vec(60u32..600, n), proptest::collection::vec(60u32..600, n)),
-            proptest::collection::btree_set((5u32 * 3600..22 * 3600).prop_map(|s| s - s % 300), 1..6),
+            (
+                proptest::collection::vec(60u32..600, n),
+                proptest::collection::vec(60u32..600, n),
+            ),
+            proptest::collection::btree_set(
+                (5u32 * 3600..22 * 3600).prop_map(|s| s - s % 300),
+                1..6,
+            ),
             (6u32 * 3600..8 * 3600, 1u32..3, 900u32..1800),
             any::<bool>(),
         )
-            .prop_map(|(stops, flags, split, legs, starts, (bs, hours, h), block)| OldSpec {
-                stops,
-                flags,
-                split,
-                legs,
-                starts,
-                band: (bs - bs % 60, bs - bs % 60 + hours * 3600, h - h % 60),
-                block,
-            })
+            .prop_map(
+                |(stops, flags, split, legs, starts, (bs, hours, h), block)| OldSpec {
+                    stops,
+                    flags,
+                    split,
+                    legs,
+                    starts,
+                    band: (bs - bs % 60, bs - bs % 60 + hours * 3600, h - h % 60),
+                    block,
+                },
+            )
     })
 }
 
 fn old_document(s: &OldSpec) -> (serde_json::Value, Vec<Vec<u32>>) {
-    let flags: Vec<bool> = (0..s.stops).map(|i| s.flags[i] || i == 0 || i == s.stops - 1).collect();
+    let flags: Vec<bool> = (0..s.stops)
+        .map(|i| s.flags[i] || i == 0 || i == s.stops - 1)
+        .collect();
     let tps = flags.iter().filter(|f| **f).count();
     let profile = |legs: &[u32]| -> Vec<u32> {
         let mut t = 0;
-        (0..tps).map(|k| { if k > 0 { t += legs[k]; } t }).collect()
+        (0..tps)
+            .map(|k| {
+                if k > 0 {
+                    t += legs[k];
+                }
+                t
+            })
+            .collect()
     };
     let profiles = vec![profile(&s.legs.0), profile(&s.legs.1)];
     let stops: serde_json::Map<String, serde_json::Value> = (0..s.stops)
@@ -672,7 +825,10 @@ fn old_document(s: &OldSpec) -> (serde_json::Value, Vec<Vec<u32>>) {
         .collect();
     let mut blocks = serde_json::json!({});
     if s.block {
-        let refs: Vec<serde_json::Value> = s.starts.iter().take(1)
+        let refs: Vec<serde_json::Value> = s
+            .starts
+            .iter()
+            .take(1)
             .map(|st| serde_json::json!({"pattern_trips": "wk:p0", "start_secs": st}))
             .collect();
         blocks = serde_json::json!({"b0": {"trips": refs, "layovers": []}});

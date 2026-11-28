@@ -13,7 +13,10 @@ struct Doc {
 }
 
 fn gen_doc() -> impl Strategy<Value = Doc> {
-    (".*", prop::collection::vec((".*", any::<i64>(), prop::option::of(-1e9f64..1e9)), 0..40))
+    (
+        ".*",
+        prop::collection::vec((".*", any::<i64>(), prop::option::of(-1e9f64..1e9)), 0..40),
+    )
         .prop_map(|(name, rows)| Doc { name, rows })
 }
 
@@ -29,9 +32,11 @@ proptest! {
 
 #[test]
 fn outcomes_are_the_ok_or_error_envelope() {
-    let ok: serde_json::Value = serde_json::from_str(&cap_abi::outcome(Ok::<_, String>(vec![1, 2]))).unwrap();
+    let ok: serde_json::Value =
+        serde_json::from_str(&cap_abi::outcome(Ok::<_, String>(vec![1, 2]))).unwrap();
     assert_eq!(ok, serde_json::json!({ "ok": [1, 2] }));
-    let err: serde_json::Value = serde_json::from_str(&cap_abi::outcome(Err::<(), _>("nope".to_string()))).unwrap();
+    let err: serde_json::Value =
+        serde_json::from_str(&cap_abi::outcome(Err::<(), _>("nope".to_string()))).unwrap();
     assert_eq!(err, serde_json::json!({ "error": { "message": "nope" } }));
 }
 
@@ -74,10 +79,17 @@ proptest! {
 
 #[test]
 fn a_gzipped_network_registers_under_the_plain_hash() {
-    let text = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/network.json")).unwrap();
+    let text = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/network.json"
+    ))
+    .unwrap();
     let plain = cap_abi::parse_versioned::<transit_network::Network>(&text).unwrap();
     let zipped = cap_abi::parse_versioned::<transit_network::Network>(&gzip(&text)).unwrap();
-    assert_eq!(cap_abi::canonical_hash(&plain).unwrap(), cap_abi::canonical_hash(&zipped).unwrap());
+    assert_eq!(
+        cap_abi::canonical_hash(&plain).unwrap(),
+        cap_abi::canonical_hash(&zipped).unwrap()
+    );
 }
 
 /// The live document is ephemeral, so no migration brings a v1 forward.
@@ -88,38 +100,66 @@ fn the_live_document_reads_v2_only() {
     let body = serde_json::json!({
         "window": {"early_secs": 0, "late_secs": 300, "very_late_secs": 600}, "trips": [], "vehicles": [], "unmatched_trips": 0
     });
-    let older = cap_abi::parse_versioned::<transit_live::LiveDay>(body.to_string().as_bytes()).unwrap_err();
-    assert!(older.message.contains("live v1") && older.message.contains("reads v2"), "{older}");
+    let older =
+        cap_abi::parse_versioned::<transit_live::LiveDay>(body.to_string().as_bytes()).unwrap_err();
+    assert!(
+        older.message.contains("live v1") && older.message.contains("reads v2"),
+        "{older}"
+    );
     let mut current = body.clone();
     current["kind"] = serde_json::json!("live");
     current["schema_version"] = serde_json::json!(2);
-    let read: transit_live::LiveDay = cap_abi::parse_versioned(current.to_string().as_bytes()).unwrap();
+    let read: transit_live::LiveDay =
+        cap_abi::parse_versioned(current.to_string().as_bytes()).unwrap();
     assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
     current["schema_version"] = serde_json::json!(3);
-    let newer = cap_abi::parse_versioned::<transit_live::LiveDay>(current.to_string().as_bytes()).unwrap_err();
-    assert!(newer.message.contains("live v3") && newer.message.contains("reads v2"), "{newer}");
+    let newer = cap_abi::parse_versioned::<transit_live::LiveDay>(current.to_string().as_bytes())
+        .unwrap_err();
+    assert!(
+        newer.message.contains("live v3") && newer.message.contains("reads v2"),
+        "{newer}"
+    );
 }
 
 /// The check runs at the load, never deep inside an op.
 #[test]
 fn a_network_load_refuses_other_versions_naming_both() {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/network.json")).unwrap();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/network.json"
+    ))
+    .unwrap();
     let current = transit_network::SCHEMA_VERSION;
     let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert!(cap_abi::parse_versioned::<transit_network::Network>(text.as_bytes()).is_ok());
 
     let root = doc.as_object_mut().unwrap();
     root.remove("schema_version");
-    let older = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(older.message.contains("network v1") && older.message.contains(&format!("reads v{current}")) && older.message.contains("migrate"), "{older}");
+    let older = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes())
+        .unwrap_err();
+    assert!(
+        older.message.contains("network v1")
+            && older.message.contains(&format!("reads v{current}"))
+            && older.message.contains("migrate"),
+        "{older}"
+    );
 
     doc["schema_version"] = serde_json::json!(current + 1);
     // A newer document's shape may still parse, so its tag must refuse it.
-    let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(newer.message.contains(&format!("network v{}", current + 1)) && newer.message.contains(&format!("reads v{current}")), "{newer}");
+    let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes())
+        .unwrap_err();
+    assert!(
+        newer.message.contains(&format!("network v{}", current + 1))
+            && newer.message.contains(&format!("reads v{current}")),
+        "{newer}"
+    );
     doc["stops"] = serde_json::json!("a shape this build does not know");
-    let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes()).unwrap_err();
-    assert!(newer.message.contains(&format!("network v{}", current + 1)), "{newer}");
+    let newer = cap_abi::parse_versioned::<transit_network::Network>(doc.to_string().as_bytes())
+        .unwrap_err();
+    assert!(
+        newer.message.contains(&format!("network v{}", current + 1)),
+        "{newer}"
+    );
 }
 
 /// The derived kinds and the scheduling constraints gained their tags at
@@ -127,21 +167,35 @@ fn a_network_load_refuses_other_versions_naming_both() {
 #[test]
 fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     use transit_version::Versioned;
-    fn law<T: serde::de::DeserializeOwned + serde::Serialize + Versioned + std::fmt::Debug>(untagged: serde_json::Value) {
-        let read: T = cap_abi::parse_versioned(untagged.to_string().as_bytes()).unwrap_or_else(|e| panic!("{}: {e}", T::KIND));
+    fn law<T: serde::de::DeserializeOwned + serde::Serialize + Versioned + std::fmt::Debug>(
+        untagged: serde_json::Value,
+    ) {
+        let read: T = cap_abi::parse_versioned(untagged.to_string().as_bytes())
+            .unwrap_or_else(|e| panic!("{}: {e}", T::KIND));
         let written = serde_json::to_value(&read).unwrap();
         assert_eq!(written["kind"], T::KIND, "a written copy names its kind");
-        assert_eq!(written[T::VERSION_FIELD], 1, "{}: a written copy names its version", T::KIND);
+        assert_eq!(
+            written[T::VERSION_FIELD],
+            1,
+            "{}: a written copy names its version",
+            T::KIND
+        );
         let mut newer = written.clone();
         newer[T::VERSION_FIELD] = serde_json::json!(T::READS + 1);
         let err = cap_abi::parse_versioned::<T>(newer.to_string().as_bytes()).unwrap_err();
         assert!(
-            err.message.contains(&format!("{} v{}", T::KIND, T::READS + 1)) && err.message.contains(&format!("reads v{}", T::READS)),
+            err.message
+                .contains(&format!("{} v{}", T::KIND, T::READS + 1))
+                && err.message.contains(&format!("reads v{}", T::READS)),
             "{err}"
         );
         let mut other = written;
         other["kind"] = serde_json::json!("not-this-kind");
-        assert!(cap_abi::parse_versioned::<T>(other.to_string().as_bytes()).is_err(), "{}: another kind is refused", T::KIND);
+        assert!(
+            cap_abi::parse_versioned::<T>(other.to_string().as_bytes()).is_err(),
+            "{}: another kind is refused",
+            T::KIND
+        );
     }
     law::<transit_codec::Boundary>(serde_json::json!({}));
     law::<transit_streets::Streets>(serde_json::json!({"ways": []}));
@@ -158,28 +212,57 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
 #[test]
 fn work_rules_read_v3_and_refuse_older_copies_naming_the_migration() {
     use transit_runs::WorkRules;
-    for (old, v) in [(&br#"{"kind":"work_rules","schema_version":1}"#[..], 1), (br#"{"recovery":[{"min_secs":300}]}"#, 1), (br#"{"schema_version":2,"runs":{}}"#, 2)] {
+    for (old, v) in [
+        (&br#"{"kind":"work_rules","schema_version":1}"#[..], 1),
+        (br#"{"recovery":[{"min_secs":300}]}"#, 1),
+        (br#"{"schema_version":2,"runs":{}}"#, 2),
+    ] {
         let err = cap_abi::parse_versioned::<WorkRules>(old).unwrap_err();
-        assert!(err.message.contains(&format!("work_rules v{v}")) && err.message.contains("migrate"), "{err}");
+        assert!(
+            err.message.contains(&format!("work_rules v{v}")) && err.message.contains("migrate"),
+            "{err}"
+        );
     }
-    let read: WorkRules = cap_abi::parse_versioned(br#"{"kind":"work_rules","schema_version":3}"#).unwrap();
+    let read: WorkRules =
+        cap_abi::parse_versioned(br#"{"kind":"work_rules","schema_version":3}"#).unwrap();
     assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 3);
-    let err = cap_abi::parse_versioned::<WorkRules>(br#"{"kind":"work_rules","schema_version":4}"#).unwrap_err();
-    assert!(err.message.contains("work_rules v4") && err.message.contains("reads v3"), "{err}");
+    let err = cap_abi::parse_versioned::<WorkRules>(br#"{"kind":"work_rules","schema_version":4}"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("work_rules v4") && err.message.contains("reads v3"),
+        "{err}"
+    );
 }
 
 /// Every v1 document is a v2 document, so an untagged copy reads.
 #[test]
 fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
     use transit_requests::StopRequests;
-    let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":1,"requests":{}}"#).unwrap_err();
-    assert!(err.message.contains("stop_requests v1") && err.message.contains("migrate"), "{err}");
+    let err = cap_abi::parse_versioned::<StopRequests>(
+        br#"{"kind":"stop_requests","schema_version":1,"requests":{}}"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.message.contains("stop_requests v1") && err.message.contains("migrate"),
+        "{err}"
+    );
     let untagged: StopRequests = cap_abi::parse_versioned(br#"{"requests":{}}"#).unwrap();
-    assert_eq!(serde_json::to_value(&untagged).unwrap()["schema_version"], 2);
-    let read: StopRequests = cap_abi::parse_versioned(br#"{"kind":"stop_requests","schema_version":2,"requests":{}}"#).unwrap();
+    assert_eq!(
+        serde_json::to_value(&untagged).unwrap()["schema_version"],
+        2
+    );
+    let read: StopRequests =
+        cap_abi::parse_versioned(br#"{"kind":"stop_requests","schema_version":2,"requests":{}}"#)
+            .unwrap();
     assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
-    let err = cap_abi::parse_versioned::<StopRequests>(br#"{"kind":"stop_requests","schema_version":3,"requests":{}}"#).unwrap_err();
-    assert!(err.message.contains("stop_requests v3") && err.message.contains("reads v2"), "{err}");
+    let err = cap_abi::parse_versioned::<StopRequests>(
+        br#"{"kind":"stop_requests","schema_version":3,"requests":{}}"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.message.contains("stop_requests v3") && err.message.contains("reads v2"),
+        "{err}"
+    );
 }
 
 /// The watchlist gained its tags at v2. A copy from before them reads by
@@ -187,14 +270,34 @@ fn stop_requests_read_v2_and_refuse_v1_naming_the_migration() {
 #[test]
 fn the_watchlist_reads_its_v2_from_before_the_tags_and_refuses_every_other_version() {
     use transit_rider::watchlist::Watchlist;
-    let read: Watchlist = cap_abi::parse_versioned(br#"{"version":"v2","stops":[{"id":"A","label":"home"}]}"#).unwrap();
+    let read: Watchlist =
+        cap_abi::parse_versioned(br#"{"version":"v2","stops":[{"id":"A","label":"home"}]}"#)
+            .unwrap();
     let written = serde_json::to_value(&read).unwrap();
-    assert_eq!(written, serde_json::json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}]}));
-    for older in [r#"{"version":"v1","stops":[{"id":"A","note":"home"}]}"#, r#"{"version":"v1","stops":[]}"#] {
+    assert_eq!(
+        written,
+        serde_json::json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}]})
+    );
+    for older in [
+        r#"{"version":"v1","stops":[{"id":"A","note":"home"}]}"#,
+        r#"{"version":"v1","stops":[]}"#,
+    ] {
         let err = cap_abi::parse_versioned::<Watchlist>(older.as_bytes()).unwrap_err();
-        assert!(err.message.contains("watchlist v1") && err.message.contains("migrate"), "{older}: {err}");
+        assert!(
+            err.message.contains("watchlist v1") && err.message.contains("migrate"),
+            "{older}: {err}"
+        );
     }
-    let err = cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"watchlist","schema_version":3,"stops":[]}"#).unwrap_err();
-    assert!(err.message.contains("watchlist v3") && err.message.contains("reads v2"), "{err}");
-    assert!(cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"stops","schema_version":2,"stops":[]}"#).is_err());
+    let err = cap_abi::parse_versioned::<Watchlist>(
+        br#"{"kind":"watchlist","schema_version":3,"stops":[]}"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.message.contains("watchlist v3") && err.message.contains("reads v2"),
+        "{err}"
+    );
+    assert!(cap_abi::parse_versioned::<Watchlist>(
+        br#"{"kind":"stops","schema_version":2,"stops":[]}"#
+    )
+    .is_err());
 }

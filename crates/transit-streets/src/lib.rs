@@ -5,9 +5,9 @@
 
 pub mod bus;
 pub mod geojson;
+pub mod load;
 mod model;
 pub mod walking;
-pub mod load;
 
 pub use model::{StreetClass, Streets, Way};
 
@@ -94,7 +94,8 @@ impl Builder {
         let (b_lat, b_lon) = (b[0] as f64 / 1e6, b[1] as f64 / 1e6);
         let id = self.coords.len() as u32 / 4;
         self.coords.extend_from_slice(&[a_lat, a_lon, b_lat, b_lon]);
-        self.seg_len.push(transit_geo::distance_m(a_lat, a_lon, b_lat, b_lon));
+        self.seg_len
+            .push(transit_geo::distance_m(a_lat, a_lon, b_lat, b_lon));
         self.seg_oneway.push(oneway);
         self.seg_way.push(way);
         let node_a = self.node_of(a);
@@ -148,7 +149,11 @@ impl StreetNetwork {
                 b.add_segment(pair[0], pair[1], way.oneway, w as u32);
             }
         }
-        let way_street = streets.ways.iter().map(|w| (w.class, w.name.clone())).collect();
+        let way_street = streets
+            .ways
+            .iter()
+            .map(|w| (w.class, w.name.clone()))
+            .collect();
         let segment_count = b.coords.len() as u32 / 4;
 
         // A one-way enters the graph as a first-to-second edge only, so
@@ -261,7 +266,11 @@ impl StreetNetwork {
         self.route_with_length(from, to).map(|(points, _)| points)
     }
 
-    pub fn route_with_length(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64)> {
+    pub fn route_with_length(
+        &self,
+        from: StreetPosition,
+        to: StreetPosition,
+    ) -> Option<(Vec<StreetPoint>, f64)> {
         self.route_along(from, to).map(|r| (r.points, r.length_m))
     }
 
@@ -277,15 +286,27 @@ impl StreetNetwork {
             let (class, name) = &self.way_street[self.seg_way[seg as usize] as usize];
             match streets.last_mut() {
                 Some(last) if last.class == *class && last.name == *name => last.length_m += meters,
-                _ => streets.push(StreetUse { class: *class, name: name.clone(), length_m: meters }),
+                _ => streets.push(StreetUse {
+                    class: *class,
+                    name: name.clone(),
+                    length_m: meters,
+                }),
             }
         }
-        Some(StreetRoute { points, length_m, streets })
+        Some(StreetRoute {
+            points,
+            length_m,
+            streets,
+        })
     }
 
     /// The segment meters, partial first and last included, add up to the
     /// length.
-    fn shortest(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64, Vec<(u32, f64)>)> {
+    fn shortest(
+        &self,
+        from: StreetPosition,
+        to: StreetPosition,
+    ) -> Option<(Vec<StreetPoint>, f64, Vec<(u32, f64)>)> {
         let from_oneway = self.seg_oneway[from.seg as usize];
         let to_oneway = self.seg_oneway[to.seg as usize];
 
@@ -295,7 +316,14 @@ impl StreetNetwork {
             let reachable = !from_oneway || to.t >= from.t;
             if reachable {
                 let length = (to.t - from.t).abs() * self.seg_len[from.seg as usize];
-                return Some((vec![StreetPoint { lat: to.lat, lon: to.lon }], length, vec![(from.seg, length)]));
+                return Some((
+                    vec![StreetPoint {
+                        lat: to.lat,
+                        lon: to.lon,
+                    }],
+                    length,
+                    vec![(from.seg, length)],
+                ));
             }
         }
 
@@ -383,7 +411,11 @@ impl StreetNetwork {
             node = parent_node[node] as usize;
         }
         chain.reverse();
-        let seed_cost = if node == from_b { (1.0 - from.t) * from_len } else { from.t * from_len };
+        let seed_cost = if node == from_b {
+            (1.0 - from.t) * from_len
+        } else {
+            from.t * from_len
+        };
         segments.push((from.seg, seed_cost));
         segments.reverse();
         segments.push((to.seg, inside_cost(best_entry as u32).unwrap_or(0.0)));
@@ -394,14 +426,23 @@ impl StreetNetwork {
                 lon: self.node_coords[2 * id + 1],
             })
             .collect();
-        points.push(StreetPoint { lat: to.lat, lon: to.lon });
+        points.push(StreetPoint {
+            lat: to.lat,
+            lon: to.lon,
+        });
         Some((points, best_cost, segments))
     }
 
     /// `dist` has one slot per node, infinite where unreached. `touched`
     /// collects the nodes that it sets, so a caller that searches from many
     /// positions resets only those.
-    pub(crate) fn reach(&self, from: StreetPosition, limit_m: f64, dist: &mut [f64], touched: &mut Vec<u32>) {
+    pub(crate) fn reach(
+        &self,
+        from: StreetPosition,
+        limit_m: f64,
+        dist: &mut [f64],
+        touched: &mut Vec<u32>,
+    ) {
         let seg = from.seg as usize;
         let len = self.seg_len[seg];
         let mut heap: BinaryHeap<std::cmp::Reverse<(u64, u32)>> = BinaryHeap::new();
@@ -414,7 +455,12 @@ impl StreetNetwork {
                 heap.push(std::cmp::Reverse((cost.to_bits(), node)));
             }
         };
-        seed(self.seg_node[2 * seg + 1], (1.0 - from.t) * len, dist, &mut heap);
+        seed(
+            self.seg_node[2 * seg + 1],
+            (1.0 - from.t) * len,
+            dist,
+            &mut heap,
+        );
         if !self.seg_oneway[seg] {
             seed(self.seg_node[2 * seg], from.t * len, dist, &mut heap);
         }
@@ -425,7 +471,12 @@ impl StreetNetwork {
             }
             for e in self.adj_offset[node as usize]..self.adj_offset[node as usize + 1] {
                 let next = self.adj_node[e as usize];
-                seed(next, d + self.seg_len[self.adj_seg[e as usize] as usize], dist, &mut heap);
+                seed(
+                    next,
+                    d + self.seg_len[self.adj_seg[e as usize] as usize],
+                    dist,
+                    &mut heap,
+                );
             }
         }
     }

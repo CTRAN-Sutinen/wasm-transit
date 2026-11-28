@@ -9,12 +9,13 @@
 //! 3. An unknown type, or one no pattern trips run under, answers empty however
 //!    its rule reads. So does an inverted window.
 
-use transit_date::{Days, Date};
 use proptest::prelude::*;
+use transit_date::{Date, Days};
 use transit_dispatch::{active_services, service_dates};
 use transit_network::{
-    materialize, CalendarException, CalendarRule, DateRange, DayState, Departs, Network, StopOffset, Trip,
-    Pattern, PatternTrips, PatternStop, Route, ServiceType, Stop, TimingProfile, WeekdaySet,
+    materialize, CalendarException, CalendarRule, DateRange, DayState, Departs, Network, Pattern,
+    PatternStop, PatternTrips, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip,
+    WeekdaySet,
 };
 
 const YEAR_START: Date = Date::from_ymd_opt(2026, 1, 1).unwrap();
@@ -49,10 +50,21 @@ fn day(offset: u16) -> Date {
 /// runs.
 fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
     let mut stops = std::collections::BTreeMap::new();
-    for (id, name) in [("A", "Main & 1st"), ("B", "Main & 2nd"), ("C", "Main & 3rd")] {
+    for (id, name) in [
+        ("A", "Main & 1st"),
+        ("B", "Main & 2nd"),
+        ("C", "Main & 3rd"),
+    ] {
         stops.insert(
             id.to_string(),
-            Stop { name: name.into(), lat: 45.5, lon: -122.5, parent: None, transfer: false, ..Default::default() },
+            Stop {
+                name: name.into(),
+                lat: 45.5,
+                lon: -122.5,
+                parent: None,
+                transfer: false,
+                ..Default::default()
+            },
         );
     }
     let mut routes = std::collections::BTreeMap::new();
@@ -75,9 +87,24 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
             name: "route 10".into(),
             alignment: None,
             stops: vec![
-                PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
-                PatternStop { stop: "B".into(), timepoint: true, distance_m: 500.0, ..Default::default() },
-                PatternStop { stop: "C".into(), timepoint: true, distance_m: 1000.0, ..Default::default() },
+                PatternStop {
+                    stop: "A".into(),
+                    timepoint: true,
+                    distance_m: 0.0,
+                    ..Default::default()
+                },
+                PatternStop {
+                    stop: "B".into(),
+                    timepoint: true,
+                    distance_m: 500.0,
+                    ..Default::default()
+                },
+                PatternStop {
+                    stop: "C".into(),
+                    timepoint: true,
+                    distance_m: 1000.0,
+                    ..Default::default()
+                },
             ],
             timing: vec![TimingProfile {
                 start_secs: 0,
@@ -109,18 +136,26 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                     ranges: rule
                         .ranges
                         .iter()
-                        .map(|&(s, e)| DateRange { start: day(s), end: day(e), extra: Default::default() })
+                        .map(|&(s, e)| DateRange {
+                            start: day(s),
+                            end: day(e),
+                            extra: Default::default(),
+                        })
                         .collect(),
                     exceptions: rule
                         .exceptions
                         .iter()
                         .map(|&(d, added)| CalendarException {
                             date: day(d),
-                            state: if added { DayState::Added } else { DayState::Removed },
+                            state: if added {
+                                DayState::Added
+                            } else {
+                                DayState::Removed
+                            },
                             extra: Default::default(),
                         })
                         .collect(),
-                        extra: Default::default(),
+                    extra: Default::default(),
                 },
                 extra: Default::default(),
             },
@@ -134,7 +169,12 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                     trips: vec![Trip {
                         id: format!("svc-{ty}@28800"),
                         departs: Departs::At { start_secs: 28_800 },
-                        times: [0, 600, 1200].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
+                        times: [0, 600, 1200]
+                            .map(|t| StopOffset {
+                                arrival_secs: Some(t),
+                                departure_secs: Some(t),
+                            })
+                            .to_vec(),
                         ..Default::default()
                     }],
                     extra: Default::default(),

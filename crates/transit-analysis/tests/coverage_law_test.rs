@@ -4,9 +4,11 @@
 
 use std::io::Write;
 
-use transit_date::Date;
 use proptest::prelude::*;
-use transit_analysis::{coverage, coverage_compare, parse_layer, type_coverage, unserved_points, CoverageWindow};
+use transit_analysis::{
+    coverage, coverage_compare, parse_layer, type_coverage, unserved_points, CoverageWindow,
+};
+use transit_date::Date;
 use transit_network::service_combinations;
 
 /// Stops sit 0.01° of longitude apart at 45.5° N, about 780 m, so a 300 m
@@ -26,15 +28,22 @@ struct GenTrip {
 }
 
 fn gen_trip() -> impl Strategy<Value = GenTrip> {
-    (0u8..2, 0u16..60, proptest::collection::btree_set(0u8..6, 2..=4), 5u8..60, 1u8..6).prop_map(
-        |(service, start_slot, stops, headway_min, repeats)| GenTrip {
-            service,
-            start_slot,
-            stops: stops.into_iter().collect(),
-            headway_min,
-            repeats,
-        },
+    (
+        0u8..2,
+        0u16..60,
+        proptest::collection::btree_set(0u8..6, 2..=4),
+        5u8..60,
+        1u8..6,
     )
+        .prop_map(
+            |(service, start_slot, stops, headway_min, repeats)| GenTrip {
+                service,
+                start_slot,
+                stops: stops.into_iter().collect(),
+                headway_min,
+                repeats,
+            },
+        )
 }
 
 fn feed(trips: &[GenTrip]) -> Vec<u8> {
@@ -44,8 +53,14 @@ fn feed(trips: &[GenTrip]) -> Vec<u8> {
         w.start_file(name, opts).unwrap();
         w.write_all(body.as_bytes()).unwrap();
     };
-    add("agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n".into());
-    add("routes.txt", "route_id,agency_id,route_short_name,route_type\nR,1,R,3\n".into());
+    add(
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n".into(),
+    );
+    add(
+        "routes.txt",
+        "route_id,agency_id,route_short_name,route_type\nR,1,R,3\n".into(),
+    );
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},{LAT},{}", stop_lon(i)));
@@ -62,7 +77,12 @@ fn feed(trips: &[GenTrip]) -> Vec<u8> {
             let start = 5 * 3600 + t.start_slot as u32 * 600 + r * t.headway_min as u32 * 60;
             for (j, s) in t.stops.iter().enumerate() {
                 let secs = start + j as u32 * 300;
-                let hms = format!("{:02}:{:02}:{:02}", secs / 3600, (secs % 3600) / 60, secs % 60);
+                let hms = format!(
+                    "{:02}:{:02}:{:02}",
+                    secs / 3600,
+                    (secs % 3600) / 60,
+                    secs % 60
+                );
                 stop_times.push_str(&format!("\n{id},{hms},{hms},s{s},{}", j + 1));
             }
         }
@@ -101,16 +121,55 @@ fn square(lat: f64, lon: f64, side_m: f64) -> String {
 
 #[derive(Clone, Debug)]
 enum Place {
-    Point { stop: u8, dlat: f64, dlon: f64, jobs: u32, pop: u32 },
-    Square { stop: u8, dlat: f64, dlon: f64, side_m: f64, jobs: u32, pop: u32 },
+    Point {
+        stop: u8,
+        dlat: f64,
+        dlon: f64,
+        jobs: u32,
+        pop: u32,
+    },
+    Square {
+        stop: u8,
+        dlat: f64,
+        dlon: f64,
+        side_m: f64,
+        jobs: u32,
+        pop: u32,
+    },
 }
 
 fn place() -> impl Strategy<Value = Place> {
     prop_oneof![
-        (0u8..6, -0.01f64..0.01, -0.01f64..0.01, 0u32..10_000, 0u32..10_000)
-            .prop_map(|(stop, dlat, dlon, jobs, pop)| Place::Point { stop, dlat, dlon, jobs, pop }),
-        (0u8..6, -0.008f64..0.008, -0.008f64..0.008, 20f64..2_000.0, 0u32..10_000, 0u32..10_000)
-            .prop_map(|(stop, dlat, dlon, side_m, jobs, pop)| Place::Square { stop, dlat, dlon, side_m, jobs, pop }),
+        (
+            0u8..6,
+            -0.01f64..0.01,
+            -0.01f64..0.01,
+            0u32..10_000,
+            0u32..10_000
+        )
+            .prop_map(|(stop, dlat, dlon, jobs, pop)| Place::Point {
+                stop,
+                dlat,
+                dlon,
+                jobs,
+                pop
+            }),
+        (
+            0u8..6,
+            -0.008f64..0.008,
+            -0.008f64..0.008,
+            20f64..2_000.0,
+            0u32..10_000,
+            0u32..10_000
+        )
+            .prop_map(|(stop, dlat, dlon, side_m, jobs, pop)| Place::Square {
+                stop,
+                dlat,
+                dlon,
+                side_m,
+                jobs,
+                pop
+            }),
     ]
 }
 
@@ -130,7 +189,11 @@ fn layer_bytes(places: &[Place]) -> Vec<u8> {
             ),
         })
         .collect();
-    format!(r#"{{"type":"FeatureCollection","features":[{}]}}"#, features.join(",")).into_bytes()
+    format!(
+        r#"{{"type":"FeatureCollection","features":[{}]}}"#,
+        features.join(",")
+    )
+    .into_bytes()
 }
 
 fn close(a: f64, b: f64) -> bool {
@@ -290,7 +353,13 @@ proptest! {
 /// A polygon is served by about the share of its area inside a radius.
 #[test]
 fn areal_weighting_serves_the_share_of_the_area() {
-    let net = network(&[GenTrip { service: 0, start_slot: 0, stops: vec![0, 5], headway_min: 10, repeats: 6 }]);
+    let net = network(&[GenTrip {
+        service: 0,
+        start_slot: 0,
+        stops: vec![0, 5],
+        headway_min: 10,
+        repeats: 6,
+    }]);
     let layer = format!(
         r#"{{"type":"FeatureCollection","features":[
             {{"type":"Feature","properties":{{"jobs":100}},"geometry":{{"type":"Polygon","coordinates":{inside}}}}},
@@ -302,21 +371,38 @@ fn areal_weighting_serves_the_share_of_the_area() {
         straddle = square(LAT, stop_lon(5), 2_000.0),
     );
     let weights_layer = parse_layer(layer.as_bytes()).unwrap();
-        let weights = weights_layer.weights(Some("jobs"), Some("jobs")).unwrap();
+    let weights = weights_layer.weights(Some("jobs"), Some("jobs")).unwrap();
     assert_eq!(weights.reading.polygons, 3);
     assert_eq!(weights.reading.points, 0);
-    let spacing = weights.reading.sample_spacing_m.expect("a polygon layer states its sampling");
-    assert!(spacing > 0.0 && spacing <= 40.0, "the 2 km square samples at {spacing} m");
+    let spacing = weights
+        .reading
+        .sample_spacing_m
+        .expect("a polygon layer states its sampling");
+    assert!(
+        spacing > 0.0 && spacing <= 40.0,
+        "the 2 km square samples at {spacing} m"
+    );
 
-    let unserved = unserved_points(&net, &weights, &["0".to_string()], 400.0).expect("the weekday combination").points;
+    let unserved = unserved_points(&net, &weights, &["0".to_string()], 400.0)
+        .expect("the weekday combination")
+        .points;
     let by_weight = |w: f64| unserved.iter().find(|u| (u.weight - w).abs() < 1e-6);
-    assert!(unserved.iter().all(|u| u.feature != 0), "the inside square is wholly served: {unserved:?}");
+    assert!(
+        unserved.iter().all(|u| u.feature != 0),
+        "the inside square is wholly served: {unserved:?}"
+    );
     let out = by_weight(40.0).expect("the far square is wholly unserved");
     assert!((out.share - 1.0).abs() < 1e-9 && out.polygon.is_some());
-    let straddle = unserved.iter().find(|u| u.feature == 2).expect("the big square is partly unserved");
+    let straddle = unserved
+        .iter()
+        .find(|u| u.feature == 2)
+        .expect("the big square is partly unserved");
     let served_share = 1.0 - straddle.share;
     let expected = std::f64::consts::PI * 400.0 * 400.0 / (2_000.0 * 2_000.0);
-    assert!((served_share - expected).abs() < 0.01, "served share {served_share} ≈ {expected}");
+    assert!(
+        (served_share - expected).abs() < 0.01,
+        "served share {served_share} ≈ {expected}"
+    );
 
     let c = coverage(&net, monday(), &weights, 400.0, 3600, 2, None);
     assert!((c.served - (100.0 + 1000.0 * served_share)).abs() < 1e-6);
@@ -337,36 +423,101 @@ fn a_point_layer_states_its_resolution() {
     let layer = parse_layer(layer.as_bytes()).unwrap();
     let weights = layer.weights(None, None).unwrap();
     assert_eq!(weights.reading.field, "POP");
-    assert_eq!(weights.reading.label, "POP", "the label defaults to the field");
+    assert_eq!(
+        weights.reading.label, "POP",
+        "the label defaults to the field"
+    );
     assert_eq!((weights.reading.points, weights.reading.polygons), (2, 0));
-    let spacing = weights.reading.point_spacing_m.expect("a point layer states its spacing");
-    assert!(spacing > 1_000.0 && spacing < 2_500.0, "two points ~2 km apart: {spacing}");
-    assert!(layer.weights(Some("jobs"), None).is_err(), "a field the layer lacks is an error");
+    let spacing = weights
+        .reading
+        .point_spacing_m
+        .expect("a point layer states its spacing");
+    assert!(
+        spacing > 1_000.0 && spacing < 2_500.0,
+        "two points ~2 km apart: {spacing}"
+    );
+    assert!(
+        layer.weights(Some("jobs"), None).is_err(),
+        "a field the layer lacks is an error"
+    );
 }
 
 #[test]
 fn a_layer_with_several_weights_needs_one_named() {
-    let bytes = layer_bytes(&[Place::Point { stop: 0, dlat: 0.0, dlon: 0.0, jobs: 5, pop: 7 }]);
+    let bytes = layer_bytes(&[Place::Point {
+        stop: 0,
+        dlat: 0.0,
+        dlon: 0.0,
+        jobs: 5,
+        pop: 7,
+    }]);
     let layer = parse_layer(&bytes).unwrap();
     let names: Vec<&str> = layer.fields().iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, ["jobs", "pop"], "numeric properties only (GEOID is a string)");
-    let err = layer.weights(None, None).err().expect("two weights: name one");
+    assert_eq!(
+        names,
+        ["jobs", "pop"],
+        "numeric properties only (GEOID is a string)"
+    );
+    let err = layer
+        .weights(None, None)
+        .err()
+        .expect("two weights: name one");
     assert!(err.contains("jobs") && err.contains("pop"), "{err}");
-    assert_eq!(layer.weights(Some("jobs"), None).unwrap().reading.total, 5.0);
+    assert_eq!(
+        layer.weights(Some("jobs"), None).unwrap().reading.total,
+        5.0
+    );
     assert_eq!(layer.weights(Some("pop"), None).unwrap().reading.total, 7.0);
 }
 
 #[test]
 fn type_coverage_reads_any_weight() {
-    let net = network(&[GenTrip { service: 0, start_slot: 0, stops: vec![0, 1], headway_min: 10, repeats: 6 }]);
+    let net = network(&[GenTrip {
+        service: 0,
+        start_slot: 0,
+        stops: vec![0, 1],
+        headway_min: 10,
+        repeats: 6,
+    }]);
     let bytes = layer_bytes(&[
-        Place::Square { stop: 0, dlat: 0.0, dlon: 0.0, side_m: 100.0, jobs: 30, pop: 10 },
-        Place::Point { stop: 3, dlat: 0.0, dlon: 0.0, jobs: 70, pop: 90 },
+        Place::Square {
+            stop: 0,
+            dlat: 0.0,
+            dlon: 0.0,
+            side_m: 100.0,
+            jobs: 30,
+            pop: 10,
+        },
+        Place::Point {
+            stop: 3,
+            dlat: 0.0,
+            dlon: 0.0,
+            jobs: 70,
+            pop: 90,
+        },
     ]);
     let layer = parse_layer(&bytes).unwrap();
     let weekday = ["0".to_string()];
-    let jobs = type_coverage(&net, &layer.weights(Some("jobs"), None).unwrap(), &weekday, 300.0, 3600, 2, None).unwrap();
-    let pop = type_coverage(&net, &layer.weights(Some("pop"), None).unwrap(), &weekday, 300.0, 3600, 2, None).unwrap();
+    let jobs = type_coverage(
+        &net,
+        &layer.weights(Some("jobs"), None).unwrap(),
+        &weekday,
+        300.0,
+        3600,
+        2,
+        None,
+    )
+    .unwrap();
+    let pop = type_coverage(
+        &net,
+        &layer.weights(Some("pop"), None).unwrap(),
+        &weekday,
+        300.0,
+        3600,
+        2,
+        None,
+    )
+    .unwrap();
     assert!((jobs.served_pct - 30.0).abs() < 1e-9, "{jobs:?}");
     assert!((pop.served_pct - 10.0).abs() < 1e-9, "{pop:?}");
 }

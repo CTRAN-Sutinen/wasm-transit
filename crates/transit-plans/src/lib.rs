@@ -6,8 +6,8 @@
 //! A retired pick is the tombstone and never governs. A freeze puts
 //! nothing in force, and `adopt` is `publish` of a frozen version (D-191).
 
-use transit_date::Date;
 use serde::{Deserialize, Serialize};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
@@ -39,18 +39,37 @@ pub struct PlanPeriod {
 #[cfg_attr(feature = "bindings", ts(export, export_to = "cap_plans/"))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanIssue {
-    DuplicatePlanId { id: String },
-    PlanMissingEffectiveDate { id: String },
-    DuplicateEffectiveDate { date: String, a: String, b: String },
+    DuplicatePlanId {
+        id: String,
+    },
+    PlanMissingEffectiveDate {
+        id: String,
+    },
+    DuplicateEffectiveDate {
+        date: String,
+        a: String,
+        b: String,
+    },
     UnversionedPlan,
-    UnknownPick { id: String },
+    UnknownPick {
+        id: String,
+    },
     /// A pick that has taken effect is corrected by republishing, not retired.
-    PickTookEffect { id: String, effective_from: String },
+    PickTookEffect {
+        id: String,
+        effective_from: String,
+    },
     /// A new, restored, or moved pick never lands before today. A pick
     /// republished under its own date always publishes.
-    PickDatedInPast { id: String, effective_from: String, today: String },
+    PickDatedInPast {
+        id: String,
+        effective_from: String,
+        today: String,
+    },
     FreezeWithoutPurpose,
-    NotFrozen { network_hash: String },
+    NotFrozen {
+        network_hash: String,
+    },
 }
 
 /// Ties break by id, so a chain with duplicate dates resolves the same way
@@ -58,7 +77,9 @@ pub enum PlanIssue {
 pub fn resolve(plans: &[PlanInfo], date: Date) -> Result<Option<String>, String> {
     let mut best: Option<(Date, String)> = None;
     for plan in plans {
-        let Some(from) = &plan.effective_from else { continue };
+        let Some(from) = &plan.effective_from else {
+            continue;
+        };
         let from = Date::read(from)?;
         if from <= date {
             let key = (from, plan.id.clone());
@@ -84,11 +105,15 @@ pub fn validate(plans: &[PlanInfo]) -> Vec<PlanIssue> {
                 v.insert(i);
             }
             std::collections::btree_map::Entry::Occupied(_) => {
-                issues.push(PlanIssue::DuplicatePlanId { id: plan.id.clone() });
+                issues.push(PlanIssue::DuplicatePlanId {
+                    id: plan.id.clone(),
+                });
             }
         }
         let Some(from) = &plan.effective_from else {
-            issues.push(PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() });
+            issues.push(PlanIssue::PlanMissingEffectiveDate {
+                id: plan.id.clone(),
+            });
             continue;
         };
         if let Some(other) = seen_dates.get(from.as_str()) {
@@ -98,7 +123,11 @@ pub fn validate(plans: &[PlanInfo]) -> Vec<PlanIssue> {
             } else {
                 (plan.id.clone(), (**other).to_string())
             };
-            issues.push(PlanIssue::DuplicateEffectiveDate { date: from.clone(), a, b });
+            issues.push(PlanIssue::DuplicateEffectiveDate {
+                date: from.clone(),
+                a,
+                b,
+            });
         } else {
             seen_dates.insert(from.as_str(), plan.id.as_str());
         }
@@ -129,12 +158,9 @@ pub fn periods(plans: &[PlanInfo]) -> Vec<PlanPeriod> {
         .collect()
 }
 
-
 pub const PUBLISHED_SCHEMA_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    PlansKind = "plans"
-);
+transit_version::kind_tag!(PlansKind = "plans");
 
 impl transit_version::Versioned for PublishedPlans {
     const KIND: &'static str = "plans";
@@ -181,12 +207,20 @@ pub struct PublishedPlan {
 
 impl PublishedPlan {
     fn info(&self) -> PlanInfo {
-        PlanInfo { id: self.id.clone(), name: self.name.clone(), effective_from: Some(self.effective_from.clone()) }
+        PlanInfo {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            effective_from: Some(self.effective_from.clone()),
+        }
     }
 }
 
 fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
-    plans.iter().filter(|p| p.status == PickStatus::Published).map(PublishedPlan::info).collect()
+    plans
+        .iter()
+        .filter(|p| p.status == PickStatus::Published)
+        .map(PublishedPlan::info)
+        .collect()
 }
 
 /// `served` marks the deployment's feed, which production serves until a
@@ -232,8 +266,19 @@ pub struct Timeline {
 
 /// A device plan is published when its id is a published pick's, or when it
 /// is the deployment's feed. A retired pick is no row.
-pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: Date) -> Result<Timeline, String> {
-    let picks: Vec<&PublishedPlan> = set.map(|s| s.plans.iter().filter(|p| p.status == PickStatus::Published).collect()).unwrap_or_default();
+pub fn timeline(
+    device: &[DevicePlan],
+    set: Option<&PublishedPlans>,
+    today: Date,
+) -> Result<Timeline, String> {
+    let picks: Vec<&PublishedPlan> = set
+        .map(|s| {
+            s.plans
+                .iter()
+                .filter(|p| p.status == PickStatus::Published)
+                .collect()
+        })
+        .unwrap_or_default();
     let mut rows: Vec<TimelineRow> = device
         .iter()
         .map(|d| TimelineRow {
@@ -247,19 +292,35 @@ pub fn timeline(device: &[DevicePlan], set: Option<&PublishedPlans>, today: Date
         .collect();
     for p in picks {
         if !rows.iter().any(|r| r.id == p.id) {
-            rows.push(TimelineRow { key: None, id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()), published: true, loaded: false });
+            rows.push(TimelineRow {
+                key: None,
+                id: p.id.clone(),
+                name: p.name.clone(),
+                effective_from: Some(p.effective_from.clone()),
+                published: true,
+                loaded: false,
+            });
         }
     }
     let infos: Vec<PlanInfo> = rows
         .iter()
         .filter(|r| !r.id.is_empty())
-        .map(|r| PlanInfo { id: r.id.clone(), name: r.name.clone(), effective_from: r.effective_from.clone() })
+        .map(|r| PlanInfo {
+            id: r.id.clone(),
+            name: r.name.clone(),
+            effective_from: r.effective_from.clone(),
+        })
         .collect();
     let in_force = match set {
         Some(s) => in_force(s, today)?.map(|p| p.id.clone()),
         None => None,
     };
-    Ok(Timeline { rows, in_force, periods: periods(&infos), issues: validate(&infos) })
+    Ok(Timeline {
+        rows,
+        in_force,
+        periods: periods(&infos),
+        issues: validate(&infos),
+    })
 }
 
 /// The pick is placed by its id and replaces any entry that the set holds
@@ -268,7 +329,10 @@ pub fn period_in(set: Option<&PublishedPlans>, pick: &PlanInfo) -> Option<String
     let mut plans: Vec<PlanInfo> = set.map(|s| chain(&s.plans)).unwrap_or_default();
     plans.retain(|p| p.id != pick.id);
     plans.push(pick.clone());
-    periods(&plans).into_iter().find(|p| p.id == pick.id).and_then(|p| p.until)
+    periods(&plans)
+        .into_iter()
+        .find(|p| p.id == pick.id)
+        .and_then(|p| p.until)
 }
 
 /// Picks are sorted by (effective_from, id), one entry per id, so one set of
@@ -290,7 +354,12 @@ pub struct PublishedPlans {
 
 impl PublishedPlans {
     pub fn empty() -> Self {
-        PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new(), extra: Default::default() }
+        PublishedPlans {
+            kind: PlansKind,
+            schema_version: PUBLISHED_SCHEMA_VERSION,
+            plans: Vec::new(),
+            extra: Default::default(),
+        }
     }
 }
 
@@ -307,10 +376,14 @@ pub fn publish(
         return Err(vec![PlanIssue::UnversionedPlan]);
     }
     let Some(from) = &plan.effective_from else {
-        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate {
+            id: plan.id.clone(),
+        }]);
     };
     let Ok(date) = Date::read(from) else {
-        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate {
+            id: plan.id.clone(),
+        }]);
     };
     let correction = set
         .plans
@@ -323,7 +396,12 @@ pub fn publish(
             today: today.to_string(),
         }]);
     }
-    let mut plans: Vec<PublishedPlan> = set.plans.iter().filter(|p| p.id != plan.id).cloned().collect();
+    let mut plans: Vec<PublishedPlan> = set
+        .plans
+        .iter()
+        .filter(|p| p.id != plan.id)
+        .cloned()
+        .collect();
     plans.push(PublishedPlan {
         id: plan.id.clone(),
         name: plan.name.clone(),
@@ -333,35 +411,62 @@ pub fn publish(
         stops_seq: None,
         extra: Default::default(),
     });
-    plans.sort_by(|a, b| (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str())));
+    plans.sort_by(|a, b| {
+        (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str()))
+    });
     let issues = validate(&chain(&plans));
     if !issues.is_empty() {
         return Err(issues);
     }
-    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
+    Ok(PublishedPlans {
+        kind: PlansKind,
+        schema_version: PUBLISHED_SCHEMA_VERSION,
+        plans,
+        extra: Default::default(),
+    })
 }
 
 /// Only a pick dated after `today` is retired. One that has taken effect is
 /// corrected by republishing it.
-pub fn retire(set: &PublishedPlans, id: &str, today: Date) -> Result<PublishedPlans, Vec<PlanIssue>> {
+pub fn retire(
+    set: &PublishedPlans,
+    id: &str,
+    today: Date,
+) -> Result<PublishedPlans, Vec<PlanIssue>> {
     let Some(pick) = set.plans.iter().find(|p| p.id == id) else {
         return Err(vec![PlanIssue::UnknownPick { id: id.to_string() }]);
     };
     if pick.status == PickStatus::Retired {
         return Ok(set.clone());
     }
-    let from = Date::read(&pick.effective_from).map_err(|_| {
-        vec![PlanIssue::PlanMissingEffectiveDate { id: id.to_string() }]
-    })?;
+    let from = Date::read(&pick.effective_from)
+        .map_err(|_| vec![PlanIssue::PlanMissingEffectiveDate { id: id.to_string() }])?;
     if from <= today {
-        return Err(vec![PlanIssue::PickTookEffect { id: id.to_string(), effective_from: pick.effective_from.clone() }]);
+        return Err(vec![PlanIssue::PickTookEffect {
+            id: id.to_string(),
+            effective_from: pick.effective_from.clone(),
+        }]);
     }
     let plans = set
         .plans
         .iter()
-        .map(|p| if p.id == id { PublishedPlan { status: PickStatus::Retired, ..p.clone() } } else { p.clone() })
+        .map(|p| {
+            if p.id == id {
+                PublishedPlan {
+                    status: PickStatus::Retired,
+                    ..p.clone()
+                }
+            } else {
+                p.clone()
+            }
+        })
         .collect();
-    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans, extra: Default::default() })
+    Ok(PublishedPlans {
+        kind: PlansKind,
+        schema_version: PUBLISHED_SCHEMA_VERSION,
+        plans,
+        extra: Default::default(),
+    })
 }
 
 pub fn in_force(set: &PublishedPlans, date: Date) -> Result<Option<&PublishedPlan>, String> {
@@ -373,7 +478,11 @@ pub fn in_force(set: &PublishedPlans, date: Date) -> Result<Option<&PublishedPla
 pub fn in_use(set: &PublishedPlans, today: Date) -> Result<Vec<&PublishedPlan>, String> {
     let current = in_force(set, today)?.map(|p| p.id.as_str());
     let mut used = Vec::new();
-    for pick in set.plans.iter().filter(|p| p.status == PickStatus::Published) {
+    for pick in set
+        .plans
+        .iter()
+        .filter(|p| p.status == PickStatus::Published)
+    {
         if Some(pick.id.as_str()) == current || Date::read(&pick.effective_from)? > today {
             used.push(pick);
         }
@@ -381,12 +490,9 @@ pub fn in_use(set: &PublishedPlans, today: Date) -> Result<Vec<&PublishedPlan>, 
     Ok(used)
 }
 
-
 pub const FROZEN_SCHEMA_VERSION: u32 = 1;
 
-transit_version::kind_tag!(
-    FrozenKind = "frozen_versions"
-);
+transit_version::kind_tag!(FrozenKind = "frozen_versions");
 
 impl transit_version::Versioned for FrozenVersions {
     const KIND: &'static str = "frozen_versions";
@@ -436,23 +542,45 @@ pub struct FrozenVersions {
 
 impl FrozenVersions {
     pub fn empty() -> Self {
-        FrozenVersions { kind: FrozenKind, schema_version: FROZEN_SCHEMA_VERSION, versions: Default::default(), extra: Default::default() }
+        FrozenVersions {
+            kind: FrozenKind,
+            schema_version: FROZEN_SCHEMA_VERSION,
+            versions: Default::default(),
+            extra: Default::default(),
+        }
     }
 }
 
 /// A freeze changes no plan set. Freezing a network again replaces its
 /// purpose.
-pub fn freeze(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str) -> Result<FrozenVersions, Vec<PlanIssue>> {
+pub fn freeze(
+    frozen: &FrozenVersions,
+    plan: &PlanInfo,
+    network_hash: &str,
+    purpose: &str,
+) -> Result<FrozenVersions, Vec<PlanIssue>> {
     freeze_from(frozen, plan, network_hash, purpose, None)
 }
 
 /// Without `source`, a version already frozen keeps its source (D-232).
-pub fn freeze_from(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str, purpose: &str, source: Option<&str>) -> Result<FrozenVersions, Vec<PlanIssue>> {
+pub fn freeze_from(
+    frozen: &FrozenVersions,
+    plan: &PlanInfo,
+    network_hash: &str,
+    purpose: &str,
+    source: Option<&str>,
+) -> Result<FrozenVersions, Vec<PlanIssue>> {
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);
     }
-    let Some(from) = plan.effective_from.as_ref().filter(|f| Date::read(f).is_ok()) else {
-        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+    let Some(from) = plan
+        .effective_from
+        .as_ref()
+        .filter(|f| Date::read(f).is_ok())
+    else {
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate {
+            id: plan.id.clone(),
+        }]);
     };
     if purpose.trim().is_empty() {
         return Err(vec![PlanIssue::FreezeWithoutPurpose]);
@@ -460,7 +588,9 @@ pub fn freeze_from(frozen: &FrozenVersions, plan: &PlanInfo, network_hash: &str,
     let mut next = frozen.clone();
     let held = frozen.versions.get(network_hash);
     let extra = held.map(|v| v.extra.clone()).unwrap_or_default();
-    let from_network_hash = source.map(str::to_string).or_else(|| held.and_then(|v| v.from_network_hash.clone()));
+    let from_network_hash = source
+        .map(str::to_string)
+        .or_else(|| held.and_then(|v| v.from_network_hash.clone()));
     next.versions.insert(
         network_hash.to_string(),
         FrozenVersion {
@@ -484,9 +614,15 @@ pub fn adopt(
     stops_seq: Option<u64>,
 ) -> Result<PublishedPlans, Vec<PlanIssue>> {
     let Some(version) = frozen.versions.get(network_hash) else {
-        return Err(vec![PlanIssue::NotFrozen { network_hash: network_hash.to_string() }]);
+        return Err(vec![PlanIssue::NotFrozen {
+            network_hash: network_hash.to_string(),
+        }]);
     };
-    let plan = PlanInfo { id: version.plan_id.clone(), name: version.name.clone(), effective_from: Some(version.effective_from.clone()) };
+    let plan = PlanInfo {
+        id: version.plan_id.clone(),
+        name: version.name.clone(),
+        effective_from: Some(version.effective_from.clone()),
+    };
     let mut next = publish(set, &plan, network_hash, today)?;
     if let Some(pick) = next.plans.iter_mut().find(|p| p.id == plan.id) {
         pick.stops_seq = stops_seq;

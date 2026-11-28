@@ -15,18 +15,16 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use transit_date::Date;
 use serde::{Deserialize, Serialize};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
 
-pub mod version;
 pub mod load;
+pub mod version;
 pub use version::SCHEMA_VERSION;
 
-transit_version::kind_tag!(
-    StopRequestsKind = "stop_requests"
-);
+transit_version::kind_tag!(StopRequestsKind = "stop_requests");
 
 impl transit_version::Versioned for StopRequests {
     const KIND: &'static str = "stop_requests";
@@ -36,7 +34,13 @@ impl transit_version::Versioned for StopRequests {
     }
 }
 
-pub const JOBS: [&str; 5] = ["new", "reinstall", "relocate_remove", "repair_improve", "temporary"];
+pub const JOBS: [&str; 5] = [
+    "new",
+    "reinstall",
+    "relocate_remove",
+    "repair_improve",
+    "temporary",
+];
 
 /// The work queue opens on the statuses of work still in flight.
 pub const OPEN_STATUSES: [&str; 3] = ["drafted", "submitted", "ordered"];
@@ -44,7 +48,14 @@ pub const STATUSES: [&str; 5] = ["drafted", "submitted", "ordered", "completed",
 
 pub const SIDES: [&str; 4] = ["north", "south", "east", "west"];
 
-pub const DIRECTIONS: [&str; 6] = ["northbound", "southbound", "eastbound", "westbound", "clockwise", "counterclockwise"];
+pub const DIRECTIONS: [&str; 6] = [
+    "northbound",
+    "southbound",
+    "eastbound",
+    "westbound",
+    "clockwise",
+    "counterclockwise",
+];
 
 pub const MARKINGS: [&str; 4] = ["hub", "curb_mark", "stake", "other"];
 
@@ -186,8 +197,13 @@ impl Attachment {
     pub fn well_named(&self) -> bool {
         let hex = self.hash.strip_prefix("sha256:").unwrap_or("");
         hex.len() == 64
-            && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            && self.media_type.split_once('/').is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && self
+                .media_type
+                .split_once('/')
+                .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
     }
 }
 
@@ -290,14 +306,22 @@ impl fmt::Display for RequestRefusal {
         let what = match &self.problem {
             RequestProblem::NoId => "has no id".to_string(),
             RequestProblem::NoStop => "names no stop".into(),
-            RequestProblem::Unknown { field, value } => format!("has {field} {value:?}, which this build does not know"),
+            RequestProblem::Unknown { field, value } => {
+                format!("has {field} {value:?}, which this build does not know")
+            }
             RequestProblem::BadDate { date } => format!("has {date:?}, not a YYYY-MM-DD date"),
             RequestProblem::NegativeOffset => "has an offset below zero".into(),
             RequestProblem::NoWorkOrder => "says its work order is open but names none".into(),
             RequestProblem::NoCompletion => "is completed with no completion date".into(),
-            RequestProblem::CompletedBeforeRequested => "is completed before it was requested".into(),
-            RequestProblem::BadAttachment { hash } => format!("names an attachment {hash:?} that is not a sha256 hash with a media type"),
-            RequestProblem::IdTaken => "is new, but the document already holds a request with its id".into(),
+            RequestProblem::CompletedBeforeRequested => {
+                "is completed before it was requested".into()
+            }
+            RequestProblem::BadAttachment { hash } => {
+                format!("names an attachment {hash:?} that is not a sha256 hash with a media type")
+            }
+            RequestProblem::IdTaken => {
+                "is new, but the document already holds a request with its id".into()
+            }
         };
         write!(f, "request {:?} {what}", self.request)
     }
@@ -305,18 +329,34 @@ impl fmt::Display for RequestRefusal {
 
 impl StopRequests {
     pub fn work_order_call(&self, id: &str, action: &str) -> Result<WorkOrderCall, String> {
-        let request = self.requests.get(id).ok_or_else(|| format!("no request {id:?} in the document"))?;
+        let request = self
+            .requests
+            .get(id)
+            .ok_or_else(|| format!("no request {id:?} in the document"))?;
         match action {
-            "open" => Ok(WorkOrderCall { action: action.into(), request: Some(request.clone()), work_order: request.work_order.clone() }),
-            "refresh" => Ok(WorkOrderCall { action: action.into(), request: None, work_order: request.work_order.clone() }),
-            other => Err(format!("unknown work order action {other:?}: open or refresh")),
+            "open" => Ok(WorkOrderCall {
+                action: action.into(),
+                request: Some(request.clone()),
+                work_order: request.work_order.clone(),
+            }),
+            "refresh" => Ok(WorkOrderCall {
+                action: action.into(),
+                request: None,
+                work_order: request.work_order.clone(),
+            }),
+            other => Err(format!(
+                "unknown work order action {other:?}: open or refresh"
+            )),
         }
     }
 
     /// An ordinary `put` replaces the request held, so the writer states the
     /// intent "new".
     pub fn refuse_taken(&self, id: &str) -> Option<RequestRefusal> {
-        self.requests.contains_key(id).then(|| RequestRefusal { request: id.to_string(), problem: RequestProblem::IdTaken })
+        self.requests.contains_key(id).then(|| RequestRefusal {
+            request: id.to_string(),
+            problem: RequestProblem::IdTaken,
+        })
     }
 
     /// A write passes [`StopRequests::checked`] after it.
@@ -334,11 +374,19 @@ impl StopRequests {
         let held = r.work_order.take().unwrap_or_default();
         r.work_order = Some(WorkOrder {
             system: answer.system.or(held.system),
-            id: if answer.id.trim().is_empty() { held.id } else { answer.id },
+            id: if answer.id.trim().is_empty() {
+                held.id
+            } else {
+                answer.id
+            },
             url: answer.url.or(held.url),
             status: answer.status.or(held.status),
             read_on: answer.read_on.or(held.read_on),
-            extra: if answer.extra.is_empty() { held.extra } else { answer.extra },
+            extra: if answer.extra.is_empty() {
+                held.extra
+            } else {
+                answer.extra
+            },
         });
         if matches!(r.status.as_str(), "drafted" | "submitted") {
             r.status = "ordered".into();
@@ -347,10 +395,18 @@ impl StopRequests {
     }
 
     pub fn for_stop(&self, stop: &str) -> Vec<(&str, &StopRequest)> {
-        self.requests.iter().filter(|(_, r)| r.stop == stop).map(|(k, r)| (k.as_str(), r)).collect()
+        self.requests
+            .iter()
+            .filter(|(_, r)| r.stop == stop)
+            .map(|(k, r)| (k.as_str(), r))
+            .collect()
     }
 
-    pub fn list(&self, statuses: Option<&[String]>, jobs: Option<&[String]>) -> Vec<(&str, &StopRequest)> {
+    pub fn list(
+        &self,
+        statuses: Option<&[String]>,
+        jobs: Option<&[String]>,
+    ) -> Vec<(&str, &StopRequest)> {
         self.requests
             .iter()
             .filter(|(_, r)| statuses.is_none_or(|s| s.contains(&r.status)))
@@ -362,7 +418,10 @@ impl StopRequests {
     pub fn counts(&self) -> Vec<RequestCount> {
         STATUSES
             .iter()
-            .map(|st| RequestCount { status: st.to_string(), requests: self.requests.values().filter(|r| r.status == *st).count() as u32 })
+            .map(|st| RequestCount {
+                status: st.to_string(),
+                requests: self.requests.values().filter(|r| r.status == *st).count() as u32,
+            })
             .filter(|c| c.requests > 0)
             .collect()
     }
@@ -371,8 +430,21 @@ impl StopRequests {
         let refusals: Vec<RequestRefusal> = self
             .requests
             .iter()
-            .flat_map(|(id, r)| check(r).into_iter().map(move |problem| RequestRefusal { request: id.clone(), problem }))
-            .chain(self.requests.keys().filter(|k| k.is_empty()).map(|_| RequestRefusal { request: String::new(), problem: RequestProblem::NoId }))
+            .flat_map(|(id, r)| {
+                check(r).into_iter().map(move |problem| RequestRefusal {
+                    request: id.clone(),
+                    problem,
+                })
+            })
+            .chain(
+                self.requests
+                    .keys()
+                    .filter(|k| k.is_empty())
+                    .map(|_| RequestRefusal {
+                        request: String::new(),
+                        problem: RequestProblem::NoId,
+                    }),
+            )
             .collect();
         if refusals.is_empty() {
             Ok(self)
@@ -387,13 +459,17 @@ fn check(r: &StopRequest) -> Vec<RequestProblem> {
     if r.stop.trim().is_empty() {
         out.push(RequestProblem::NoStop);
     }
-    let listed = |out: &mut Vec<RequestProblem>, field: &str, value: Option<&String>, list: &[&str]| {
-        if let Some(v) = value {
-            if !list.contains(&v.as_str()) {
-                out.push(RequestProblem::Unknown { field: field.into(), value: v.clone() });
+    let listed =
+        |out: &mut Vec<RequestProblem>, field: &str, value: Option<&String>, list: &[&str]| {
+            if let Some(v) = value {
+                if !list.contains(&v.as_str()) {
+                    out.push(RequestProblem::Unknown {
+                        field: field.into(),
+                        value: v.clone(),
+                    });
+                }
             }
-        }
-    };
+        };
     listed(&mut out, "job", Some(&r.job), &JOBS);
     listed(&mut out, "status", Some(&r.status), &STATUSES);
     listed(&mut out, "side", r.side.as_ref(), &SIDES);
@@ -412,20 +488,27 @@ fn check(r: &StopRequest) -> Vec<RequestProblem> {
     }
     for a in &r.attachments {
         if !a.well_named() {
-            out.push(RequestProblem::BadAttachment { hash: a.hash.clone() });
+            out.push(RequestProblem::BadAttachment {
+                hash: a.hash.clone(),
+            });
         } else if let Some(d) = a.taken_on.as_ref().filter(|d| Date::parse(d).is_err()) {
             out.push(RequestProblem::BadDate { date: d.clone() });
         }
     }
-        if r.offset_ft.is_some_and(|o| !(o >= 0.0)) {
+    if r.offset_ft.is_some_and(|o| !(o >= 0.0)) {
         out.push(RequestProblem::NegativeOffset);
     }
     match r.status.as_str() {
-        "ordered" if r.work_order.as_ref().is_none_or(|w| w.id.trim().is_empty()) => out.push(RequestProblem::NoWorkOrder),
+        "ordered" if r.work_order.as_ref().is_none_or(|w| w.id.trim().is_empty()) => {
+            out.push(RequestProblem::NoWorkOrder)
+        }
         "completed" if r.completed_on.is_none() => out.push(RequestProblem::NoCompletion),
         _ => {}
     }
-    if let (Some(a), Some(b)) = (r.requested_on.as_deref().and_then(|d| Date::parse(d).ok()), r.completed_on.as_deref().and_then(|d| Date::parse(d).ok())) {
+    if let (Some(a), Some(b)) = (
+        r.requested_on.as_deref().and_then(|d| Date::parse(d).ok()),
+        r.completed_on.as_deref().and_then(|d| Date::parse(d).ok()),
+    ) {
         if b < a {
             out.push(RequestProblem::CompletedBeforeRequested);
         }

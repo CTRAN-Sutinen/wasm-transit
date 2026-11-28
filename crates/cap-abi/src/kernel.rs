@@ -72,7 +72,10 @@ pub struct Envelope<'a> {
 fn field<'a>(text: &'a str, name: &str) -> Result<&'a RawValue, String> {
     let fields: std::collections::HashMap<Cow<'a, str>, &'a RawValue> =
         serde_json::from_str(text).map_err(|e| format!("invalid request: {e}"))?;
-    fields.get(name).copied().ok_or_else(|| format!("invalid request: missing field `{name}`"))
+    fields
+        .get(name)
+        .copied()
+        .ok_or_else(|| format!("invalid request: missing field `{name}`"))
 }
 
 // --- the kinds ---
@@ -85,16 +88,22 @@ pub fn kind<T: Load>() -> &'static Kind<T> {
     use std::any::{Any, TypeId};
     use std::sync::Mutex;
     static KINDS: Mutex<Vec<(TypeId, &'static (dyn Any + Send + Sync))>> = Mutex::new(Vec::new());
-    let mut kinds = KINDS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut kinds = KINDS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let id = TypeId::of::<T>();
     if let Some((_, held)) = kinds.iter().find(|(t, _)| *t == id) {
-        return held.downcast_ref::<Kind<T>>().expect("a registry is held under its own type");
+        return held
+            .downcast_ref::<Kind<T>>()
+            .expect("a registry is held under its own type");
     }
     let retain = match T::RETAIN {
         transit_version::Retain::Host => Retain::Host,
         transit_version::Retain::Last(n) => Retain::Last(n),
     };
-    let made: &'static Kind<T> = Box::leak(Box::new(Kind { registry: Registry::documents(T::NAME, T::LOAD_OP, retain) }));
+    let made: &'static Kind<T> = Box::leak(Box::new(Kind {
+        registry: Registry::documents(T::NAME, T::LOAD_OP, retain),
+    }));
     kinds.push((id, made));
     made
 }
@@ -120,7 +129,9 @@ impl<T: Load> Kind<T> {
     {
         let held = self.require(hash)?;
         match self.registry.ahead(hash) {
-            Some((found, transit_version::Ahead::ReadOnly)) => Err(transit_version::write_refused(T::KIND, found, T::READS)),
+            Some((found, transit_version::Ahead::ReadOnly)) => {
+                Err(transit_version::write_refused(T::KIND, found, T::READS))
+            }
             _ => Ok(held),
         }
     }
@@ -141,7 +152,10 @@ impl<T: Load> Kind<T> {
         Ok((hash, held))
     }
 
-    pub fn register_bytes(&self, bytes: &[u8]) -> Result<(String, Arc<T>), transit_version::Refusal> {
+    pub fn register_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<(String, Arc<T>), transit_version::Refusal> {
         let hash = crate::content_hash(bytes);
         if let Some(held) = self.registry.get(&hash) {
             return Ok((hash, held));
@@ -158,7 +172,10 @@ impl<T: Load> Kind<T> {
         self.registry.is_empty()
     }
 
-    fn load(&self, bytes: &[u8]) -> Result<(String, Arc<T>, Vec<String>), transit_version::Refusal> {
+    fn load(
+        &self,
+        bytes: &[u8],
+    ) -> Result<(String, Arc<T>, Vec<String>), transit_version::Refusal> {
         match T::FORM {
             Form::Json { .. } => {
                 let ((document, unknown_fields), ahead) =
@@ -168,12 +185,18 @@ impl<T: Load> Kind<T> {
                 // under.
                 let hash = match &ahead {
                     Some(read) => read.hash.clone(),
-                    None => document.canonical().unwrap_or_else(|| Err(format!("{}: a JSON kind answers its canonical hash", T::ID)))?,
+                    None => document.canonical().unwrap_or_else(|| {
+                        Err(format!("{}: a JSON kind answers its canonical hash", T::ID))
+                    })?,
                 };
                 if let Some(read) = ahead {
                     self.registry.mark_ahead(&hash, read.found, read.how);
                 }
-                Ok((hash.clone(), self.registry.insert(hash, document), unknown_fields))
+                Ok((
+                    hash.clone(),
+                    self.registry.insert(hash, document),
+                    unknown_fields,
+                ))
             }
             Form::Bytes => {
                 let (hash, held) = self.register_bytes(bytes)?;
@@ -182,8 +205,15 @@ impl<T: Load> Kind<T> {
         }
     }
 
-    fn answer(&self, loaded: Result<(String, Arc<T>, Vec<String>), transit_version::Refusal>) -> String {
-        crate::outcome(loaded.map(|(hash, held, unknown_fields)| LoadAnswer { op: T::LOAD_OP, loaded: held.answer(hash), unknown_fields }))
+    fn answer(
+        &self,
+        loaded: Result<(String, Arc<T>, Vec<String>), transit_version::Refusal>,
+    ) -> String {
+        crate::outcome(loaded.map(|(hash, held, unknown_fields)| LoadAnswer {
+            op: T::LOAD_OP,
+            loaded: held.answer(hash),
+            unknown_fields,
+        }))
     }
 }
 
@@ -219,10 +249,15 @@ impl<T: Load> Loader for Kind<T> {
     }
     fn load_json(&self, text: &str) -> String {
         let loaded = match T::FORM {
-            Form::Json { field: name } => field(text, name).map_err(Into::into).and_then(|raw| self.load(raw.get().as_bytes())),
+            Form::Json { field: name } => field(text, name)
+                .map_err(Into::into)
+                .and_then(|raw| self.load(raw.get().as_bytes())),
             // A byte document in a JSON request is an array of numbers.
             Form::Bytes => field(text, "bytes")
-                .and_then(|raw| serde_json::from_str::<Vec<u8>>(raw.get()).map_err(|e| format!("invalid request: bytes: {e}")))
+                .and_then(|raw| {
+                    serde_json::from_str::<Vec<u8>>(raw.get())
+                        .map_err(|e| format!("invalid request: bytes: {e}"))
+                })
                 .map_err(Into::into)
                 .and_then(|bytes| self.load(&bytes)),
         };
@@ -247,10 +282,22 @@ pub struct Derivation {
 
 /// The network for a date, patched with the edits in force
 /// (`transit_dispatch::day`).
-pub const DAY: Derivation = Derivation { name: "day", keep: 4 };
-pub const GRAPH: Derivation = Derivation { name: "graph", keep: 8 };
-pub const STREET_GRAPH: Derivation = Derivation { name: "street graph", keep: 4 };
-pub const WALK_GRAPH: Derivation = Derivation { name: "walk graph", keep: 4 };
+pub const DAY: Derivation = Derivation {
+    name: "day",
+    keep: 4,
+};
+pub const GRAPH: Derivation = Derivation {
+    name: "graph",
+    keep: 8,
+};
+pub const STREET_GRAPH: Derivation = Derivation {
+    name: "street graph",
+    keep: 4,
+};
+pub const WALK_GRAPH: Derivation = Derivation {
+    name: "walk graph",
+    keep: 4,
+};
 
 /// `inputs` are the hashes of the documents that the entry comes from. An
 /// evict that drops any of them drops the entry. `compute` must be a pure
@@ -268,7 +315,11 @@ pub fn derive<T: Any + Send + Sync, E: Into<transit_version::Refusal>>(
         }
     }
     let value = Arc::new(compute().map_err(Into::into)?);
-    DERIVED.insert_derived(full, inputs.iter().map(|s| s.to_string()).collect(), value.clone() as Arc<dyn Any + Send + Sync>);
+    DERIVED.insert_derived(
+        full,
+        inputs.iter().map(|s| s.to_string()).collect(),
+        value.clone() as Arc<dyn Any + Send + Sync>,
+    );
     let prefix = format!("{}|", derivation.name);
     DERIVED.bound(derivation.keep, |key| key.starts_with(&prefix));
     Ok(value)
@@ -276,7 +327,11 @@ pub fn derive<T: Any + Send + Sync, E: Into<transit_version::Refusal>>(
 
 pub fn derived_len(derivation: &Derivation) -> usize {
     let prefix = format!("{}|", derivation.name);
-    DERIVED.keys().iter().filter(|k| k.starts_with(&prefix)).count()
+    DERIVED
+        .keys()
+        .iter()
+        .filter(|k| k.starts_with(&prefix))
+        .count()
 }
 
 pub fn retain_derived(derivation: &Derivation, keep: impl Fn(&str, &[String]) -> bool) {
@@ -323,7 +378,12 @@ pub fn op_names<T: serde::de::DeserializeOwned>() -> Vec<String> {
         .map(|(_, rest)| rest)
         .unwrap_or_else(|| panic!("serde's refusal names no expected ops: {refusal}"));
     let expected = expected.split(" at line ").next().unwrap_or(expected);
-    expected.split('`').skip(1).step_by(2).map(str::to_string).collect()
+    expected
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect()
 }
 
 fn kinds(caps: &[&Cap]) -> Vec<&'static dyn Loader> {
@@ -377,12 +437,16 @@ pub fn invoke(caps: &[&Cap], text: &str) -> String {
 /// the low 16 bits.
 pub fn invoke_bytes(caps: &[&Cap], op: u32, bytes: &[u8]) -> String {
     if op == OP_EVICT || op == OP_HELD {
-        return crate::registry::kernel(op, bytes, &registries(caps)).expect("evict and held are the registry ops");
+        return crate::registry::kernel(op, bytes, &registries(caps))
+            .expect("evict and held are the registry ops");
     }
     if op == OP_ABOUT {
         let capabilities = caps
             .iter()
-            .map(|c| AboutCap { id: c.id.to_string(), documents: c.documents.iter().map(|k| k().id().to_string()).collect() })
+            .map(|c| AboutCap {
+                id: c.id.to_string(),
+                documents: c.documents.iter().map(|k| k().id().to_string()).collect(),
+            })
             .collect();
         return crate::outcome(Ok::<_, String>(About { capabilities }));
     }
@@ -405,10 +469,16 @@ mod tests {
     use super::*;
 
     fn echo_a(text: &str) -> String {
-        format!(r#"{{"ok":{{"cap":"a","text":{}}}}}"#, serde_json::to_string(text).unwrap())
+        format!(
+            r#"{{"ok":{{"cap":"a","text":{}}}}}"#,
+            serde_json::to_string(text).unwrap()
+        )
     }
     fn echo_b(text: &str) -> String {
-        format!(r#"{{"ok":{{"cap":"b","text":{}}}}}"#, serde_json::to_string(text).unwrap())
+        format!(
+            r#"{{"ok":{{"cap":"b","text":{}}}}}"#,
+            serde_json::to_string(text).unwrap()
+        )
     }
     fn bytes_a(op: u32, _: &[u8]) -> String {
         format!(r#"{{"ok":{{"cap":"a","op":{op}}}}}"#)
@@ -475,12 +545,25 @@ mod tests {
         }
     }
 
-    static A: Cap = Cap { id: "a", json: echo_a, bytes: bytes_a, documents: &[loader::<Fence>] };
-    static B: Cap = Cap { id: "b", json: echo_b, bytes: bytes_b, documents: &[loader::<Fence>, loader::<Watch>] };
+    static A: Cap = Cap {
+        id: "a",
+        json: echo_a,
+        bytes: bytes_a,
+        documents: &[loader::<Fence>],
+    };
+    static B: Cap = Cap {
+        id: "b",
+        json: echo_b,
+        bytes: bytes_b,
+        documents: &[loader::<Fence>, loader::<Watch>],
+    };
 
     fn ok(answer: String) -> serde_json::Value {
         let value: serde_json::Value = serde_json::from_str(&answer).unwrap();
-        value.get("ok").cloned().unwrap_or_else(|| panic!("{value}"))
+        value
+            .get("ok")
+            .cloned()
+            .unwrap_or_else(|| panic!("{value}"))
     }
 
     #[test]
@@ -499,8 +582,14 @@ mod tests {
 
     #[test]
     fn a_bulk_op_carries_its_capability_index() {
-        assert_eq!(ok(invoke_bytes(&[&A, &B], cap_op(1, 3), b"")), serde_json::json!({ "cap": "b", "op": 3 }));
-        assert_eq!(ok(invoke_bytes(&[&A, &B], cap_op(0, 3), b"")), serde_json::json!({ "cap": "a", "op": 3 }));
+        assert_eq!(
+            ok(invoke_bytes(&[&A, &B], cap_op(1, 3), b"")),
+            serde_json::json!({ "cap": "b", "op": 3 })
+        );
+        assert_eq!(
+            ok(invoke_bytes(&[&A, &B], cap_op(0, 3), b"")),
+            serde_json::json!({ "cap": "a", "op": 3 })
+        );
         assert!(invoke_bytes(&[&A, &B], cap_op(2, 0), b"").contains("unknown bulk op"));
         // Kernel codes name no capability. The assembly does not answer
         // a load for a kind that its capabilities do not read.
@@ -512,24 +601,36 @@ mod tests {
         let fence = Fence::default();
         let want = crate::canonical_hash(&fence).unwrap();
         let by_json = ok(invoke(&[&A, &B], r#"{"op":"load_fence","fence":{}}"#));
-        assert_eq!(by_json, serde_json::json!({ "op": "load_fence", "fence_hash": want }));
+        assert_eq!(
+            by_json,
+            serde_json::json!({ "op": "load_fence", "fence_hash": want })
+        );
         let by_bytes = ok(invoke_bytes(&[&A, &B], Fence::CODE, b"{}"));
         assert_eq!(by_bytes["fence_hash"], want.as_str());
         assert!(kind::<Fence>().get(&want).is_some());
         // The kernel does not take out the load of a kind that the
         // capability does not read.
-        assert_eq!(ok(invoke(&[&A], r#"{"op":"load_watch","document":{}}"#))["cap"], "a");
+        assert_eq!(
+            ok(invoke(&[&A], r#"{"op":"load_watch","document":{}}"#))["cap"],
+            "a"
+        );
         let missing = invoke(&[&B], r#"{"op":"load_watch","pages":[]}"#);
         assert!(missing.contains("missing field `document`"), "{missing}");
         let about = ok(invoke_bytes(&[&A, &B], OP_ABOUT, b""));
-        assert_eq!(about["capabilities"][1], serde_json::json!({ "id": "b", "documents": ["fence", "watch"] }));
+        assert_eq!(
+            about["capabilities"][1],
+            serde_json::json!({ "id": "b", "documents": ["fence", "watch"] })
+        );
         let held: Vec<&str> = registries(&[&A, &B]).iter().map(|r| r.kind()).collect();
         assert_eq!(held, vec!["fence", "watch", "derived"]);
     }
 
     #[test]
     fn a_derived_entry_is_a_cache_bounded_per_derivation() {
-        const SQUARE: Derivation = Derivation { name: "test square", keep: 2 };
+        const SQUARE: Derivation = Derivation {
+            name: "test square",
+            keep: 2,
+        };
         let computed = std::cell::Cell::new(0);
         let square = |n: u64| {
             *derive(&SQUARE, &n.to_string(), &["sha256:input"], || {
@@ -566,7 +667,8 @@ mod tests {
     impl transit_version::Versioned for Rated {
         const KIND: &'static str = "rated";
         const READS: u32 = 1;
-        const AHEAD: Option<(u32, transit_version::Ahead)> = Some((2, transit_version::Ahead::ReadOnly));
+        const AHEAD: Option<(u32, transit_version::Ahead)> =
+            Some((2, transit_version::Ahead::ReadOnly));
         fn schema_version(&self) -> u32 {
             self.schema_version
         }
@@ -605,15 +707,33 @@ mod tests {
         let v2 = serde_json::json!({"kind": "rated", "schema_version": 2, "name": "a", "stars": 4});
         let rated = kind::<Rated>();
         let (hash, _, _) = rated.load(&serde_json::to_vec(&v2).unwrap()).unwrap();
-        assert_eq!(hash, crate::canonical_hash(&v2).unwrap(), "the identity it is stored under");
-        assert_eq!(rated.require(&hash).unwrap().name, "a", "held stepped down, and read");
-        assert_eq!(rated.read_ahead(&hash), Some((2, transit_version::Ahead::ReadOnly)));
+        assert_eq!(
+            hash,
+            crate::canonical_hash(&v2).unwrap(),
+            "the identity it is stored under"
+        );
+        assert_eq!(
+            rated.require(&hash).unwrap().name,
+            "a",
+            "held stepped down, and read"
+        );
+        assert_eq!(
+            rated.read_ahead(&hash),
+            Some((2, transit_version::Ahead::ReadOnly))
+        );
         let refused = rated.require_writable(&hash).unwrap_err();
-        assert!(refused.message.contains("rated v2") && refused.message.contains("does not write over it"), "{refused}");
+        assert!(
+            refused.message.contains("rated v2")
+                && refused.message.contains("does not write over it"),
+            "{refused}"
+        );
 
         let v1 = serde_json::json!({"kind": "rated", "schema_version": 1, "name": "b"});
         let (hash, _, _) = rated.load(&serde_json::to_vec(&v1).unwrap()).unwrap();
-        assert!(rated.require_writable(&hash).is_ok(), "a copy in this version is a base as usual");
+        assert!(
+            rated.require_writable(&hash).is_ok(),
+            "a copy in this version is a base as usual"
+        );
         assert_eq!(rated.read_ahead(&hash), None);
     }
 }

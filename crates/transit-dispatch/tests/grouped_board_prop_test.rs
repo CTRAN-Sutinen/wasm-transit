@@ -4,13 +4,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use transit_date::Date;
 use proptest::prelude::*;
+use transit_date::Date;
 use transit_dispatch::{grouped_board, stop_board, BoardRow, Wait};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
-    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType, Stop,
-    StopOffset, TimingProfile, Trip, WeekdaySet,
+    CalendarRule, DateRange, Departs, Network, Pattern, PatternStop, PatternTrips, Route,
+    ServiceType, Stop, StopOffset, TimingProfile, Trip, WeekdaySet,
 };
 
 const DATE: &str = "2026-10-23"; // a Friday
@@ -69,7 +69,10 @@ fn shape() -> impl Strategy<Value = Shape> {
 }
 
 fn gen_pattern() -> impl Strategy<Value = GenPattern> {
-    (shape(), prop::collection::btree_set(18_000u32..90_000, 1..6))
+    (
+        shape(),
+        prop::collection::btree_set(18_000u32..90_000, 1..6),
+    )
         .prop_flat_map(|(shape, starts)| {
             let starts: Vec<u32> = starts.into_iter().collect();
             let n = starts.len();
@@ -80,13 +83,24 @@ fn gen_pattern() -> impl Strategy<Value = GenPattern> {
                 prop::collection::vec(gone(), n),
             )
         })
-        .prop_map(|(shape, starts, delays, gone)| GenPattern { shape, starts, delays, gone })
+        .prop_map(|(shape, starts, delays, gone)| GenPattern {
+            shape,
+            starts,
+            delays,
+            gone,
+        })
 }
 
 fn gen_routes() -> impl Strategy<Value = Vec<GenRoute>> {
     prop::collection::vec(
-        (prop::option::of(0u32..4), prop::collection::vec(gen_pattern(), 1..4))
-            .prop_map(|(sort_order, patterns)| GenRoute { sort_order, patterns }),
+        (
+            prop::option::of(0u32..4),
+            prop::collection::vec(gen_pattern(), 1..4),
+        )
+            .prop_map(|(sort_order, patterns)| GenRoute {
+                sort_order,
+                patterns,
+            }),
         1..5,
     )
 }
@@ -108,14 +122,23 @@ fn stops_of(shape: Shape) -> (Vec<String>, Option<u32>) {
 }
 
 fn build(routes: &[GenRoute]) -> Network {
-    let plain = |name: &str| Stop { name: name.into(), lat: 45.5, lon: -122.5, ..Default::default() };
+    let plain = |name: &str| Stop {
+        name: name.into(),
+        lat: 45.5,
+        lon: -122.5,
+        ..Default::default()
+    };
     let mut stops = BTreeMap::new();
     stops.insert("A".to_string(), plain("Origin"));
     stops.insert("X".to_string(), plain("The Stop"));
     for k in 0..TERMINALS {
         stops.insert(terminal(k), plain(&terminal_name(k)));
     }
-    let mut net = Network { name: "Grouped board laws".into(), stops, ..Default::default() };
+    let mut net = Network {
+        name: "Grouped board laws".into(),
+        stops,
+        ..Default::default()
+    };
     net.service_types.insert(
         "ALL".into(),
         ServiceType {
@@ -136,7 +159,11 @@ fn build(routes: &[GenRoute]) -> Network {
     for (r, route) in routes.iter().enumerate() {
         net.routes.insert(
             route_id(r),
-            Route { name: format!("{r}"), sort_order: route.sort_order, ..Default::default() },
+            Route {
+                name: format!("{r}"),
+                sort_order: route.sort_order,
+                ..Default::default()
+            },
         );
         for (p, gp) in route.patterns.iter().enumerate() {
             let (ids, _) = stops_of(gp.shape);
@@ -152,9 +179,19 @@ fn build(routes: &[GenRoute]) -> Network {
                     stops: ids
                         .iter()
                         .enumerate()
-                        .map(|(i, s)| PatternStop { stop: s.clone(), timepoint: true, distance_m: i as f64 * 1000.0, ..Default::default() })
+                        .map(|(i, s)| PatternStop {
+                            stop: s.clone(),
+                            timepoint: true,
+                            distance_m: i as f64 * 1000.0,
+                            ..Default::default()
+                        })
                         .collect(),
-                    timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: offsets.clone(), extra: Default::default() }],
+                    timing: vec![TimingProfile {
+                        start_secs: 0,
+                        end_secs: 172_800,
+                        at_timepoints: offsets.clone(),
+                        extra: Default::default(),
+                    }],
                     extra: Default::default(),
                 },
             );
@@ -171,12 +208,15 @@ fn build(routes: &[GenRoute]) -> Network {
                             departs: Departs::At { start_secs: s },
                             times: offsets
                                 .iter()
-                                .map(|&t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) })
+                                .map(|&t| StopOffset {
+                                    arrival_secs: Some(t),
+                                    departure_secs: Some(t),
+                                })
                                 .collect(),
                             ..Default::default()
                         })
                         .collect(),
-                        extra: Default::default(),
+                    extra: Default::default(),
                 },
             );
         }
@@ -188,16 +228,23 @@ fn live(routes: &[GenRoute]) -> LiveDay {
     let mut trips = Vec::new();
     for (r, route) in routes.iter().enumerate() {
         for (p, gp) in route.patterns.iter().enumerate() {
-            let Some(at_x) = stops_of(gp.shape).1 else { continue };
+            let Some(at_x) = stops_of(gp.shape).1 else {
+                continue;
+            };
             for ((&s, &delay), &gone) in gp.starts.iter().zip(&gp.delays).zip(&gp.gone) {
                 let scheduled = s + at_x;
-                let trip = |stops: Vec<LiveStop>, canceled: bool, worst: Option<i32>| LiveTrip { date: None,
+                let trip = |stops: Vec<LiveStop>, canceled: bool, worst: Option<i32>| LiveTrip {
+                    date: None,
                     trip: trip_id(r, p, s),
                     start_secs: s,
                     route: None,
                     route_name: None,
                     worst_delay_secs: worst,
-                    status: if worst.is_some() { LiveStatus::Late } else { LiveStatus::NoPrediction },
+                    status: if worst.is_some() {
+                        LiveStatus::Late
+                    } else {
+                        LiveStatus::NoPrediction
+                    },
                     canceled,
                     stops,
                 };
@@ -234,7 +281,9 @@ fn live(routes: &[GenRoute]) -> LiveDay {
             }
         }
     }
-    LiveDay { kind: Default::default(), schema_version: Default::default(),
+    LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
         window: OnTimeWindow::default(),
         trips,
         vehicles: vec![],
@@ -266,7 +315,9 @@ fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
             let at_x = stops_of(gp.shape).1.unwrap();
             for ((&s, &delay), &gone) in gp.starts.iter().zip(&gp.delays).zip(&gp.gone) {
                 let runs = !with_live || gone == Gone::Runs;
-                let expected = delay.filter(|_| with_live && runs).map(|d| (s as i32 + at_x as i32 + d) as u32);
+                let expected = delay
+                    .filter(|_| with_live && runs)
+                    .map(|d| (s as i32 + at_x as i32 + d) as u32);
                 out.push(Expected {
                     route: route_id(r),
                     destination: terminal_name(k),
@@ -285,7 +336,12 @@ fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
 fn order_key(routes: &[GenRoute], route: &str, destination: &str) -> (bool, u32, String, String) {
     let r: usize = route[1..].parse().unwrap();
     let so = routes[r].sort_order;
-    (so.is_none(), so.unwrap_or(0), route.to_string(), destination.to_string())
+    (
+        so.is_none(),
+        so.unwrap_or(0),
+        route.to_string(),
+        destination.to_string(),
+    )
 }
 
 fn wait_for(at: u32, from: u32) -> Wait {
@@ -396,11 +452,20 @@ proptest! {
 fn the_wait_turns_at_a_minute_and_an_hour() {
     let routes = vec![GenRoute {
         sort_order: None,
-        patterns: vec![GenPattern { shape: Shape::Starts(0), starts: vec![36_000], delays: vec![None], gone: vec![Gone::Runs] }],
+        patterns: vec![GenPattern {
+            shape: Shape::Starts(0),
+            starts: vec![36_000],
+            delays: vec![None],
+            gone: vec![Gone::Runs],
+        }],
     }];
     let net = build(&routes);
     let day = transit_network::materialize(&net, date()).unwrap();
-    let wait = |from: u32| grouped_board(&net, &day, "X", from, 3, None, None).groups[0].departures[0].wait.clone();
+    let wait = |from: u32| {
+        grouped_board(&net, &day, "X", from, 3, None, None).groups[0].departures[0]
+            .wait
+            .clone()
+    };
     assert_eq!(wait(36_000), Wait::Due);
     assert_eq!(wait(36_000 - 59), Wait::Due);
     assert_eq!(wait(36_000 - 60), Wait::Minutes { minutes: 1 });

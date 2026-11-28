@@ -63,21 +63,65 @@ struct Feature {
 }
 
 const CFCC: &[Option<&str>] = &[
-    Some("A10"), Some("A15"), Some("A20"), Some("A30"), Some("A40"), Some("A41"),
-    Some("A50"), Some("A60"), Some("A61"), Some("A62"), Some("A63"), Some("A64"),
-    Some("A65"), Some("A70"), Some("A71"), Some("A72"), Some("A73"), Some("A74"),
-    Some("A75"), Some("a40"), Some("B10"), Some("B20"), Some("C30"), Some("F10"),
-    Some("H10"), Some("H20"), Some("H30"), Some("X10"), None,
+    Some("A10"),
+    Some("A15"),
+    Some("A20"),
+    Some("A30"),
+    Some("A40"),
+    Some("A41"),
+    Some("A50"),
+    Some("A60"),
+    Some("A61"),
+    Some("A62"),
+    Some("A63"),
+    Some("A64"),
+    Some("A65"),
+    Some("A70"),
+    Some("A71"),
+    Some("A72"),
+    Some("A73"),
+    Some("A74"),
+    Some("A75"),
+    Some("a40"),
+    Some("B10"),
+    Some("B20"),
+    Some("C30"),
+    Some("F10"),
+    Some("H10"),
+    Some("H20"),
+    Some("H30"),
+    Some("X10"),
+    None,
 ];
 const MTFCC: &[&str] = &[
-    "S1100", "S1200", "S1400", "S1500", "S1630", "S1640", "S1710", "S1720", "S1730",
-    "S1740", "S1750", "S1780", "S1820", "S1830", "R1011", "H3010", "P0001",
+    "S1100", "S1200", "S1400", "S1500", "S1630", "S1640", "S1710", "S1720", "S1730", "S1740",
+    "S1750", "S1780", "S1820", "S1830", "R1011", "H3010", "P0001",
 ];
 const HIGHWAY: &[&str] = &[
-    "motorway", "trunk", "primary", "secondary", "tertiary", "residential",
-    "unclassified", "living_street", "road", "motorway_link", "trunk_link",
-    "primary_link", "secondary_link", "tertiary_link", "service", "track", "footway",
-    "path", "pedestrian", "cycleway", "bridleway", "steps", "construction", "proposed",
+    "motorway",
+    "trunk",
+    "primary",
+    "secondary",
+    "tertiary",
+    "residential",
+    "unclassified",
+    "living_street",
+    "road",
+    "motorway_link",
+    "trunk_link",
+    "primary_link",
+    "secondary_link",
+    "tertiary_link",
+    "service",
+    "track",
+    "footway",
+    "path",
+    "pedestrian",
+    "cycleway",
+    "bridleway",
+    "steps",
+    "construction",
+    "proposed",
 ];
 const OTHER: &[(&str, &str)] = &[
     ("railway", "rail"),
@@ -293,7 +337,9 @@ fn e6(x: f64) -> i32 {
 fn expected_ways(features: &[Feature]) -> Vec<OWay> {
     let mut ways = Vec::new();
     for f in features {
-        let Some(class) = expected_class(&f.class) else { continue };
+        let Some(class) = expected_class(&f.class) else {
+            continue;
+        };
         let name = expected_name(&f.name);
         for line in &f.lines {
             let mut runs: Vec<Vec<[i32; 2]>> = vec![Vec::new()];
@@ -324,7 +370,12 @@ fn expected_ways(features: &[Feature]) -> Vec<OWay> {
                         true
                     }
                 };
-                ways.push(OWay { points, oneway, class: class.to_string(), name: name.clone() });
+                ways.push(OWay {
+                    points,
+                    oneway,
+                    class: class.to_string(),
+                    name: name.clone(),
+                });
             }
         }
     }
@@ -339,7 +390,11 @@ fn actual_ways(doc: &Streets) -> Vec<OWay> {
         .map(|w| OWay {
             points: w.points.clone(),
             oneway: w.oneway,
-            class: serde_json::to_value(w.class).unwrap().as_str().unwrap().to_string(),
+            class: serde_json::to_value(w.class)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
             name: w.name.clone(),
         })
         .collect()
@@ -349,7 +404,9 @@ fn shuffled<T: Clone>(items: &[T], seed: u64) -> Vec<T> {
     let mut out = items.to_vec();
     let mut s = seed | 1;
     for i in (1..out.len()).rev() {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (s >> 33) as usize % (i + 1);
         out.swap(i, j);
     }
@@ -360,7 +417,11 @@ fn shuffled<T: Clone>(items: &[T], seed: u64) -> Vec<T> {
 /// same way.
 fn redrawn(f: &Feature) -> Feature {
     Feature {
-        lines: f.lines.iter().map(|l| l.iter().rev().copied().collect()).collect(),
+        lines: f
+            .lines
+            .iter()
+            .map(|l| l.iter().rev().copied().collect())
+            .collect(),
         dir: match f.dir {
             Dir::Both => Dir::Both,
             Dir::Forward => Dir::Backward,
@@ -447,18 +508,36 @@ fn validate_refuses_what_the_import_never_writes() {
     assert!(ok.validate().is_ok(), "{:?}", ok.validate());
 
     let refused = [
-        ("a lone point", json!([{ "points": [[45600000, -122600000]], "class": "local" }])),
-        ("a repeated vertex", json!([{ "points": [[45600000, -122600000], [45600000, -122600000], [45601000, -122600000]], "class": "local" }])),
-        ("a two-way drawn backward", json!([{ "points": [[45601000, -122600000], [45600000, -122600000]], "class": "local" }])),
-        ("out of order", json!([
-            { "points": [[45601000, -122600000], [45601000, -122599000]], "class": "local" },
-            { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
-        ])),
-        ("a street twice", json!([
-            { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
-            { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
-        ])),
-        ("off the globe", json!([{ "points": [[95000000, -122600000], [45601000, -122600000]], "class": "local" }])),
+        (
+            "a lone point",
+            json!([{ "points": [[45600000, -122600000]], "class": "local" }]),
+        ),
+        (
+            "a repeated vertex",
+            json!([{ "points": [[45600000, -122600000], [45600000, -122600000], [45601000, -122600000]], "class": "local" }]),
+        ),
+        (
+            "a two-way drawn backward",
+            json!([{ "points": [[45601000, -122600000], [45600000, -122600000]], "class": "local" }]),
+        ),
+        (
+            "out of order",
+            json!([
+                { "points": [[45601000, -122600000], [45601000, -122599000]], "class": "local" },
+                { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
+            ]),
+        ),
+        (
+            "a street twice",
+            json!([
+                { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
+                { "points": [[45600000, -122600000], [45601000, -122600000]], "class": "local" },
+            ]),
+        ),
+        (
+            "off the globe",
+            json!([{ "points": [[95000000, -122600000], [45601000, -122600000]], "class": "local" }]),
+        ),
     ];
     for (what, ways) in refused {
         assert!(doc(ways).validate().is_err(), "{what} must be refused");
@@ -480,8 +559,16 @@ fn railroads_and_rivers_are_not_streets() {
         line(json!({ "CFCC": "A40", "FULLNAME": "NE 21ST AVE", "NAME": "21ST" }), 45.63),
     ]});
     let doc = import(&serde_json::to_vec(&fc).unwrap()).expect("import");
-    let names: Vec<_> = doc.ways.iter().map(|w| w.name.as_deref().unwrap_or("")).collect();
+    let names: Vec<_> = doc
+        .ways
+        .iter()
+        .map(|w| w.name.as_deref().unwrap_or(""))
+        .collect();
     assert_eq!(names, ["SE POWELL BLVD", "NE 21ST AVE"]);
-    let classes: Vec<_> = doc.ways.iter().map(|w| serde_json::to_value(w.class).unwrap()).collect();
+    let classes: Vec<_> = doc
+        .ways
+        .iter()
+        .map(|w| serde_json::to_value(w.class).unwrap())
+        .collect();
     assert_eq!(classes, [json!("unknown"), json!("local")]);
 }

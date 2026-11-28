@@ -50,16 +50,25 @@ impl DivertedTrips {
     }
 
     pub fn skipped(&self, trip: &str, start_secs: u32) -> Option<&[String]> {
-        self.trips.get(&(trip.to_string(), start_secs)).map(Vec::as_slice)
+        self.trips
+            .get(&(trip.to_string(), start_secs))
+            .map(Vec::as_slice)
     }
 }
 
-pub fn diverted_instances(baseline: &[MaterializedTrip], patched: &[MaterializedTrip]) -> DivertedTrips {
-    let base: HashMap<(&str, u32), &MaterializedTrip> =
-        baseline.iter().map(|t| ((t.trip.as_str(), t.start_secs), t)).collect();
+pub fn diverted_instances(
+    baseline: &[MaterializedTrip],
+    patched: &[MaterializedTrip],
+) -> DivertedTrips {
+    let base: HashMap<(&str, u32), &MaterializedTrip> = baseline
+        .iter()
+        .map(|t| ((t.trip.as_str(), t.start_secs), t))
+        .collect();
     let mut trips = HashMap::new();
     for p in patched {
-        let Some(b) = base.get(&(p.trip.as_str(), p.start_secs)) else { continue };
+        let Some(b) = base.get(&(p.trip.as_str(), p.start_secs)) else {
+            continue;
+        };
         if b.stop_times == p.stop_times {
             continue;
         }
@@ -90,8 +99,18 @@ pub fn plan_notice(
     let mut rides_diverted = false;
     for (it, is_active) in [(active, true), (baseline, false)] {
         for leg in it.iter().flat_map(|i| &i.legs) {
-            let Leg::Transit { trip, start_secs, route_name, .. } = leg else { continue };
-            let Some(skipped) = diverted.skipped(trip, *start_secs) else { continue };
+            let Leg::Transit {
+                trip,
+                start_secs,
+                route_name,
+                ..
+            } = leg
+            else {
+                continue;
+            };
+            let Some(skipped) = diverted.skipped(trip, *start_secs) else {
+                continue;
+            };
             rides_diverted |= is_active;
             if !routes.contains(route_name) {
                 routes.push(route_name.clone());

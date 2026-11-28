@@ -1,14 +1,13 @@
 use std::collections::BTreeSet;
 
+use crate::{
+    coverage_of_members, service_type_compare, trip_distance_m, CoverageWindow, Network,
+    ServiceTypeComparison, ServiceTypeSummary, Weights, METERS_PER_MILE,
+};
 use serde::Serialize;
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use transit_date::Date;
-use crate::{
-    METERS_PER_MILE, ServiceTypeSummary, coverage_of_members, CoverageWindow,
-    Weights, trip_distance_m, service_type_compare, Network, ServiceTypeComparison
-};
-
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "bindings", derive(TS))]
@@ -35,7 +34,6 @@ pub struct DayType {
 /// combination holds. A combination with no date in the period is left out
 /// (D-137).
 pub fn day_types(net: &Network, from: Option<Date>, through: Option<Date>) -> Vec<DayType> {
-    
     let mut groups: Vec<DayTypeGroup> = transit_network::service_combinations(net)
         .into_iter()
         .filter_map(|c| {
@@ -62,10 +60,26 @@ pub fn day_types(net: &Network, from: Option<Date>, through: Option<Date>) -> Ve
         })
         .collect();
     groups.sort_by(|a, b| {
-        b.dates.len().cmp(&a.dates.len()).then_with(|| a.dates[0].cmp(&b.dates[0])).then_with(|| a.id.cmp(&b.id))
+        b.dates
+            .len()
+            .cmp(&a.dates.len())
+            .then_with(|| a.dates[0].cmp(&b.dates[0]))
+            .then_with(|| a.id.cmp(&b.id))
     });
-    let first = from.or_else(|| groups.iter().filter_map(|g| g.dates.first()).min().and_then(|d| Date::parse(d).ok()));
-    let last = through.or_else(|| groups.iter().filter_map(|g| g.dates.last()).max().and_then(|d| Date::parse(d).ok()));
+    let first = from.or_else(|| {
+        groups
+            .iter()
+            .filter_map(|g| g.dates.first())
+            .min()
+            .and_then(|d| Date::parse(d).ok())
+    });
+    let last = through.or_else(|| {
+        groups
+            .iter()
+            .filter_map(|g| g.dates.last())
+            .max()
+            .and_then(|d| Date::parse(d).ok())
+    });
     let mut period = [0u32; 7];
     if let (Some(mut d), Some(end)) = (first, last) {
         while d <= end {
@@ -84,8 +98,15 @@ pub fn day_types(net: &Network, from: Option<Date>, through: Option<Date>) -> Ve
                     held[d.weekday().num_days_from_monday() as usize] += 1;
                 }
                 let most: Vec<bool> = (0..7).map(|w| held[w] * 2 > period[w]).collect();
-                let weekdays = if most.iter().any(|&x| x) { most } else { g.weekdays.clone() };
-                types.push(DayType { weekdays, groups: vec![g] });
+                let weekdays = if most.iter().any(|&x| x) {
+                    most
+                } else {
+                    g.weekdays.clone()
+                };
+                types.push(DayType {
+                    weekdays,
+                    groups: vec![g],
+                });
             }
         }
     }
@@ -123,7 +144,10 @@ pub fn plan_compare(
                 .into_iter()
                 .map(|g| {
                     let comparison = service_type_compare(base, proposal, &g.members);
-                    DayTypeGroupComparison { group: g, comparison }
+                    DayTypeGroupComparison {
+                        group: g,
+                        comparison,
+                    }
                 })
                 .collect(),
         })
@@ -161,7 +185,15 @@ pub fn type_coverage(
     window: Option<CoverageWindow>,
 ) -> Option<CombinationCoverage> {
     let combination = transit_network::service_combination(net, members)?;
-    let stats = coverage_of_members(net, &combination.members, weights, radius_m, frequent_secs, min_departures, window);
+    let stats = coverage_of_members(
+        net,
+        &combination.members,
+        weights,
+        radius_m,
+        frequent_secs,
+        min_departures,
+        window,
+    );
     Some(CombinationCoverage {
         group: combination.id,
         members: combination.members,
@@ -177,7 +209,10 @@ pub fn type_coverage(
 
 /// With `running_on`, only the types whose calendar runs on that date are
 /// listed.
-pub(crate) fn service_type_summaries(net: &Network, running_on: Option<Date>) -> Vec<ServiceTypeSummary> {
+pub(crate) fn service_type_summaries(
+    net: &Network,
+    running_on: Option<Date>,
+) -> Vec<ServiceTypeSummary> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
         if running_on.is_some_and(|date| !service_type.rule.runs_on(date)) {
@@ -192,7 +227,8 @@ pub(crate) fn service_type_summaries(net: &Network, running_on: Option<Date>) ->
             if &pattern_trips.service_type != type_id {
                 continue;
             }
-            let Ok(materialized) = transit_network::materialize_service(net, pattern_trips_id) else {
+            let Ok(materialized) = transit_network::materialize_service(net, pattern_trips_id)
+            else {
                 continue;
             };
             for trip in materialized {
@@ -219,5 +255,3 @@ pub(crate) fn service_type_summaries(net: &Network, running_on: Option<Date>) ->
     }
     out
 }
-
-

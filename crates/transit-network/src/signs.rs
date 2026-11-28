@@ -22,7 +22,10 @@ pub fn visit_destination(network: &Network, trip: &MaterializedTrip, visit: usiz
 
 fn visit_headsign(network: &Network, trip: &MaterializedTrip, visit: usize) -> Option<String> {
     let stop = &trip.stop_times.get(visit)?.stop;
-    let occurrence = trip.stop_times[..visit].iter().filter(|s| &s.stop == stop).count();
+    let occurrence = trip.stop_times[..visit]
+        .iter()
+        .filter(|s| &s.stop == stop)
+        .count();
     network
         .patterns
         .get(&trip.pattern)?
@@ -35,8 +38,12 @@ fn visit_headsign(network: &Network, trip: &MaterializedTrip, visit: usize) -> O
 }
 
 fn final_place(network: &Network, trip: &MaterializedTrip) -> String {
-    let Some(last) = trip.stop_times.last() else { return String::new() };
-    let Some(stop) = network.stops.get(&last.stop) else { return last.stop.clone() };
+    let Some(last) = trip.stop_times.last() else {
+        return String::new();
+    };
+    let Some(stop) = network.stops.get(&last.stop) else {
+        return last.stop.clone();
+    };
     stop.parent
         .as_ref()
         .and_then(|p| network.stops.get(p))

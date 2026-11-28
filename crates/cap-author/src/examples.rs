@@ -13,12 +13,19 @@ pub fn examples() -> Vec<Example> {
     .expect("the example edits read");
     vec![
         Example {
-            bytes: None, kinds: vec![],
+            bytes: None,
+            kinds: vec![],
             op: "stamp_pick",
             loads: loads(),
             request: json!({ "op": "stamp_pick", "network_hash": net.network_hash, "name": "Fall 2026 feed", "id": "fall-2026" }),
         },
-        Example { bytes: None, kinds: kinds(&net.network), op: "apply", loads: loads(), request: json!({ "op": "apply", "network_hash": net.network_hash, "edits": edits }) },
+        Example {
+            bytes: None,
+            kinds: kinds(&net.network),
+            op: "apply",
+            loads: loads(),
+            request: json!({ "op": "apply", "network_hash": net.network_hash, "edits": edits }),
+        },
     ]
 }
 
@@ -28,16 +35,28 @@ fn kinds(network: &transit_network::Network) -> Vec<KindExample> {
     let mut doc = network.clone();
     let mut kinds = Vec::new();
     for (i, example) in edit_kinds().into_iter().enumerate() {
-        let edit: NetworkEdit = serde_json::from_value(example.clone()).unwrap_or_else(|e| panic!("edit example {i} ({example}) is not an edit: {e}"));
-        doc = transit_network::apply_edits(&doc, std::slice::from_ref(&edit)).unwrap_or_else(|e| panic!("edit example {i} ({example}) does not apply: {e}"));
+        let edit: NetworkEdit = serde_json::from_value(example.clone())
+            .unwrap_or_else(|e| panic!("edit example {i} ({example}) is not an edit: {e}"));
+        doc = transit_network::apply_edits(&doc, std::slice::from_ref(&edit))
+            .unwrap_or_else(|e| panic!("edit example {i} ({example}) does not apply: {e}"));
         let kind = example["edit"].as_str().expect("a tagged edit").to_string();
         kinds.push(KindExample { kind, example });
     }
     let declared = <NetworkEdit as ts_rs::TS>::decl(&ts_rs::Config::default());
-    let tags: std::collections::BTreeSet<&str> = declared.split("\"edit\": \"").skip(1).filter_map(|rest| rest.split('"').next()).collect();
+    let tags: std::collections::BTreeSet<&str> = declared
+        .split("\"edit\": \"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .collect();
     let covered: std::collections::BTreeSet<&str> = kinds.iter().map(|k| k.kind.as_str()).collect();
-    assert!(!tags.is_empty(), "the edit kinds are read off NetworkEdit's declaration");
-    assert_eq!(covered, tags, "every edit kind has exactly one worked example (edit_kinds)");
+    assert!(
+        !tags.is_empty(),
+        "the edit kinds are read off NetworkEdit's declaration"
+    );
+    assert_eq!(
+        covered, tags,
+        "every edit kind has exactly one worked example (edit_kinds)"
+    );
     assert_eq!(covered.len(), kinds.len(), "one example per edit kind");
     kinds
 }

@@ -24,9 +24,23 @@ fn network(names: &[String]) -> Network {
     let stops: BTreeMap<String, Stop> = names
         .iter()
         .enumerate()
-        .map(|(i, n)| (format!("{i}"), Stop { name: n.clone(), lat: 45.5, lon: -122.5, ..Default::default() }))
+        .map(|(i, n)| {
+            (
+                format!("{i}"),
+                Stop {
+                    name: n.clone(),
+                    lat: 45.5,
+                    lon: -122.5,
+                    ..Default::default()
+                },
+            )
+        })
         .collect();
-    Network { name: "Stop search laws".into(), stops, ..Default::default() }
+    Network {
+        name: "Stop search laws".into(),
+        stops,
+        ..Default::default()
+    }
 }
 
 fn word() -> impl Strategy<Value = String> {
@@ -38,7 +52,9 @@ fn name() -> impl Strategy<Value = String> {
         w.into_iter()
             .map(|w| {
                 let mut c = w.chars();
-                c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+                c.next()
+                    .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                    .unwrap_or_default()
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -122,16 +138,35 @@ fn the_everyday_name_finds_the_sign() {
     for sign in ["Van Mall Transit Center", "Vancouver Mall"] {
         assert!(name_match("vancouver mall", sign, "1").is_some(), "{sign}");
     }
-    assert_eq!(name_match("van mall", "Van Mall Transit Center", "1"), Some(NameMatch::Exact));
-    assert_eq!(name_match("vancouver mall", "Van Mall Transit Center", "1"), Some(NameMatch::Abbreviation));
-    assert_eq!(name_match("main street", "Main St & 5th", "1"), Some(NameMatch::Abbreviation));
-    assert_eq!(name_match("forth plain", "Fourth Plain & Andresen", "1"), Some(NameMatch::Typo));
-    assert_eq!(name_match("andersen", "Fourth Plain & Andresen", "1"), Some(NameMatch::Typo));
+    assert_eq!(
+        name_match("van mall", "Van Mall Transit Center", "1"),
+        Some(NameMatch::Exact)
+    );
+    assert_eq!(
+        name_match("vancouver mall", "Van Mall Transit Center", "1"),
+        Some(NameMatch::Abbreviation)
+    );
+    assert_eq!(
+        name_match("main street", "Main St & 5th", "1"),
+        Some(NameMatch::Abbreviation)
+    );
+    assert_eq!(
+        name_match("forth plain", "Fourth Plain & Andresen", "1"),
+        Some(NameMatch::Typo)
+    );
+    assert_eq!(
+        name_match("andersen", "Fourth Plain & Andresen", "1"),
+        Some(NameMatch::Typo)
+    );
 }
 
 #[test]
 fn law5_every_term_must_match() {
     assert_eq!(name_match("vancouver zebra", "Van Mall", "1"), None);
-    assert_eq!(name_match("xyz", "Van Mall", "1"), None, "under four letters: never corrected");
+    assert_eq!(
+        name_match("xyz", "Van Mall", "1"),
+        None,
+        "under four letters: never corrected"
+    );
     assert_eq!(name_match("newport", "NE 4th St", "1"), None);
 }

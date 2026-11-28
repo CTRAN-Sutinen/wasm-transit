@@ -96,13 +96,20 @@ impl<'a> NetworkPlaces<'a> {
         let mut departures: BTreeMap<&str, Vec<(u32, usize, usize)>> = BTreeMap::new();
         for (i, t) in day.iter().enumerate() {
             for (k, st) in t.stop_times.iter().enumerate() {
-                departures.entry(st.stop.as_str()).or_default().push((st.departure_secs, i, k));
+                departures
+                    .entry(st.stop.as_str())
+                    .or_default()
+                    .push((st.departure_secs, i, k));
             }
         }
         for list in departures.values_mut() {
             list.sort();
         }
-        NetworkPlaces { network, departures, day }
+        NetworkPlaces {
+            network,
+            departures,
+            day,
+        }
     }
 
     fn position(&self, stop: &str) -> Option<(f64, f64)> {
@@ -116,7 +123,13 @@ impl Places for NetworkPlaces<'_> {
         Some(transit_geo::distance_m(la, oa, lb, ob))
     }
 
-    fn next_trip_home(&self, from: &str, after_secs: u32, home: &str, within_m: u32) -> Option<u32> {
+    fn next_trip_home(
+        &self,
+        from: &str,
+        after_secs: u32,
+        home: &str,
+        within_m: u32,
+    ) -> Option<u32> {
         let list = self.departures.get(from)?;
         let first = list.partition_point(|d| d.0 < after_secs);
         list[first..]
@@ -124,7 +137,10 @@ impl Places for NetworkPlaces<'_> {
             .filter_map(|&(_, i, k)| {
                 self.day[i].stop_times[k + 1..]
                     .iter()
-                    .find(|st| self.meters(&st.stop, home).is_some_and(|m| m <= within_m as f64))
+                    .find(|st| {
+                        self.meters(&st.stop, home)
+                            .is_some_and(|m| m <= within_m as f64)
+                    })
                     .map(|st| st.arrival_secs)
             })
             .min()
@@ -132,13 +148,23 @@ impl Places for NetworkPlaces<'_> {
 }
 
 /// Each block's running trips on the day, in order, as piece trips.
-fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> (BTreeMap<String, Vec<PieceTrip>>, Vec<String>) {
+fn day_blocks(
+    network: &Network,
+    day: &[MaterializedTrip],
+) -> (BTreeMap<String, Vec<PieceTrip>>, Vec<String>) {
     let mut placed = std::collections::BTreeSet::new();
     let mut blocks = BTreeMap::new();
     for (block_id, block) in &network.blocks {
-        let position: BTreeMap<&str, usize> = block.trips.iter().enumerate().map(|(i, t)| (t.trip.as_str(), i)).collect();
-        let mut running: Vec<(u32, usize, &MaterializedTrip)> =
-            day.iter().filter_map(|t| position.get(t.trip.as_str()).map(|&i| (t.start_secs, i, t))).collect();
+        let position: BTreeMap<&str, usize> = block
+            .trips
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.trip.as_str(), i))
+            .collect();
+        let mut running: Vec<(u32, usize, &MaterializedTrip)> = day
+            .iter()
+            .filter_map(|t| position.get(t.trip.as_str()).map(|&i| (t.start_secs, i, t)))
+            .collect();
         running.sort_by_key(|&(start, i, t)| (start, i, t.trip.clone()));
         let trips: Vec<PieceTrip> = running
             .into_iter()
@@ -148,8 +174,16 @@ fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> (BTreeMap<String, 
                     trip: t.trip.clone(),
                     start_secs: t.start_secs,
                     end_secs: crate::recovery::end(t),
-                    from: t.stop_times.first().map(|s| s.stop.clone()).unwrap_or_default(),
-                    to: t.stop_times.last().map(|s| s.stop.clone()).unwrap_or_default(),
+                    from: t
+                        .stop_times
+                        .first()
+                        .map(|s| s.stop.clone())
+                        .unwrap_or_default(),
+                    to: t
+                        .stop_times
+                        .last()
+                        .map(|s| s.stop.clone())
+                        .unwrap_or_default(),
                 }
             })
             .collect();
@@ -157,8 +191,11 @@ fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> (BTreeMap<String, 
             blocks.insert(block_id.clone(), trips);
         }
     }
-    let mut unblocked: Vec<String> =
-        day.iter().filter(|t| !placed.contains(&(t.trip.clone(), t.start_secs))).map(|t| format!("{}@{}", t.trip, t.start_secs)).collect();
+    let mut unblocked: Vec<String> = day
+        .iter()
+        .filter(|t| !placed.contains(&(t.trip.clone(), t.start_secs)))
+        .map(|t| format!("{}@{}", t.trip, t.start_secs))
+        .collect();
     unblocked.sort();
     (blocks, unblocked)
 }
@@ -176,8 +213,18 @@ struct Chooser<'a> {
 
 impl Chooser<'_> {
     fn best(&self, pieces: &[Piece]) -> (Option<String>, Judged, Score) {
-        let maximize = self.rules.objective.as_ref().map(|o| o.maximize.clone()).unwrap_or_default();
-        let classes = self.rules.classes.iter().map(|c| Some(c.id.as_str())).chain(std::iter::once(None));
+        let maximize = self
+            .rules
+            .objective
+            .as_ref()
+            .map(|o| o.maximize.clone())
+            .unwrap_or_default();
+        let classes = self
+            .rules
+            .classes
+            .iter()
+            .map(|c| Some(c.id.as_str()))
+            .chain(std::iter::once(None));
         let mut best: Option<(Option<String>, Judged, Score)> = None;
         for (order, class) in classes.enumerate() {
             if class.is_some_and(|c| !meets(self.rules, c, pieces)) {
@@ -185,8 +232,17 @@ impl Chooser<'_> {
             }
             let judged = judge(self.rules, class, pieces, self.day, self.places);
             let clean = judged.broken.is_empty();
-            let good = clean && class.is_some_and(|c| maximize.iter().any(|m| m == c)) && judged.premium_secs + judged.guarantee_secs == 0;
-            let score = (!judged.legal(), !clean, !good, judged.pay_secs, judged.broken.len(), order);
+            let good = clean
+                && class.is_some_and(|c| maximize.iter().any(|m| m == c))
+                && judged.premium_secs + judged.guarantee_secs == 0;
+            let score = (
+                !judged.legal(),
+                !clean,
+                !good,
+                judged.pay_secs,
+                judged.broken.len(),
+                order,
+            );
             if best.as_ref().is_none_or(|b| score < b.2) {
                 best = Some((class.map(String::from), judged, score));
             }
@@ -198,14 +254,31 @@ impl Chooser<'_> {
 fn piece(block: &str, trips: &[PieceTrip], all: &[PieceTrip], deadheads: &Deadheads) -> Piece {
     let (pull_out, pull_in) = (trips.first() == all.first(), trips.last() == all.last());
     let drive = |end: bool, stop: Option<&PieceTrip>, to_garage: bool| {
-        end.then(|| stop.and_then(|t| deadheads.secs.get(&(if to_garage { t.to.clone() } else { t.from.clone() }, to_garage)).copied())).flatten()
+        end.then(|| {
+            stop.and_then(|t| {
+                deadheads
+                    .secs
+                    .get(&(
+                        if to_garage {
+                            t.to.clone()
+                        } else {
+                            t.from.clone()
+                        },
+                        to_garage,
+                    ))
+                    .copied()
+            })
+        })
+        .flatten()
     };
     Piece {
         block: block.to_string(),
         trips: trips.to_vec(),
         pull_out,
         pull_in,
-        garage: (pull_out || pull_in).then(|| deadheads.garage.clone()).flatten(),
+        garage: (pull_out || pull_in)
+            .then(|| deadheads.garage.clone())
+            .flatten(),
         deadhead_out_secs: drive(pull_out, trips.first(), false),
         deadhead_in_secs: drive(pull_in, trips.last(), true),
     }
@@ -231,24 +304,40 @@ fn deadheads(
     constraints: Option<&SchedulingConstraints>,
     roads: Option<&dyn Roads>,
 ) -> Deadheads {
-    let Some(garage) = constraints.and_then(|c| c.garages.first()) else { return Deadheads::default() };
+    let Some(garage) = constraints.and_then(|c| c.garages.first()) else {
+        return Deadheads::default();
+    };
     let mut secs = BTreeMap::new();
     if let (Some(roads), Some(kph)) = (roads, constraints.and_then(|c| c.deadhead_kph)) {
         let at = (garage.lat, garage.lon);
-        let ends = blocks.values().flat_map(|l| [(l.first().map(|t| t.from.clone()), false), (l.last().map(|t| t.to.clone()), true)]);
+        let ends = blocks.values().flat_map(|l| {
+            [
+                (l.first().map(|t| t.from.clone()), false),
+                (l.last().map(|t| t.to.clone()), true),
+            ]
+        });
         for (stop, to_garage) in ends {
             let Some(stop) = stop else { continue };
             if secs.contains_key(&(stop.clone(), to_garage)) {
                 continue;
             }
-            let Some(s) = network.stops.get(&stop) else { continue };
-            let m = if to_garage { roads.meters((s.lat, s.lon), at) } else { roads.meters(at, (s.lat, s.lon)) };
+            let Some(s) = network.stops.get(&stop) else {
+                continue;
+            };
+            let m = if to_garage {
+                roads.meters((s.lat, s.lon), at)
+            } else {
+                roads.meters(at, (s.lat, s.lon))
+            };
             if let Some(m) = m {
                 secs.insert((stop, to_garage), (m * 3.6 / kph as f64).ceil() as u32);
             }
         }
     }
-    Deadheads { garage: Some(garage.id.clone()), secs }
+    Deadheads {
+        garage: Some(garage.id.clone()),
+        secs,
+    }
 }
 
 /// A stop where blocks lay over: a trip of the block ends there, and the
@@ -267,10 +356,29 @@ pub struct ReliefPoint {
 /// The stops where two blocks or more lay over: transit centers and shared
 /// terminals, where one operator can most likely relieve another. A guess
 /// from the blocks, for when the constraints name no relief point.
-fn infer_relief_points(network: &Network, day: &[MaterializedTrip], blocks: &BTreeMap<String, Vec<PieceTrip>>) -> Vec<ReliefPoint> {
-    let route: BTreeMap<(&str, u32), &str> = day.iter().map(|t| ((t.trip.as_str(), t.start_secs), t.route.as_str())).collect();
-    let station = |stop: &str| network.stops.get(stop).and_then(|s| s.parent.clone()).unwrap_or_else(|| stop.to_string());
-    let mut at: BTreeMap<String, (std::collections::BTreeSet<&str>, std::collections::BTreeSet<&str>)> = BTreeMap::new();
+fn infer_relief_points(
+    network: &Network,
+    day: &[MaterializedTrip],
+    blocks: &BTreeMap<String, Vec<PieceTrip>>,
+) -> Vec<ReliefPoint> {
+    let route: BTreeMap<(&str, u32), &str> = day
+        .iter()
+        .map(|t| ((t.trip.as_str(), t.start_secs), t.route.as_str()))
+        .collect();
+    let station = |stop: &str| {
+        network
+            .stops
+            .get(stop)
+            .and_then(|s| s.parent.clone())
+            .unwrap_or_else(|| stop.to_string())
+    };
+    let mut at: BTreeMap<
+        String,
+        (
+            std::collections::BTreeSet<&str>,
+            std::collections::BTreeSet<&str>,
+        ),
+    > = BTreeMap::new();
     for (block, list) in blocks {
         for w in list.windows(2) {
             if w[0].to != w[1].from && station(&w[0].to) != station(&w[1].from) {
@@ -287,26 +395,40 @@ fn infer_relief_points(network: &Network, day: &[MaterializedTrip], blocks: &BTr
     }
     at.into_iter()
         .filter(|(_, (b, _))| b.len() >= 2)
-        .map(|(stop, (b, r))| ReliefPoint { stop, blocks: b.len() as u32, routes: r.into_iter().map(String::from).collect() })
+        .map(|(stop, (b, r))| ReliefPoint {
+            stop,
+            blocks: b.len() as u32,
+            routes: r.into_iter().map(String::from).collect(),
+        })
         .collect()
 }
 
 /// The block's trips cut at reliefs into the longest pieces legal alone. A
 /// relief is after a trip that ends at a relief point, or after any trip
 /// when the constraints name none.
-fn split(block: &str, trips: &[PieceTrip], relief_points: &[String], deadheads: &Deadheads, chooser: &Chooser) -> Vec<Piece> {
-    let relief = |i: usize| relief_points.is_empty() || relief_points.iter().any(|p| *p == trips[i].to);
+fn split(
+    block: &str,
+    trips: &[PieceTrip],
+    relief_points: &[String],
+    deadheads: &Deadheads,
+    chooser: &Chooser,
+) -> Vec<Piece> {
+    let relief =
+        |i: usize| relief_points.is_empty() || relief_points.iter().any(|p| *p == trips[i].to);
     let piece = |a: &[PieceTrip], all: &[PieceTrip]| piece(block, a, all, deadheads);
     // Breaks nothing alone, and pays no premium alone: a piece that stops
     // where premiums start leaves pairing room to build a full day.
     let fits = |from: usize, to: usize| {
-        let (_, judged, score) = chooser.best(std::slice::from_ref(&piece(&trips[from..=to], trips)));
+        let (_, judged, score) =
+            chooser.best(std::slice::from_ref(&piece(&trips[from..=to], trips)));
         (!score.1, !score.1 && judged.premium_secs == 0)
     };
     let mut out = Vec::new();
     let mut start = 0;
     while start < trips.len() {
-        let ends: Vec<usize> = (start..trips.len()).filter(|&e| e + 1 == trips.len() || relief(e)).collect();
+        let ends: Vec<usize> = (start..trips.len())
+            .filter(|&e| e + 1 == trips.len() || relief(e))
+            .collect();
         let (mut clean, mut cheap) = (None, None);
         for &e in &ends {
             let (is_clean, is_cheap) = fits(start, e);
@@ -344,8 +466,11 @@ pub struct Pieces {
 }
 
 fn period_warnings(rules: &WorkRules, date: &str) -> Vec<String> {
-    let Some(source) = &rules.source else { return Vec::new() };
-    let outside = source.effective_from.as_deref().is_some_and(|f| date < f) || source.effective_to.as_deref().is_some_and(|t| date > t);
+    let Some(source) = &rules.source else {
+        return Vec::new();
+    };
+    let outside = source.effective_from.as_deref().is_some_and(|f| date < f)
+        || source.effective_to.as_deref().is_some_and(|t| date > t);
     if !outside {
         return Vec::new();
     }
@@ -369,20 +494,41 @@ pub fn cut_pieces(
     places: &dyn Places,
 ) -> Pieces {
     let chooser = Chooser { rules, day, places };
-    let named = constraints.map(|c| c.relief_points.clone()).unwrap_or_default();
-    let inferred = if named.is_empty() { blocks.inferred.clone() } else { Vec::new() };
-    let relief_points: Vec<String> = if named.is_empty() { inferred.iter().map(|r| r.stop.clone()).collect() } else { named };
+    let named = constraints
+        .map(|c| c.relief_points.clone())
+        .unwrap_or_default();
+    let inferred = if named.is_empty() {
+        blocks.inferred.clone()
+    } else {
+        Vec::new()
+    };
+    let relief_points: Vec<String> = if named.is_empty() {
+        inferred.iter().map(|r| r.stop.clone()).collect()
+    } else {
+        named
+    };
     let mut pieces = Vec::new();
     for (block, list) in &blocks.blocks {
         let one = piece(block, list, list, &blocks.deadheads);
         if good_whole(&chooser, &one) {
             pieces.push(one);
         } else {
-            pieces.extend(split(block, list, &relief_points, &blocks.deadheads, &chooser));
+            pieces.extend(split(
+                block,
+                list,
+                &relief_points,
+                &blocks.deadheads,
+                &chooser,
+            ));
         }
     }
     pieces.sort_by(|a, b| (a.start_secs(), &a.block).cmp(&(b.start_secs(), &b.block)));
-    Pieces { pieces, unblocked: blocks.unblocked.clone(), inferred_relief_points: inferred, warnings: period_warnings(rules, date) }
+    Pieces {
+        pieces,
+        unblocked: blocks.unblocked.clone(),
+        inferred_relief_points: inferred,
+        warnings: period_warnings(rules, date),
+    }
 }
 
 /// A whole block that makes a good run alone. Composing keeps it a run of
@@ -406,7 +552,12 @@ pub struct Composition {
 /// than the two apart. That is the least-pay composition. When it misses a
 /// mix rule, [`toward_mix`] moves it toward the mix. Runs are numbered from
 /// 1 by their first piece.
-pub fn compose_runs(pieces: &[Piece], rules: &WorkRules, day: Day, places: &dyn Places) -> Composition {
+pub fn compose_runs(
+    pieces: &[Piece],
+    rules: &WorkRules,
+    day: Day,
+    places: &dyn Places,
+) -> Composition {
     let chooser = Chooser { rules, day, places };
     let mut runs = Vec::new();
     let mut open = Vec::new();
@@ -455,9 +606,23 @@ pub fn compose_runs(pieces: &[Piece], rules: &WorkRules, day: Day, places: &dyn 
     let least: i64 = runs.iter().map(|r| r.2.pay_secs as i64).sum();
     let mut runs = toward_mix(runs, &chooser);
     let mix_cost_secs = runs.iter().map(|r| r.2.pay_secs as i64).sum::<i64>() - least;
-    runs.sort_by(|a, b| (a.0[0].start_secs(), &a.0[0].block).cmp(&(b.0[0].start_secs(), &b.0[0].block)));
-    let runs = runs.into_iter().enumerate().map(|(n, (pieces, class, judged))| CutRun { id: format!("{}", n + 1), class, pieces, judged }).collect();
-    Composition { runs, mix_cost_secs }
+    runs.sort_by(|a, b| {
+        (a.0[0].start_secs(), &a.0[0].block).cmp(&(b.0[0].start_secs(), &b.0[0].block))
+    });
+    let runs = runs
+        .into_iter()
+        .enumerate()
+        .map(|(n, (pieces, class, judged))| CutRun {
+            id: format!("{}", n + 1),
+            class,
+            pieces,
+            judged,
+        })
+        .collect();
+    Composition {
+        runs,
+        mix_cost_secs,
+    }
 }
 
 type Drafted = (Vec<Piece>, Option<String>, Judged);
@@ -487,7 +652,12 @@ impl Tally {
     }
 
     fn parts(&self, m: &crate::rules::MixRule) -> (i64, i64) {
-        let of = |map: &BTreeMap<Option<String>, i64>| m.classes.iter().map(|c| map.get(&Some(c.clone())).copied().unwrap_or(0)).sum();
+        let of = |map: &BTreeMap<Option<String>, i64>| {
+            m.classes
+                .iter()
+                .map(|c| map.get(&Some(c.clone())).copied().unwrap_or(0))
+                .sum()
+        };
         match m.of {
             ShareOf::Runs => (of(&self.count), self.runs),
             ShareOf::PaidTime => (of(&self.pay), self.total_pay),
@@ -502,8 +672,13 @@ impl Tally {
             .iter()
             .map(|m| {
                 let (part, whole) = self.parts(m);
-                let share = if whole <= 0 { 0.0 } else { part as f64 * 100.0 / whole as f64 };
-                m.min_pct.map_or(0.0, |min| (min as f64 - share).max(0.0)) + m.max_pct.map_or(0.0, |max| (share - max as f64).max(0.0))
+                let share = if whole <= 0 {
+                    0.0
+                } else {
+                    part as f64 * 100.0 / whole as f64
+                };
+                m.min_pct.map_or(0.0, |min| (min as f64 - share).max(0.0))
+                    + m.max_pct.map_or(0.0, |max| (share - max as f64).max(0.0))
             })
             .sum()
     }
@@ -512,7 +687,11 @@ impl Tally {
     fn met(&self, rules: &WorkRules) -> bool {
         rules.mix.iter().all(|m| {
             let (part, whole) = self.parts(m);
-            let pct = if whole <= 0 { 0 } else { (part * 100 / whole) as u32 };
+            let pct = if whole <= 0 {
+                0
+            } else {
+                (part * 100 / whole) as u32
+            };
             m.min_pct.is_none_or(|min| pct >= min) && m.max_pct.is_none_or(|max| pct <= max)
         })
     }
@@ -555,7 +734,11 @@ fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
         }
     }
     for (i, r) in runs.iter().enumerate() {
-        for c in rules.classes.iter().filter(|c| r.1.as_deref() != Some(c.id.as_str())) {
+        for c in rules
+            .classes
+            .iter()
+            .filter(|c| r.1.as_deref() != Some(c.id.as_str()))
+        {
             if let Some(judged) = clean_as(&r.0, &c.id) {
                 moves.push(Move::Reclass(i, c.id.clone(), judged));
             }
@@ -573,7 +756,9 @@ fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
                     _ => continue,
                 },
                 Move::Reclass(i, c, judged) => match &set[*i] {
-                    Some(a) if a.1.as_deref() != Some(c.as_str()) => (vec![a], (Some(c.clone()), judged.pay_secs)),
+                    Some(a) if a.1.as_deref() != Some(c.as_str()) => {
+                        (vec![a], (Some(c.clone()), judged.pay_secs))
+                    }
                     _ => continue,
                 },
             };
@@ -591,7 +776,12 @@ fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
             }
             let added = made.1 as i64 - gone.iter().map(|g| g.2.pay_secs as i64).sum::<i64>();
             let rate = added as f64 / gain;
-            let better = best.is_none_or(|(r, a, n)| rate.total_cmp(&r).then(added.cmp(&a)).then(k.cmp(&n)).is_lt());
+            let better = best.is_none_or(|(r, a, n)| {
+                rate.total_cmp(&r)
+                    .then(added.cmp(&a))
+                    .then(k.cmp(&n))
+                    .is_lt()
+            });
             if better {
                 best = Some((rate, added, k));
             }
@@ -599,11 +789,18 @@ fn toward_mix(runs: Vec<Drafted>, chooser: &Chooser) -> Vec<Drafted> {
         let Some((_, _, k)) = best else { break };
         match &moves[k] {
             Move::Merge(i, j, c, judged) => {
-                let (a, b) = (set[*i].take().expect("a live move"), set[*j].take().expect("a live move"));
+                let (a, b) = (
+                    set[*i].take().expect("a live move"),
+                    set[*j].take().expect("a live move"),
+                );
                 tally.add(&a.1, a.2.pay_secs, -1);
                 tally.add(&b.1, b.2.pay_secs, -1);
                 tally.add(&Some(c.clone()), judged.pay_secs, 1);
-                set.push(Some((vec![a.0[0].clone(), b.0[0].clone()], Some(c.clone()), judged.clone())));
+                set.push(Some((
+                    vec![a.0[0].clone(), b.0[0].clone()],
+                    Some(c.clone()),
+                    judged.clone(),
+                )));
             }
             Move::Reclass(i, c, judged) => {
                 let a = set[*i].take().expect("a live move");
@@ -628,10 +825,24 @@ pub fn cut_runs(
     day: Day,
     places: &dyn Places,
 ) -> Cut {
-    let Pieces { pieces, unblocked, warnings, .. } = cut_pieces(blocks, rules, constraints, date, day, places);
-    let Composition { runs, mix_cost_secs } = compose_runs(&pieces, rules, day, places);
+    let Pieces {
+        pieces,
+        unblocked,
+        warnings,
+        ..
+    } = cut_pieces(blocks, rules, constraints, date, day, places);
+    let Composition {
+        runs,
+        mix_cost_secs,
+    } = compose_runs(&pieces, rules, day, places);
     let mix = mix(rules, &runs);
-    Cut { runs, unblocked, mix, mix_cost_secs, warnings }
+    Cut {
+        runs,
+        unblocked,
+        mix,
+        mix_cost_secs,
+        warnings,
+    }
 }
 
 /// A piece named by its block and its first and last trips. A trip that the
@@ -711,16 +922,29 @@ impl DayBlocks {
     /// `roads` measures the drives to and from the constraints' first
     /// garage. Without roads, a garage, or a deadhead speed, those drives
     /// are unknown.
-    pub fn new(network: &Network, trips: &[MaterializedTrip], constraints: Option<&SchedulingConstraints>, roads: Option<&dyn Roads>) -> Self {
+    pub fn new(
+        network: &Network,
+        trips: &[MaterializedTrip],
+        constraints: Option<&SchedulingConstraints>,
+        roads: Option<&dyn Roads>,
+    ) -> Self {
         let (blocks, unblocked) = day_blocks(network, trips);
         let deadheads = deadheads(network, &blocks, constraints, roads);
         let inferred = infer_relief_points(network, trips, &blocks);
-        DayBlocks { blocks, unblocked, deadheads, inferred }
+        DayBlocks {
+            blocks,
+            unblocked,
+            deadheads,
+            inferred,
+        }
     }
 
     /// The piece that `r` names, or why it names none.
     pub fn resolve(&self, r: &PieceRef) -> Result<Piece, String> {
-        let list = self.blocks.get(&r.block).ok_or_else(|| format!("block {} runs no trip on the day", r.block))?;
+        let list = self
+            .blocks
+            .get(&r.block)
+            .ok_or_else(|| format!("block {} runs no trip on the day", r.block))?;
         let at = |from: usize, trip: &str, start: Option<u32>| {
             list.iter()
                 .enumerate()
@@ -747,15 +971,25 @@ impl DayBlocks {
         let mut out = Vec::new();
         if !p.pull_out {
             let list = &self.blocks[&p.block];
-            let i = list.iter().position(|t| Some(t) == p.trips.first()).expect("a resolved piece is in its block");
+            let i = list
+                .iter()
+                .position(|t| Some(t) == p.trips.first())
+                .expect("a resolved piece is in its block");
             if !at(&list[i - 1].to) {
-                out.push(format!("the piece of {} starts after a trip that ends at {}, not a relief point", p.block, list[i - 1].to));
+                out.push(format!(
+                    "the piece of {} starts after a trip that ends at {}, not a relief point",
+                    p.block,
+                    list[i - 1].to
+                ));
             }
         }
         if !p.pull_in {
             let to = p.to();
             if !at(to) {
-                out.push(format!("the piece of {} ends at {to}, not a relief point", p.block));
+                out.push(format!(
+                    "the piece of {} ends at {to}, not a relief point",
+                    p.block
+                ));
             }
         }
         out
@@ -776,10 +1010,26 @@ impl DayBlocks {
 
 /// Composes the pieces that `refs` name, and reports the set as
 /// [`judge_runs`] does.
-pub fn compose_refs(blocks: &DayBlocks, refs: &[PieceRef], rules: &WorkRules, date: &str, day: Day, places: &dyn Places) -> Result<RunSet, String> {
-    let pieces = refs.iter().map(|r| blocks.resolve(r)).collect::<Result<Vec<_>, _>>()?;
-    let Composition { runs, mix_cost_secs } = compose_runs(&pieces, rules, day, places);
-    Ok(RunSet { mix_cost_secs: Some(mix_cost_secs), ..run_set(blocks, runs, rules, date) })
+pub fn compose_refs(
+    blocks: &DayBlocks,
+    refs: &[PieceRef],
+    rules: &WorkRules,
+    date: &str,
+    day: Day,
+    places: &dyn Places,
+) -> Result<RunSet, String> {
+    let pieces = refs
+        .iter()
+        .map(|r| blocks.resolve(r))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Composition {
+        runs,
+        mix_cost_secs,
+    } = compose_runs(&pieces, rules, day, places);
+    Ok(RunSet {
+        mix_cost_secs: Some(mix_cost_secs),
+        ..run_set(blocks, runs, rules, date)
+    })
 }
 
 fn run_set(blocks: &DayBlocks, runs: Vec<CutRun>, rules: &WorkRules, date: &str) -> RunSet {
@@ -787,10 +1037,21 @@ fn run_set(blocks: &DayBlocks, runs: Vec<CutRun>, rules: &WorkRules, date: &str)
     for t in runs.iter().flat_map(|r| &r.pieces).flat_map(|p| &p.trips) {
         *seen.entry((t.trip.clone(), t.start_secs)).or_default() += 1;
     }
-    let doubled = seen.iter().filter(|(_, &n)| n > 1).map(|((trip, start), _)| format!("{trip}@{start}")).collect();
+    let doubled = seen
+        .iter()
+        .filter(|(_, &n)| n > 1)
+        .map(|((trip, start), _)| format!("{trip}@{start}"))
+        .collect();
     let placed = seen.into_keys().collect();
     let mix = mix(rules, &runs);
-    RunSet { runs, mix, mix_cost_secs: None, doubled, uncovered: blocks.uncovered(&placed), warnings: period_warnings(rules, date) }
+    RunSet {
+        runs,
+        mix,
+        mix_cost_secs: None,
+        doubled,
+        uncovered: blocks.uncovered(&placed),
+        warnings: period_warnings(rules, date),
+    }
 }
 
 /// Judges each run as the cut judges its own, whoever composed it, and the
@@ -808,10 +1069,17 @@ pub fn judge_runs(
     places: &dyn Places,
 ) -> Result<RunSet, String> {
     let chooser = Chooser { rules, day, places };
-    let relief_points = constraints.map(|c| c.relief_points.as_slice()).unwrap_or(&[]);
+    let relief_points = constraints
+        .map(|c| c.relief_points.as_slice())
+        .unwrap_or(&[]);
     let mut out = Vec::new();
     for r in runs {
-        let mut pieces = r.pieces.iter().map(|p| blocks.resolve(p)).collect::<Result<Vec<_>, _>>().map_err(|e| format!("run {}: {e}", r.id))?;
+        let mut pieces = r
+            .pieces
+            .iter()
+            .map(|p| blocks.resolve(p))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("run {}: {e}", r.id))?;
         pieces.sort_by(|a, b| (a.start_secs(), &a.block).cmp(&(b.start_secs(), &b.block)));
         let (class, mut judged) = match &r.class {
             Some(c) => {
@@ -820,7 +1088,9 @@ pub fn judge_runs(
                 }
                 let mut judged = judge(rules, Some(c), &pieces, day, places);
                 if !meets(rules, c, &pieces) {
-                    judged.broken.push(hard(format!("the run does not meet the conditions of class {c}")));
+                    judged.broken.push(hard(format!(
+                        "the run does not meet the conditions of class {c}"
+                    )));
                 }
                 (Some(c.clone()), judged)
             }
@@ -829,20 +1099,36 @@ pub fn judge_runs(
                 (class, judged)
             }
         };
-        if pieces.windows(2).any(|w| w[0].end_secs() > w[1].start_secs()) {
-            judged.broken.push(hard("the run's pieces overlap".to_string()));
+        if pieces
+            .windows(2)
+            .any(|w| w[0].end_secs() > w[1].start_secs())
+        {
+            judged
+                .broken
+                .push(hard("the run's pieces overlap".to_string()));
         }
         for p in &pieces {
-            judged.broken.extend(blocks.reliefs(p, relief_points).into_iter().map(hard));
+            judged
+                .broken
+                .extend(blocks.reliefs(p, relief_points).into_iter().map(hard));
         }
         judged.broken.sort();
-        out.push(CutRun { id: r.id.clone(), class, pieces, judged });
+        out.push(CutRun {
+            id: r.id.clone(),
+            class,
+            pieces,
+            judged,
+        });
     }
     Ok(run_set(blocks, out, rules, date))
 }
 
 fn hard(rule: String) -> crate::run::Finding {
-    crate::run::Finding { rule, strength: crate::rules::Strength::Hard, cites: None }
+    crate::run::Finding {
+        rule,
+        strength: crate::rules::Strength::Hard,
+        cites: None,
+    }
 }
 
 fn mix(rules: &WorkRules, runs: &[CutRun]) -> Vec<MixReport> {
@@ -854,13 +1140,29 @@ fn mix(rules: &WorkRules, runs: &[CutRun]) -> Vec<MixReport> {
             let (part, whole) = match m.of {
                 ShareOf::Runs => (runs.iter().filter(inside).count() as u64, runs.len() as u64),
                 ShareOf::PaidTime => (
-                    runs.iter().filter(inside).map(|r| r.judged.pay_secs as u64).sum(),
+                    runs.iter()
+                        .filter(inside)
+                        .map(|r| r.judged.pay_secs as u64)
+                        .sum(),
                     runs.iter().map(|r| r.judged.pay_secs as u64).sum(),
                 ),
             };
-            let share_pct = if whole == 0 { 0 } else { (part * 100 / whole) as u32 };
-            let met = m.min_pct.is_none_or(|min| share_pct >= min) && m.max_pct.is_none_or(|max| share_pct <= max);
-            MixReport { classes: m.classes.clone(), of: m.of, share_pct, min_pct: m.min_pct, target_pct: m.target_pct, max_pct: m.max_pct, met }
+            let share_pct = if whole == 0 {
+                0
+            } else {
+                (part * 100 / whole) as u32
+            };
+            let met = m.min_pct.is_none_or(|min| share_pct >= min)
+                && m.max_pct.is_none_or(|max| share_pct <= max);
+            MixReport {
+                classes: m.classes.clone(),
+                of: m.of,
+                share_pct,
+                min_pct: m.min_pct,
+                target_pct: m.target_pct,
+                max_pct: m.max_pct,
+                met,
+            }
         })
         .collect()
 }

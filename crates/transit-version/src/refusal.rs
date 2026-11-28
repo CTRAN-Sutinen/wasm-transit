@@ -18,17 +18,30 @@ pub struct Refusal {
 pub enum RefusalCode {
     /// The module does not hold the document. The host registers it with
     /// `load` and asks again.
-    UnknownDocument { kind: String, hash: String, load: String },
+    UnknownDocument {
+        kind: String,
+        hash: String,
+        load: String,
+    },
     /// A newer build wrote the document. `read` is true when this build read
     /// it one version ahead and refused only a write over it.
-    NewerVersion { kind: String, found: u32, reads: u32, read: bool },
+    NewerVersion {
+        kind: String,
+        found: u32,
+        reads: u32,
+        read: bool,
+    },
 }
 
 impl Refusal {
     pub fn unknown_document(kind: &str, hash: &str, load: &str) -> Self {
         Refusal {
             message: format!("unknown {kind} {hash}: {load} first"),
-            code: Some(RefusalCode::UnknownDocument { kind: kind.into(), hash: hash.into(), load: load.into() }),
+            code: Some(RefusalCode::UnknownDocument {
+                kind: kind.into(),
+                hash: hash.into(),
+                load: load.into(),
+            }),
         }
     }
 
@@ -40,13 +53,19 @@ impl Refusal {
 
 impl From<String> for Refusal {
     fn from(message: String) -> Self {
-        Refusal { message, code: None }
+        Refusal {
+            message,
+            code: None,
+        }
     }
 }
 
 impl From<&str> for Refusal {
     fn from(message: &str) -> Self {
-        Refusal { message: message.to_string(), code: None }
+        Refusal {
+            message: message.to_string(),
+            code: None,
+        }
     }
 }
 

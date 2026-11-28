@@ -13,11 +13,18 @@ use transit_version::Versioned;
 fn gen_stop_v1() -> BoxedStrategy<Value> {
     (
         0u8..6, // id pool small enough for duplicates
-        proptest::collection::vec(any::<char>().prop_filter("printable", |c| c.is_ascii_alphanumeric()), 0..=8),
-        proptest::option::of(proptest::collection::vec(any::<char>().prop_filter("printable", |c| c.is_ascii_alphabetic()), 3..=6)),
+        proptest::collection::vec(
+            any::<char>().prop_filter("printable", |c| c.is_ascii_alphanumeric()),
+            0..=8,
+        ),
+        proptest::option::of(proptest::collection::vec(
+            any::<char>().prop_filter("printable", |c| c.is_ascii_alphabetic()),
+            3..=6,
+        )),
     )
         .prop_map(|(id, note, color)| {
-            let mut stop = json!({"id": format!("s{id}"), "note": note.into_iter().collect::<String>()});
+            let mut stop =
+                json!({"id": format!("s{id}"), "note": note.into_iter().collect::<String>()});
             if let Some(color) = color {
                 stop["color"] = json!(color.into_iter().collect::<String>());
             }
@@ -31,7 +38,12 @@ fn v1_doc(stops: Vec<Value>) -> Value {
 }
 
 fn ids(doc: &Value) -> Vec<String> {
-    doc["stops"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap().to_string()).collect()
+    doc["stops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect()
 }
 
 proptest! {
@@ -86,7 +98,10 @@ proptest! {
 
 #[test]
 fn a_written_watchlist_names_its_kind_and_version() {
-    let doc: Watchlist = serde_json::from_value(json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "Home"}]})).unwrap();
+    let doc: Watchlist = serde_json::from_value(
+        json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "Home"}]}),
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_value(&doc).unwrap(),
         json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "Home"}]})
@@ -110,7 +125,11 @@ fn a_copy_of_v2_from_before_the_tags_reads_as_v2_and_writes_tagged() {
 fn a_copy_of_v1_names_its_version_and_does_not_read_as_current() {
     let legacy = v1_doc(vec![json!({"id": "A", "note": "Home", "color": "red"})]);
     assert_eq!(schema_version_of(&legacy), Ok(1));
-    assert_eq!(<Watchlist as Versioned>::version_in(&legacy), 1, "the kernel's check reads the legacy marker");
+    assert_eq!(
+        <Watchlist as Versioned>::version_in(&legacy),
+        1,
+        "the kernel's check reads the legacy marker"
+    );
     assert!(serde_json::from_value::<Watchlist>(legacy).is_err());
 }
 
@@ -119,7 +138,9 @@ fn a_newer_version_is_refused_by_the_chain() {
     let newer = json!({"kind": "watchlist", "schema_version": 3, "stops": []});
     assert_eq!(schema_version_of(&newer), Ok(3));
     assert!(migrate_to(newer, SCHEMA_VERSION).is_err());
-    assert!(migrate_to(v1_doc(vec![]), 3).unwrap_err().contains("newer than this build"));
+    assert!(migrate_to(v1_doc(vec![]), 3)
+        .unwrap_err()
+        .contains("newer than this build"));
 }
 
 #[test]

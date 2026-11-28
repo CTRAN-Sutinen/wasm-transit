@@ -51,8 +51,8 @@ struct Spec {
 fn spec() -> impl Strategy<Value = Spec> {
     let dir = 0u8..3;
     (
-        1usize..=6,                       // features
-        vec(dir, 1..=6),                  // per-feature direction
+        1usize..=6,                                             // features
+        vec(dir, 1..=6),                                        // per-feature direction
         vec(vec(vec((0i64..8, 0i64..8), 2..=5), 1..=3), 1..=6), // lines/verts
     )
         .prop_map(|(n, dirs, feats)| Spec {
@@ -102,7 +102,11 @@ fn build_geojson(spec: &Spec) -> String {
                     format!(
                         "[{}]",
                         line.iter()
-                            .map(|(lat, lon)| format!("[{},{}]", vertex_lon(*lon), vertex_lat(*lat)))
+                            .map(|(lat, lon)| format!(
+                                "[{},{}]",
+                                vertex_lon(*lon),
+                                vertex_lat(*lat)
+                            ))
                             .collect::<Vec<_>>()
                             .join(",")
                     )
@@ -115,7 +119,10 @@ fn build_geojson(spec: &Spec) -> String {
             "{{\"type\":\"Feature\",\"properties\":{{{oneway}}},\"geometry\":{geometry}}}"
         ));
     }
-    format!("{{\"type\":\"FeatureCollection\",\"features\":[{}]}}", features.join(","))
+    format!(
+        "{{\"type\":\"FeatureCollection\",\"features\":[{}]}}",
+        features.join(",")
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -139,7 +146,11 @@ fn build_oracle(doc: &Streets) -> OGraph {
     let mut g = OGraph::default();
     let mut node_ids: HashMap<[i32; 2], usize> = HashMap::new();
     for way in &doc.ways {
-        let dir = if way.oneway { SpecDir::Forward } else { SpecDir::Both };
+        let dir = if way.oneway {
+            SpecDir::Forward
+        } else {
+            SpecDir::Both
+        };
         for pair in way.points.windows(2) {
             let mut ends = [0usize; 2];
             for (end, p) in ends.iter_mut().zip(pair) {
@@ -321,12 +332,20 @@ fn query_point(g: &OGraph, q: (usize, f64, f64)) -> (f64, f64) {
     (lat, lon)
 }
 
-fn spec_and_queries() -> impl Strategy<Value = (Streets, (usize, f64, f64), (usize, f64, f64), (i64, i64))> {
+fn spec_and_queries(
+) -> impl Strategy<Value = (Streets, (usize, f64, f64), (usize, f64, f64), (i64, i64))> {
     spec()
-        .prop_filter_map("the layer has a street", |spec| import(build_geojson(&spec).as_bytes()).ok())
+        .prop_filter_map("the layer has a street", |spec| {
+            import(build_geojson(&spec).as_bytes()).ok()
+        })
         .prop_flat_map(|doc| {
             let n = build_oracle(&doc).segs.len();
-            (Just(doc), near_query(n), near_query(n), (20i64..40, 20i64..40))
+            (
+                Just(doc),
+                near_query(n),
+                near_query(n),
+                (20i64..40, 20i64..40),
+            )
         })
 }
 

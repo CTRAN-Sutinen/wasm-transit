@@ -41,8 +41,11 @@ impl transit_version::Load for crate::Streets {
     type Answer = StreetsLoaded;
 
     fn parse(bytes: &[u8]) -> Result<Self, transit_version::Refusal> {
-        let document: crate::Streets = transit_version::parse_versioned(bytes).map_err(|e| e.context("streets document"))?;
-        document.validate().map_err(|e| format!("streets document: {}", e.0))?;
+        let document: crate::Streets =
+            transit_version::parse_versioned(bytes).map_err(|e| e.context("streets document"))?;
+        document
+            .validate()
+            .map_err(|e| format!("streets document: {}", e.0))?;
         Ok(document)
     }
 
@@ -52,6 +55,11 @@ impl transit_version::Load for crate::Streets {
 
     fn answer(&self, hash: String) -> StreetsLoaded {
         let (ways, segments, nodes) = self.counts();
-        StreetsLoaded { streets_hash: hash, ways, segments, nodes }
+        StreetsLoaded {
+            streets_hash: hash,
+            ways,
+            segments,
+            nodes,
+        }
     }
 }

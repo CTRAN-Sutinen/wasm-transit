@@ -25,7 +25,10 @@ fn policy() -> Policy {
 }
 
 fn identity(roles: &[&str]) -> Identity {
-    Identity { sub: "user-1".into(), roles: roles.iter().map(|r| r.to_string()).collect() }
+    Identity {
+        sub: "user-1".into(),
+        roles: roles.iter().map(|r| r.to_string()).collect(),
+    }
 }
 
 fn ask(id: &Identity, action: &str, pointer: &str) -> bool {
@@ -44,12 +47,30 @@ fn ask(id: &Identity, action: &str, pointer: &str) -> bool {
 
 #[test]
 fn matching_rule_allows_and_everything_else_denies() {
-    assert!(ask(&identity(&["dispatcher"]), "write", "edits"), "rule ops-write");
-    assert!(!ask(&identity(&["dispatcher"]), "read", "edits"), "write does not imply read");
-    assert!(!ask(&identity(&["rider"]), "write", "edits"), "role not held");
-    assert!(!ask(&identity(&["dispatcher"]), "write", "policy"), "pointer not in the rule");
-    assert!(ask(&identity(&["admin"]), "write", "policy"), "admin wildcard");
-    assert!(ask(&identity(&["admin"]), "read", "manifest"), "admin read anywhere");
+    assert!(
+        ask(&identity(&["dispatcher"]), "write", "edits"),
+        "rule ops-write"
+    );
+    assert!(
+        !ask(&identity(&["dispatcher"]), "read", "edits"),
+        "write does not imply read"
+    );
+    assert!(
+        !ask(&identity(&["rider"]), "write", "edits"),
+        "role not held"
+    );
+    assert!(
+        !ask(&identity(&["dispatcher"]), "write", "policy"),
+        "pointer not in the rule"
+    );
+    assert!(
+        ask(&identity(&["admin"]), "write", "policy"),
+        "admin wildcard"
+    );
+    assert!(
+        ask(&identity(&["admin"]), "read", "manifest"),
+        "admin read anywhere"
+    );
 }
 
 #[test]
@@ -73,7 +94,12 @@ fn empty_policy_is_fail_closed() {
 
 #[test]
 fn effective_projects_only_the_callers_own_capabilities() {
-    match dispatch(Request::Effective { identity: identity(&["dispatcher"]), policy: cap_abi::Current(policy()) }).unwrap() {
+    match dispatch(Request::Effective {
+        identity: identity(&["dispatcher"]),
+        policy: cap_abi::Current(policy()),
+    })
+    .unwrap()
+    {
         Response::Effective { effective } => {
             assert_eq!(effective.roles, vec!["dispatcher".to_string()]);
             assert_eq!(effective.capabilities.len(), 1);
@@ -84,7 +110,12 @@ fn effective_projects_only_the_callers_own_capabilities() {
         }
         _ => panic!("effective"),
     }
-    match dispatch(Request::Effective { identity: identity(&["admin"]), policy: cap_abi::Current(Policy::current(vec![])) }).unwrap() {
+    match dispatch(Request::Effective {
+        identity: identity(&["admin"]),
+        policy: cap_abi::Current(Policy::current(vec![])),
+    })
+    .unwrap()
+    {
         Response::Effective { effective } => assert!(effective.capabilities.is_empty()),
         _ => panic!("effective"),
     }
@@ -101,8 +132,13 @@ fn unknown_action_is_an_error_not_an_allow() {
     .unwrap_err();
     assert!(err.contains("unknown action"), "{err}");
 
-    let bad = dispatch_json(r#"{"op":"authorize","identity":{"sub":"u","roles":["admin"]},"action":"write","pointer":"edits","policy":{"schema_version":1,"rules":[]}}"#);
-    assert!(bad.contains("\"allow\":false"), "empty rules deny through the wire: {bad}");
+    let bad = dispatch_json(
+        r#"{"op":"authorize","identity":{"sub":"u","roles":["admin"]},"action":"write","pointer":"edits","policy":{"schema_version":1,"rules":[]}}"#,
+    );
+    assert!(
+        bad.contains("\"allow\":false"),
+        "empty rules deny through the wire: {bad}"
+    );
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
     let bad = dispatch_bytes(0, b"x");
@@ -121,25 +157,45 @@ fn a_policy_in_another_version_is_refused_naming_both() {
         "policy": {"kind": "policy", "schema_version": 2, "rules": []},
     });
     let answer = cap_authz::dispatch_json(&request.to_string());
-    assert!(answer.contains("policy v2") && answer.contains("reads v1"), "{answer}");
+    assert!(
+        answer.contains("policy v2") && answer.contains("reads v1"),
+        "{answer}"
+    );
 }
 
 #[test]
 fn a_policy_write_is_checked_through_the_seam() {
     let answer = |doc: &str| -> serde_json::Value {
-        let out: serde_json::Value =
-            serde_json::from_str(&cap_authz::dispatch_json(&format!(r#"{{"op":"validate","policy":{doc}}}"#))).unwrap();
+        let out: serde_json::Value = serde_json::from_str(&cap_authz::dispatch_json(&format!(
+            r#"{{"op":"validate","policy":{doc}}}"#
+        )))
+        .unwrap();
         out["ok"].clone()
     };
-    let sound = answer(r#"{"schema_version":1,"rules":[{"name":"admin","roles":["admin"],"pointers":["*"],"actions":["*"]}],"note":"kept"}"#);
+    let sound = answer(
+        r#"{"schema_version":1,"rules":[{"name":"admin","roles":["admin"],"pointers":["*"],"actions":["*"]}],"note":"kept"}"#,
+    );
     assert!(sound["issues"].as_array().unwrap().is_empty(), "{sound}");
-    assert!(sound["document"].as_str().unwrap().contains(r#""note":"kept""#), "a field this build does not know is kept: {sound}");
+    assert!(
+        sound["document"]
+            .as_str()
+            .unwrap()
+            .contains(r#""note":"kept""#),
+        "a field this build does not know is kept: {sound}"
+    );
     assert_eq!(sound["unknown_fields"], serde_json::json!(["note"]));
-    let wrong = answer(r#"{"schema_version":1,"rules":[{"name":"ops","roles":["d"],"pointers":["edits"],"actions":["wirte"]}]}"#);
+    let wrong = answer(
+        r#"{"schema_version":1,"rules":[{"name":"ops","roles":["d"],"pointers":["edits"],"actions":["wirte"]}]}"#,
+    );
     assert_eq!(wrong["issues"][0]["kind"], "unknown_action");
     assert!(wrong["document"].is_null());
     assert_eq!(wrong["warnings"][0]["kind"], "no_policy_writer");
-    let newer: serde_json::Value =
-        serde_json::from_str(&cap_authz::dispatch_json(r#"{"op":"validate","policy":{"schema_version":9,"rules":[]}}"#)).unwrap();
-    assert!(newer.get("error").is_some(), "a newer policy is refused, naming both versions: {newer}");
+    let newer: serde_json::Value = serde_json::from_str(&cap_authz::dispatch_json(
+        r#"{"op":"validate","policy":{"schema_version":9,"rules":[]}}"#,
+    ))
+    .unwrap();
+    assert!(
+        newer.get("error").is_some(),
+        "a newer policy is refused, naming both versions: {newer}"
+    );
 }

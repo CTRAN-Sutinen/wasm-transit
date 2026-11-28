@@ -1,13 +1,12 @@
 use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use transit_date::Date;
 #[cfg(feature = "bindings")]
 use ts_rs::TS;
-use std::collections::{BTreeSet, BTreeMap};
-use transit_date::Date;
 
-use crate::{Network, StopWait, CoverageWindow, TRANSFER_WINDOW_MAX_SECS, TRANSFER_WINDOW_MIN_SECS};
-
-
-
+use crate::{
+    CoverageWindow, Network, StopWait, TRANSFER_WINDOW_MAX_SECS, TRANSFER_WINDOW_MIN_SECS,
+};
 
 pub fn longest_waits(
     net: &Network,
@@ -17,7 +16,11 @@ pub fn longest_waits(
 ) -> Vec<StopWait> {
     let mut departures: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
     for (service_id, service) in &net.pattern_trips {
-        if !net.service_types.get(&service.service_type).is_some_and(|st| st.rule.runs_on(date)) {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
             continue;
         }
         let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
@@ -26,14 +29,22 @@ pub fn longest_waits(
         for trip in materialized {
             for st in &trip.stop_times[..trip.stop_times.len() - 1] {
                 if let Some((id, _)) = net.stops.get_key_value(&st.stop) {
-                    departures.entry(id.as_str()).or_default().push(st.departure_secs);
+                    departures
+                        .entry(id.as_str())
+                        .or_default()
+                        .push(st.departure_secs);
                 }
             }
         }
     }
     let mut rows: Vec<StopWait> = Vec::new();
     for (stop_id, deps) in departures {
-        let spine: Vec<u32> = deps.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
+        let spine: Vec<u32> = deps
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         let (count, edges) = match window {
             None => (deps.len() as u32, spine),
             Some(w) => {
@@ -50,7 +61,9 @@ pub fn longest_waits(
                 best = Some((e[1] - e[0], e[0]));
             }
         }
-        let Some((longest_wait_secs, wait_from_secs)) = best else { continue };
+        let Some((longest_wait_secs, wait_from_secs)) = best else {
+            continue;
+        };
         rows.push(StopWait {
             stop_id: stop_id.to_string(),
             name: net.stops[stop_id].name.clone(),
@@ -59,7 +72,11 @@ pub fn longest_waits(
             wait_from_secs,
         });
     }
-    rows.sort_by(|a, b| b.longest_wait_secs.cmp(&a.longest_wait_secs).then_with(|| a.stop_id.cmp(&b.stop_id)));
+    rows.sort_by(|a, b| {
+        b.longest_wait_secs
+            .cmp(&a.longest_wait_secs)
+            .then_with(|| a.stop_id.cmp(&b.stop_id))
+    });
     if let Some(n) = limit {
         rows.truncate(n as usize);
     }
@@ -112,7 +129,10 @@ pub fn hourly_trips(net: &Network, date: Date) -> Vec<HourlyTrips> {
             trips: types.values().sum(),
             service_types: types
                 .into_iter()
-                .map(|(service_type, trips)| HourlyTypeTrips { service_type, trips })
+                .map(|(service_type, trips)| HourlyTypeTrips {
+                    service_type,
+                    trips,
+                })
                 .collect(),
         })
         .collect()
@@ -149,7 +169,9 @@ pub fn route_overlap(net: &Network, date: Date) -> Vec<RouteOverlap> {
             continue;
         };
         for trip in materialized {
-            let Some(pattern) = net.patterns.get(&trip.pattern) else { continue };
+            let Some(pattern) = net.patterns.get(&trip.pattern) else {
+                continue;
+            };
             let entry = routes.entry(pattern.route.clone()).or_insert(RouteDay {
                 stops: BTreeSet::new(),
                 segs: BTreeSet::new(),
@@ -175,8 +197,7 @@ pub fn route_overlap(net: &Network, date: Date) -> Vec<RouteOverlap> {
             if shared.is_empty() {
                 continue;
             }
-            let shared_segments =
-                ra.segs.intersection(&rb.segs).count() as u32;
+            let shared_segments = ra.segs.intersection(&rb.segs).count() as u32;
             let (stack_stop, stack_departures) = shared
                 .iter()
                 .map(|stop| {
@@ -214,7 +235,10 @@ pub struct TransferWindow {
 
 impl Default for TransferWindow {
     fn default() -> Self {
-        TransferWindow { min_secs: TRANSFER_WINDOW_MIN_SECS, max_secs: TRANSFER_WINDOW_MAX_SECS }
+        TransferWindow {
+            min_secs: TRANSFER_WINDOW_MIN_SECS,
+            max_secs: TRANSFER_WINDOW_MAX_SECS,
+        }
     }
 }
 
@@ -361,5 +385,3 @@ pub fn missed_connections(
     });
     out
 }
-
-
