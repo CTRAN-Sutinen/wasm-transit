@@ -6,8 +6,7 @@ use ts_rs::TS;
 use transit_date::Date;
 use crate::{
     METERS_PER_MILE, ServiceTypeSummary, coverage_of_members, CoverageWindow,
-    Weights, trip_distance_m, service_type_compare, Network, ServiceTypeComparison,
-    stats_fold, NetworkStats
+    Weights, trip_distance_m, service_type_compare, Network, ServiceTypeComparison
 };
 
 
@@ -178,7 +177,7 @@ pub fn type_coverage(
 
 /// With `running_on`, only the types whose calendar runs on that date are
 /// listed.
-fn service_type_summaries(net: &Network, running_on: Option<Date>) -> Vec<ServiceTypeSummary> {
+pub(crate) fn service_type_summaries(net: &Network, running_on: Option<Date>) -> Vec<ServiceTypeSummary> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
         if running_on.is_some_and(|date| !service_type.rule.runs_on(date)) {
@@ -222,17 +221,3 @@ fn service_type_summaries(net: &Network, running_on: Option<Date>) -> Vec<Servic
 }
 
 
-pub fn network_stats(net: &Network, date: Date) -> NetworkStats {
-    day_stats(net, date, None)
-}
-
-fn day_stats(net: &Network, date: Date, only_type: Option<&str>) -> NetworkStats {
-    let mut stats = stats_fold(net, |sid| {
-        net.service_types
-            .get(sid)
-            .is_some_and(|st| st.rule.runs_on(date))
-            && only_type.map_or(true, |t| sid == t)
-    }, date);
-    stats.service_types = service_type_summaries(net, Some(date));
-    stats
-}
